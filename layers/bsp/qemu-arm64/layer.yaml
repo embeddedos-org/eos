@@ -1,0 +1,42 @@
+# BSP Layer — QEMU ARM64 Virtual Board
+name: qemu-arm64
+type: bsp
+description: QEMU ARM64 virtual machine BSP
+
+machine: virt
+arch: aarch64
+
+kernel:
+  provider: kbuild
+  defconfig: defconfig
+  image: Image
+  dtb: qemu-virt.dtb
+
+bootloader:
+  type: u-boot
+  defconfig: qemu_arm64_defconfig
+
+device_tree:
+  source: arch/arm64/boot/dts/qemu-virt.dts
+
+image:
+  format: raw
+  size_mb: 256
+  partitions:
+    - name: boot
+      filesystem: fat32
+      size_mb: 64
+    - name: rootfs
+      filesystem: ext4
+      size_mb: 192
+
+qemu:
+  command: qemu-system-aarch64
+  args:
+    - -machine virt
+    - -cpu cortex-a57
+    - -m 512
+    - -nographic
+    - -kernel ${KERNEL_IMAGE}
+    - -drive file=${IMAGE},format=raw
+    - -append "root=/dev/vda2 console=ttyAMA0"

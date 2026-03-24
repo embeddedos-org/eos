@@ -1,0 +1,34 @@
+board:
+  name: tms570
+  mcu: TMS570LC4357
+  family: TMS570
+  arch: arm
+  core: cortex-r5f
+  vendor: Texas Instruments
+  clock_hz: 300000000
+  memory:
+    flash: 4194304
+    ram: 262144
+    tcm: 131072
+  peripherals:
+    - uart
+    - spi
+    - i2c
+    - can
+    - lin
+    - ethernet
+    - adc
+    - dma
+    - pwm
+  features:
+    - fpu
+    - mpu
+    - dma
+    - can
+    - lin
+    - ethernet
+    - adc
+    - safety
+    - ecc
+    - lockstep
+  toolchain: arm-none-eabi-r5

@@ -1,0 +1,16 @@
+# EoS Example: GPIO Blink
+project:
+  name: blink-gpio
+  version: 0.1.0
+
+workspace:
+  backend: ninja
+  build_dir: .eos/build
+
+toolchain:
+  target: host
+
+system:
+  kind: baremetal
+  entry: main.c
+  output: blink-gpio

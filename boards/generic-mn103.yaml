@@ -1,0 +1,22 @@
+board:
+  name: generic-mn103
+  mcu: AM33
+  family: AM33
+  arch: mn103
+  core: am33
+  vendor: Panasonic
+  clock_hz: 200000000
+  memory:
+    flash: 2097152
+    ram: 8388608
+  peripherals:
+    - {name: SER0, type: uart, bus: peripheral}
+    - {name: SER1, type: uart, bus: peripheral}
+    - {name: SPI0, type: spi, bus: peripheral}
+    - {name: I2C0, type: i2c, bus: peripheral}
+    - {name: GPIO, type: gpio, bus: peripheral}
+    - {name: DMA, type: dma, bus: system}
+    - {name: TIMER0, type: timer, bus: peripheral}
+    - {name: ADC, type: adc, bus: peripheral}
+    - {name: WDT, type: watchdog, bus: peripheral}
+  features: [mn103, matsushita, panasonic, consumer]

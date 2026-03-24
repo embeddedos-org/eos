@@ -1,0 +1,51 @@
+# EoS Example: Industrial Gateway (Hybrid Linux + RTOS)
+project:
+  name: industrial-gateway
+  version: 0.1.0
+
+workspace:
+  backend: ninja
+  build_dir: .eos/build
+  cache_dir: .eos/cache
+
+layers:
+  - layers/core
+  - layers/bsp/stm32mp1
+  - layers/distro/minimal
+  - layers/rtos/freertos
+  - layers/product/gateway
+
+toolchain:
+  linux:
+    target: aarch64-linux-gnu
+  rtos:
+    target: arm-none-eabi
+
+packages:
+  - name: zlib
+    version: 1.2.13
+    build:
+      type: cmake
+  - name: mosquitto
+    version: 2.0.18
+    build:
+      type: cmake
+
+system:
+  kind: hybrid
+  linux:
+    provider: buildroot
+  rtos:
+    - provider: freertos
+      core: m4
+      board: stm32mp1-m4
+      entry: apps/realtime-io
+      output: firmware-m4.bin
+
+docs:
+  enabled: true
+  api_docs: true
+  user_docs: true
+  api_tool: doxygen
+  site_tool: mkdocs
+  output_dir: .eos/build/docs

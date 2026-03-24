@@ -1,0 +1,16 @@
+# EoS Example: UART Echo
+project:
+  name: uart-echo
+  version: 0.1.0
+
+workspace:
+  backend: ninja
+  build_dir: .eos/build
+
+toolchain:
+  target: host
+
+system:
+  kind: baremetal
+  entry: main.c
+  output: uart-echo

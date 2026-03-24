@@ -1,0 +1,33 @@
+board:
+  name: generic-powerpc
+  mcu: MPC8540
+  family: MPC85xx
+  arch: powerpc
+  core: e500
+  vendor: NXP
+  clock_hz: 800000000
+  memory:
+    flash: 33554432
+    ram: 268435456
+  peripherals:
+    - {name: DUART0, type: uart, bus: local}
+    - {name: DUART1, type: uart, bus: local}
+    - {name: SPI0, type: spi, bus: local}
+    - {name: I2C0, type: i2c, bus: local}
+    - {name: I2C1, type: i2c, bus: local}
+    - {name: GPIO, type: gpio, bus: local}
+    - {name: DMA, type: dma, bus: system}
+    - {name: TSEC0, type: ethernet, bus: system}
+    - {name: TSEC1, type: ethernet, bus: system}
+    - {name: USB, type: usb, bus: system}
+    - {name: PCI, type: gpio, bus: pci}
+    - {name: WDT, type: watchdog, bus: local}
+  features: [powerpc, e500, qoriq, networking, industrial]
+  external_peripherals:
+    - {name: ADC, type: adc, bus: spi, note: "via MCP3008 on SPI"}
+    - {name: PWM, type: pwm, bus: gpio, note: "via software PWM or external IC"}
+    - {name: CAN, type: can, bus: spi, note: "via MCP2515 on SPI"}
+    - {name: GNSS, type: gnss, bus: uart, note: "via u-blox on DUART"}
+    - {name: IMU, type: imu, bus: i2c, note: "via MPU6050 on I2C"}
+    - {name: DISPLAY, type: display, bus: spi, note: "via SPI TFT"}
+    - {name: MOTOR, type: motor, bus: gpio, note: "via stepper driver on GPIO"}

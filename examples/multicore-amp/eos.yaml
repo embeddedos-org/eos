@@ -1,0 +1,16 @@
+# EoS Example: Multicore AMP
+project:
+  name: multicore-amp
+  version: 0.1.0
+
+workspace:
+  backend: ninja
+  build_dir: .eos/build
+
+toolchain:
+  target: host
+
+system:
+  kind: rtos
+  entry: main.c
+  output: multicore-amp
