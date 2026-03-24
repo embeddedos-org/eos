@@ -1,0 +1,21 @@
+board:
+  name: generic-frv
+  mcu: FR450
+  family: FR-V
+  arch: frv
+  core: fr450
+  vendor: Fujitsu
+  clock_hz: 400000000
+  memory:
+    flash: 4194304
+    ram: 16777216
+  peripherals:
+    - {name: UART0, type: uart, bus: peripheral}
+    - {name: UART1, type: uart, bus: peripheral}
+    - {name: SPI0, type: spi, bus: peripheral}
+    - {name: I2C0, type: i2c, bus: peripheral}
+    - {name: GPIO, type: gpio, bus: peripheral}
+    - {name: DMA, type: dma, bus: system}
+    - {name: TIMER0, type: timer, bus: peripheral}
+    - {name: ETH, type: ethernet, bus: system}
+  features: [vliw, dsp, multimedia, fujitsu]

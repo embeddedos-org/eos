@@ -1,0 +1,13 @@
+# EoS Board: STM32H743 (Cortex-M7)
+name: stm32h743
+arch: arm-cortex-m
+cpu: cortex-m7
+vendor: ST Microelectronics
+memory:
+  flash: 2048K
+  ram: 1024K
+toolchain: arm-none-eabi
+features:
+  fpu: true
+  dsp: true
+  mpu: true

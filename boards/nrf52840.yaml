@@ -1,0 +1,31 @@
+# EoS Board: nRF52840 (Cortex-M4F, BLE)
+board:
+  name: nrf52840
+  mcu: NRF52840
+  family: nRF52
+  arch: arm
+  core: cortex-m4f
+  vendor: Nordic Semiconductor
+  clock_hz: 64000000
+  memory:
+    flash: 1048576
+    ram: 262144
+  peripherals:
+    - {name: UART0, type: uart, bus: peripheral}
+    - {name: SPI0, type: spi, bus: peripheral}
+    - {name: SPI1, type: spi, bus: peripheral}
+    - {name: I2C0, type: i2c, bus: peripheral}
+    - {name: I2C1, type: i2c, bus: peripheral}
+    - {name: GPIO, type: gpio, count: 48}
+    - {name: ADC, type: adc, bus: peripheral, channels: 8}
+    - {name: PWM0, type: pwm, bus: peripheral}
+    - {name: TIMER0, type: timer, bus: peripheral}
+    - {name: TIMER1, type: timer, bus: peripheral}
+    - {name: WDT, type: watchdog, bus: peripheral}
+    - {name: RTC0, type: rtc, bus: peripheral}
+    - {name: BLE, type: ble, version: "5.0"}
+    - {name: NFC, type: nfc, bus: peripheral}
+    - {name: USB, type: usb, speed: full}
+    - {name: QSPI, type: spi, bus: peripheral}
+  features: [ble, nfc, usb, crypto, fpu, dsp, low_power]
+  toolchain: arm-none-eabi

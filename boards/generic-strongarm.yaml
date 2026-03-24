@@ -1,0 +1,20 @@
+board:
+  name: generic-strongarm
+  mcu: SA1110
+  family: StrongARM
+  arch: arm
+  core: strongarm-1110
+  vendor: Intel
+  clock_hz: 206000000
+  memory:
+    flash: 16777216
+    ram: 33554432
+  peripherals:
+    - {name: UART0, type: uart, bus: apb}
+    - {name: UART1, type: uart, bus: apb}
+    - {name: SPI0, type: spi, bus: apb}
+    - {name: GPIO, type: gpio, bus: apb}
+    - {name: DMA, type: dma, bus: ahb}
+    - {name: LCD, type: display, bus: apb}
+    - {name: PCMCIA, type: sdio, bus: apb}
+  features: [strongarm, intel, handheld, pda]

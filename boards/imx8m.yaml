@@ -1,0 +1,33 @@
+# EoS Board: NXP i.MX8M Mini (Cortex-A53, quad-core)
+board:
+  name: imx8m
+  mcu: MIMX8MM6
+  family: i.MX8M
+  arch: aarch64
+  core: cortex-a53
+  vendor: NXP
+  clock_hz: 1800000000
+  cores: 4
+  memory:
+    emmc: 8589934592
+    ddr: 2147483648
+  peripherals:
+    - {name: UART1, type: uart, bus: peripheral}
+    - {name: UART2, type: uart, bus: peripheral}
+    - {name: ECSPI1, type: spi, bus: peripheral}
+    - {name: I2C1, type: i2c, bus: peripheral}
+    - {name: I2C2, type: i2c, bus: peripheral}
+    - {name: GPIO, type: gpio, count: 160}
+    - {name: USB1, type: usb, speed: high}
+    - {name: USB2, type: usb, speed: high}
+    - {name: ETH, type: ethernet, speed: gigabit}
+    - {name: PCIE, type: pcie, lanes: 1}
+    - {name: GPU, type: gpu, vendor: Vivante}
+    - {name: DSI, type: display, interface: mipi}
+    - {name: CSI, type: camera, interface: mipi}
+    - {name: SAI, type: audio, bus: peripheral}
+    - {name: DMA, type: dma, bus: system}
+    - {name: WDT, type: watchdog, bus: peripheral}
+    - {name: RTC, type: rtc, bus: peripheral}
+  features: [gpu, pcie, usb3, gigabit_eth, mipi_dsi, mipi_csi, crypto]
+  toolchain: aarch64-linux-gnu

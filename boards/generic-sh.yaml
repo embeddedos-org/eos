@@ -1,0 +1,24 @@
+board:
+  name: generic-sh
+  mcu: SH7750
+  family: SH4
+  arch: sh
+  core: sh4
+  vendor: Renesas
+  clock_hz: 200000000
+  memory:
+    flash: 4194304
+    ram: 16777216
+  peripherals:
+    - {name: SCIF0, type: uart, bus: peripheral}
+    - {name: SCIF1, type: uart, bus: peripheral}
+    - {name: SPI0, type: spi, bus: peripheral}
+    - {name: I2C0, type: i2c, bus: peripheral}
+    - {name: GPIO, type: gpio, bus: peripheral}
+    - {name: DMA, type: dma, bus: system}
+    - {name: TIMER0, type: timer, bus: peripheral}
+    - {name: ADC, type: adc, bus: peripheral}
+    - {name: WDT, type: watchdog, bus: peripheral}
+    - {name: RTC, type: rtc, bus: peripheral}
+    - {name: USB, type: usb, bus: system}
+  features: [superh, fpu, mmu, renesas]

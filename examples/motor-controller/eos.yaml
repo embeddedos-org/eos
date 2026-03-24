@@ -1,0 +1,32 @@
+# EoS Example: Motor Controller (RTOS)
+project:
+  name: motor-controller
+  version: 0.1.0
+
+workspace:
+  backend: ninja
+  build_dir: .eos/build
+  cache_dir: .eos/cache
+
+layers:
+  - layers/core
+  - layers/bsp/stm32h7
+  - layers/rtos/freertos
+  - layers/product/motor-controller
+
+toolchain:
+  target: arm-none-eabi
+
+system:
+  kind: rtos
+  rtos:
+    provider: freertos
+    board: stm32h743
+    entry: apps/motor-control
+    output: firmware.bin
+
+docs:
+  enabled: true
+  api_docs: true
+  user_docs: false
+  api_tool: doxygen

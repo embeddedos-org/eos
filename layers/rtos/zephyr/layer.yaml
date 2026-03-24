@@ -1,0 +1,16 @@
+# EoS RTOS Layer: Zephyr
+layer:
+  name: rtos-zephyr
+  type: rtos
+  description: Zephyr RTOS integration
+  provider: zephyr
+  config:
+    west_workspace: true
+    build_system: cmake
+    kernel_type: microkernel
+  middleware:
+    - networking
+    - bluetooth
+    - usb
+    - filesystem
+    - shell

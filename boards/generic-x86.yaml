@@ -1,0 +1,31 @@
+board:
+  name: generic-x86
+  mcu: i486
+  family: x86
+  arch: x86
+  core: i486
+  vendor: Intel
+  clock_hz: 100000000
+  memory:
+    flash: 16777216
+    ram: 67108864
+  peripherals:
+    - {name: COM1, type: uart, bus: isa}
+    - {name: COM2, type: uart, bus: isa}
+    - {name: PCI, type: gpio, bus: pci}
+    - {name: DMA, type: dma, bus: isa}
+    - {name: TIMER, type: timer, bus: isa}
+    - {name: ETH, type: ethernet, bus: pci}
+    - {name: USB, type: usb, bus: pci}
+    - {name: VGA, type: display, bus: pci}
+    - {name: SPI, type: spi, bus: pci, note: "via PCIe/LPC SPI controller"}
+    - {name: I2C, type: i2c, bus: pci, note: "via SMBus/PCIe I2C controller"}
+    - {name: WDT, type: watchdog, bus: acpi, note: "ACPI/iTCO watchdog timer"}
+  features: [x86, protected_mode, pci, isa, acpi]
+  external_peripherals:
+    - {name: ADC, type: adc, bus: spi, note: "via MCP3008/ADS1115 on SPI/I2C"}
+    - {name: PWM, type: pwm, bus: pci, note: "via PCIe PWM card or GPIO bit-bang"}
+    - {name: CAMERA, type: camera, bus: usb, note: "via USB webcam (UVC)"}
+    - {name: GNSS, type: gnss, bus: uart, note: "via u-blox on COM port"}
+    - {name: IMU, type: imu, bus: i2c, note: "via MPU6050/BMI270 on I2C"}
+    - {name: MOTOR, type: motor, bus: gpio, note: "via stepper driver on GPIO"}

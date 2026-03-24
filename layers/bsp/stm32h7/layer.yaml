@@ -1,0 +1,10 @@
+# EoS BSP Layer: STM32H7 (Cortex-M7 bare-metal / RTOS)
+layer:
+  name: bsp-stm32h7
+  type: bsp
+  description: Board support for STM32H7 series (Cortex-M7)
+  board: stm32h743
+  toolchain: arm-none-eabi
+  provides:
+    - hal-stm32h7
+    - startup-cortexm

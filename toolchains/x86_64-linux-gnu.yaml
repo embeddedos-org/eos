@@ -1,0 +1,10 @@
+# x86_64 Linux GNU Toolchain
+name: x86_64-linux-gnu
+target: x86_64-linux-gnu
+cc: gcc
+cxx: g++
+ar: ar
+ld: ld
+sysroot:
+cflags: -march=x86-64 -O2
+ldflags: -Wl,--as-needed

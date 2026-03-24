@@ -1,0 +1,24 @@
+board:
+  name: generic-v850
+  mcu: V850E
+  family: V850E
+  arch: v850
+  core: v850e
+  vendor: Renesas
+  clock_hz: 32000000
+  memory:
+    flash: 1048576
+    ram: 131072
+  peripherals:
+    - {name: UART0, type: uart, bus: peripheral}
+    - {name: UART1, type: uart, bus: peripheral}
+    - {name: SPI0, type: spi, bus: peripheral}
+    - {name: I2C0, type: i2c, bus: peripheral}
+    - {name: GPIO, type: gpio, bus: peripheral}
+    - {name: DMA, type: dma, bus: system}
+    - {name: TIMER0, type: timer, bus: peripheral}
+    - {name: ADC, type: adc, bus: peripheral}
+    - {name: WDT, type: watchdog, bus: peripheral}
+    - {name: CAN, type: can, bus: peripheral}
+    - {name: PWM, type: pwm, bus: peripheral}
+  features: [v850, automotive, ecu, renesas]

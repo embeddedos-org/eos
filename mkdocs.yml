@@ -1,0 +1,88 @@
+site_name: EoS Documentation
+site_description: Next-generation embedded OS build system
+site_url: https://eos.dev
+
+repo_name: eos
+repo_url: https://github.com/example/eos
+
+theme:
+  name: material
+  palette:
+    - scheme: default
+      primary: indigo
+      accent: cyan
+      toggle:
+        icon: material/brightness-7
+        name: Switch to dark mode
+    - scheme: slate
+      primary: indigo
+      accent: cyan
+      toggle:
+        icon: material/brightness-4
+        name: Switch to light mode
+  features:
+    - navigation.tabs
+    - navigation.sections
+    - navigation.expand
+    - navigation.top
+    - search.suggest
+    - search.highlight
+    - content.code.copy
+    - content.tabs.link
+  icon:
+    repo: fontawesome/brands/github
+
+nav:
+  - Home: index.md
+  - Getting Started: getting-started.md
+  - Architecture: architecture.md
+  - User Guide:
+    - Build: guide/build.md
+    - System: guide/system.md
+    - Firmware: guide/firmware.md
+    - Hybrid: guide/hybrid.md
+    - Layers: guide/layers.md
+  - Configuration:
+    - eos.yaml Schema: config/schema.md
+    - Toolchains: config/toolchains.md
+    - Boards: config/boards.md
+  - API Reference:
+    - Core Types: api/types.md
+    - Config: api/config.md
+    - Graph: api/graph.md
+    - Backends: api/backends.md
+    - System: api/system.md
+    - Firmware: api/firmware.md
+  - Examples:
+    - Linux Image: examples/linux.md
+    - RTOS Firmware: examples/rtos.md
+    - Hybrid System: examples/hybrid.md
+
+markdown_extensions:
+  - admonition
+  - pymdownx.details
+  - pymdownx.superfences:
+      custom_fences:
+        - name: mermaid
+          class: mermaid
+          format: !!python/name:pymdownx.superfences.fence_code_format
+  - pymdownx.tabbed:
+      alternate_style: true
+  - pymdownx.highlight:
+      anchor_linenums: true
+  - pymdownx.inlinehilite
+  - pymdownx.snippets
+  - attr_list
+  - md_in_html
+  - toc:
+      permalink: true
+
+plugins:
+  - search
+  - minify:
+      minify_html: true
+
+extra:
+  social:
+    - icon: fontawesome/brands/github
+      link: https://github.com/example/eos

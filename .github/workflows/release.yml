@@ -1,0 +1,87 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - "v*.*.*"
+      - "v*.*.*-*"
+
+permissions:
+  contents: write
+
+jobs:
+  validate:
+    name: Validate Release
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build
+        run: |
+          cmake -B build -DEOS_BUILD_TESTS=ON
+          cmake --build build
+      - name: Test
+        run: ctest --test-dir build --output-on-failure
+
+  release:
+    name: Create Release
+    runs-on: ubuntu-latest
+    needs: validate
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Extract version
+        id: version
+        run: |
+          TAG=${GITHUB_REF#refs/tags/}
+          VERSION=${TAG#v}
+          echo "tag=$TAG" >> $GITHUB_OUTPUT
+          echo "version=$VERSION" >> $GITHUB_OUTPUT
+          IFS='.-' read -r MAJOR MINOR PATCH PRE <<< "$VERSION"
+          echo "major=$MAJOR" >> $GITHUB_OUTPUT
+          echo "minor=$MINOR" >> $GITHUB_OUTPUT
+          echo "patch=$PATCH" >> $GITHUB_OUTPUT
+          echo "prerelease=${PRE:-stable}" >> $GITHUB_OUTPUT
+
+      - name: Generate changelog
+        id: changelog
+        run: |
+          PREV_TAG=$(git tag --sort=-v:refname | head -2 | tail -1)
+          if [ -n "$PREV_TAG" ] && [ "$PREV_TAG" != "${{ steps.version.outputs.tag }}" ]; then
+            CHANGES=$(git log ${PREV_TAG}..HEAD --oneline --no-merges)
+          else
+            CHANGES=$(git log --oneline --no-merges -20)
+          fi
+          echo "changes<<EOF" >> $GITHUB_OUTPUT
+          echo "$CHANGES" >> $GITHUB_OUTPUT
+          echo "EOF" >> $GITHUB_OUTPUT
+
+      - name: Build release artifacts
+        run: |
+          cmake -B build -DCMAKE_BUILD_TYPE=Release
+          cmake --build build
+          cd build && tar czf ../eos-${{ steps.version.outputs.version }}-linux-x86_64.tar.gz lib*.a 2>/dev/null || true
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ steps.version.outputs.tag }}
+          name: "EoS ${{ steps.version.outputs.tag }}"
+          body: |
+            ## EoS ${{ steps.version.outputs.tag }} — Embedded Operating System
+
+            **Version:** ${{ steps.version.outputs.version }}
+            **Type:** ${{ steps.version.outputs.prerelease }}
+
+            ### Changes
+            ${{ steps.changelog.outputs.changes }}
+
+            ### Build
+            ```bash
+            cmake -B build -DEOS_PRODUCT=gateway -DEOS_BUILD_TESTS=ON
+            cmake --build build
+            ```
+          files: "*.tar.gz"
+          draft: ${{ contains(steps.version.outputs.prerelease, 'debug') }}
+          prerelease: ${{ contains(steps.version.outputs.prerelease, 'rc') || contains(steps.version.outputs.prerelease, 'beta') }}
