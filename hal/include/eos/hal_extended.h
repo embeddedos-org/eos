@@ -933,8 +933,8 @@ typedef struct {
 #if EOS_ENABLE_IMU
     int  (*imu_init)(const eos_imu_config_t *cfg);
     void (*imu_deinit)(uint8_t id);
-    int  (*imu_read_accel)(uint8_t id, eos_imu_data_t *data);
-    int  (*imu_read_gyro)(uint8_t id, eos_imu_data_t *data);
+    int  (*imu_read_accel)(uint8_t id, eos_imu_vec3_t *data);
+    int  (*imu_read_gyro)(uint8_t id, eos_imu_vec3_t *data);
 #endif
 
 #if EOS_ENABLE_AUDIO
