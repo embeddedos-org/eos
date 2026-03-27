@@ -13,6 +13,21 @@
 #include <stdint.h>
 #include <stddef.h>
 
+/* Portable population count (number of set bits) */
+static inline uint32_t eos_popcount32(uint32_t x) {
+#if defined(__GNUC__) || defined(__clang__)
+    return (uint32_t)__builtin_popcount(x);
+#elif defined(_MSC_VER)
+    x = x - ((x >> 1) & 0x55555555u);
+    x = (x & 0x33333333u) + ((x >> 2) & 0x33333333u);
+    return (((x + (x >> 4)) & 0x0F0F0F0Fu) * 0x01010101u) >> 24;
+#else
+    x = x - ((x >> 1) & 0x55555555u);
+    x = (x & 0x33333333u) + ((x >> 2) & 0x33333333u);
+    return (((x + (x >> 4)) & 0x0F0F0F0Fu) * 0x01010101u) >> 24;
+#endif
+}
+
 /* ---- Virtualization / Container Isolation ---- */
 
 #define EOS_VM_MAX_INSTANCES   16

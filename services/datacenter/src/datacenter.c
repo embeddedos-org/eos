@@ -429,7 +429,7 @@ void eos_route_dump(const EosRoutingTable *rt) {
         const EosRoute *r = &rt->routes[i];
         printf("  %u.%u.%u.%u/%u via %u.%u.%u.%u dev %s metric %u\n",
                (r->dest_ip>>24)&0xFF,(r->dest_ip>>16)&0xFF,(r->dest_ip>>8)&0xFF,r->dest_ip&0xFF,
-               __builtin_popcount(r->mask),
+               eos_popcount32(r->mask),
                (r->gateway>>24)&0xFF,(r->gateway>>16)&0xFF,(r->gateway>>8)&0xFF,r->gateway&0xFF,
                r->iface, r->metric);
     }

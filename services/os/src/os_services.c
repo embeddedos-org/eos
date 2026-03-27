@@ -1,6 +1,7 @@
 #include "eos/os_services.h"
 #include "eos/crypto.h"
 #include <stdio.h>
+#include <stdlib.h>
 #include <string.h>
 #include <time.h>
 
@@ -78,7 +79,12 @@ int eos_ota_set_source(EosOtaUpdate *ota, const char *url,
 int eos_ota_download(EosOtaUpdate *ota) {
     ota->state = EOS_OTA_DOWNLOADING;
     char cmd[2048];
+#ifdef _WIN32
+    snprintf(ota->local_path, sizeof(ota->local_path), "%s\\eos_ota_update.bin",
+             getenv("TEMP") ? getenv("TEMP") : ".");
+#else
     snprintf(ota->local_path, sizeof(ota->local_path), "/tmp/eos_ota_update.bin");
+#endif
 #ifdef _WIN32
     snprintf(cmd, sizeof(cmd), "curl -fSL -o \"%s\" \"%s\"", ota->local_path, ota->url);
 #else
