@@ -10,6 +10,7 @@
 #define EOS_MOTOR_CTRL_H
 
 #include <stdint.h>
+#include <stddef.h>
 #include <stdbool.h>
 #include <eos/eos_config.h>
 
