@@ -1,0 +1,23 @@
+board:
+  name: generic-mips
+  mcu: MIPS32
+  family: MIPS32
+  arch: mips
+  core: mips32r2
+  vendor: MIPS
+  clock_hz: 400000000
+  memory:
+    flash: 8388608
+    ram: 33554432
+  peripherals:
+    - {name: UART0, type: uart, bus: peripheral}
+    - {name: UART1, type: uart, bus: peripheral}
+    - {name: SPI0, type: spi, bus: peripheral}
+    - {name: I2C0, type: i2c, bus: peripheral}
+    - {name: GPIO, type: gpio, bus: peripheral}
+    - {name: DMA, type: dma, bus: system}
+    - {name: TIMER0, type: timer, bus: peripheral}
+    - {name: ETH, type: ethernet, bus: system}
+    - {name: USB, type: usb, bus: system}
+    - {name: WDT, type: watchdog, bus: peripheral}
+  features: [mips, pipeline, router, embedded]

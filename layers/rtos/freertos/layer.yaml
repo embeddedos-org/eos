@@ -1,0 +1,18 @@
+# EoS RTOS Layer: FreeRTOS
+layer:
+  name: rtos-freertos
+  type: rtos
+  description: FreeRTOS real-time operating system integration
+  provider: freertos
+  config:
+    tick_rate_hz: 1000
+    max_priorities: 56
+    heap_type: heap_4
+    enable_timers: true
+    enable_mutexes: true
+    enable_counting_semaphores: true
+    enable_task_notifications: true
+    minimal_stack_size: 128
+  middleware:
+    - freertos-plus-tcp
+    - freertos-plus-fat

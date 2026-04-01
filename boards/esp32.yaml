@@ -1,0 +1,43 @@
+# EoS Board: Espressif ESP32 (Xtensa LX6, dual-core)
+board:
+  name: esp32
+  mcu: ESP32-D0WDQ6
+  family: ESP32
+  arch: xtensa
+  core: lx6
+  vendor: Espressif
+  clock_hz: 240000000
+  cores: 2
+  memory:
+    flash: 4194304
+    iram: 524288
+    dram: 327680
+  peripherals:
+    - {name: UART0, type: uart, bus: peripheral}
+    - {name: UART1, type: uart, bus: peripheral}
+    - {name: SPI2, type: spi, bus: peripheral}
+    - {name: SPI3, type: spi, bus: peripheral}
+    - {name: I2C0, type: i2c, bus: peripheral}
+    - {name: I2C1, type: i2c, bus: peripheral}
+    - {name: GPIO, type: gpio, count: 34}
+    - {name: ADC1, type: adc, bus: peripheral, channels: 8}
+    - {name: ADC2, type: adc, bus: peripheral, channels: 10}
+    - {name: DAC, type: dac, bus: peripheral, channels: 2}
+    - {name: PWM, type: pwm, bus: peripheral, channels: 16}
+    - {name: WIFI, type: wifi, version: "802.11bgn"}
+    - {name: BLE, type: ble, version: "4.2"}
+    - {name: CAN, type: can, bus: peripheral}
+    - {name: USB, type: usb, speed: full}
+    - {name: DMA, type: dma, bus: system}
+    - {name: WDT, type: watchdog, bus: peripheral}
+    - {name: RTC, type: rtc, bus: peripheral}
+    - {name: TOUCH, type: touch, channels: 10}
+  features: [wifi, ble, dual_core, dma, touch, hall_sensor]
+  external_peripherals:
+    - {name: GNSS, type: gnss, bus: uart, note: "via u-blox NEO-M8N on UART1"}
+    - {name: IMU, type: imu, bus: i2c, note: "via MPU6050/BMI270 on I2C0"}
+    - {name: DISPLAY, type: display, bus: spi, note: "via SPI TFT (ST7789/ILI9341/SSD1306)"}
+    - {name: CAMERA, type: camera, bus: parallel, note: "ESP32-CAM with OV2640"}
+    - {name: MOTOR, type: motor, bus: pwm, note: "via LEDC PWM + DRV8833/L298N"}
+    - {name: NFC, type: nfc, bus: i2c, note: "via PN532 on I2C"}
+  toolchain: xtensa-esp32-elf

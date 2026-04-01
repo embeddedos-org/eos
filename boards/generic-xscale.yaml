@@ -1,0 +1,25 @@
+board:
+  name: generic-xscale
+  mcu: PXA270
+  family: XScale
+  arch: arm
+  core: xscale
+  vendor: Intel
+  clock_hz: 624000000
+  memory:
+    flash: 33554432
+    ram: 67108864
+  peripherals:
+    - {name: UART0, type: uart, bus: apb}
+    - {name: UART1, type: uart, bus: apb}
+    - {name: UART2, type: uart, bus: apb}
+    - {name: SPI0, type: spi, bus: apb}
+    - {name: I2C0, type: i2c, bus: apb}
+    - {name: GPIO, type: gpio, bus: apb}
+    - {name: USB, type: usb, bus: ahb}
+    - {name: DMA, type: dma, bus: ahb}
+    - {name: LCD, type: display, bus: ahb}
+    - {name: ETH, type: ethernet, bus: ahb}
+    - {name: SDIO, type: sdio, bus: ahb}
+    - {name: CAMERA, type: camera, bus: ahb}
+  features: [xscale, intel, pda, networking]

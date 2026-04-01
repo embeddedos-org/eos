@@ -1,0 +1,25 @@
+# Board Definition — Generic RISC-V 64
+name: generic-riscv64
+description: Generic RISC-V 64-bit target (QEMU virt machine)
+arch: riscv64
+bsp: layers/bsp/generic-riscv64
+
+cpu: rv64gc
+memory: 256M
+storage: virtio-blk
+
+serial:
+  console: ttyS0
+  baudrate: 115200
+
+bootloader:
+  type: opensbi
+  payload: u-boot
+
+emulation:
+  command: qemu-system-riscv64
+  machine: virt
+  memory: 256
+  options:
+    - -nographic
+    - -bios opensbi-riscv64-generic-fw_dynamic.bin

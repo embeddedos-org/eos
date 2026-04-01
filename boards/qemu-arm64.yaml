@@ -1,0 +1,22 @@
+# Board Definition — QEMU ARM64
+name: qemu-arm64
+description: QEMU ARM64 virtual machine for development and testing
+arch: aarch64
+bsp: layers/bsp/qemu-arm64
+
+cpu: cortex-a57
+memory: 512M
+storage: virtio-blk
+
+serial:
+  console: ttyAMA0
+  baudrate: 115200
+
+emulation:
+  command: qemu-system-aarch64
+  machine: virt
+  cpu: cortex-a57
+  memory: 512
+  options:
+    - -nographic
+    - -serial mon:stdio

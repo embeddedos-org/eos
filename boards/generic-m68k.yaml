@@ -1,0 +1,23 @@
+board:
+  name: generic-m68k
+  mcu: MCF5307
+  family: ColdFire
+  arch: m68k
+  core: coldfire-v3
+  vendor: NXP
+  clock_hz: 90000000
+  memory:
+    flash: 2097152
+    ram: 4194304
+  peripherals:
+    - {name: UART0, type: uart, bus: peripheral}
+    - {name: UART1, type: uart, bus: peripheral}
+    - {name: SPI0, type: spi, bus: peripheral}
+    - {name: I2C0, type: i2c, bus: peripheral}
+    - {name: GPIO, type: gpio, bus: peripheral}
+    - {name: DMA, type: dma, bus: system}
+    - {name: TIMER0, type: timer, bus: peripheral}
+    - {name: TIMER1, type: timer, bus: peripheral}
+    - {name: WDT, type: watchdog, bus: peripheral}
+    - {name: ETH, type: ethernet, bus: system}
+  features: [m68k, coldfire, motorola, industrial]

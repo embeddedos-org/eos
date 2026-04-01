@@ -1,0 +1,33 @@
+# EoS Board: STM32F407 (Cortex-M4)
+board:
+  name: stm32f4
+  mcu: STM32F407VG
+  family: STM32F4
+  arch: arm
+  core: cortex-m4
+  vendor: ST Microelectronics
+  clock_hz: 168000000
+  memory:
+    flash: 1048576
+    ram: 196608
+  peripherals:
+    - {name: USART1, type: uart, bus: apb2}
+    - {name: USART2, type: uart, bus: apb1}
+    - {name: SPI1, type: spi, bus: apb2}
+    - {name: SPI2, type: spi, bus: apb1}
+    - {name: I2C1, type: i2c, bus: apb1}
+    - {name: I2C2, type: i2c, bus: apb1}
+    - {name: GPIO, type: gpio, count: 114}
+    - {name: ADC1, type: adc, bus: apb2, channels: 16}
+    - {name: DAC, type: dac, bus: apb1, channels: 2}
+    - {name: TIM1, type: timer, bus: apb2}
+    - {name: TIM2, type: timer, bus: apb1}
+    - {name: CAN1, type: can, bus: apb1}
+    - {name: USB_OTG, type: usb, speed: full}
+    - {name: ETH, type: ethernet, bus: ahb}
+    - {name: DMA1, type: dma, bus: ahb}
+    - {name: DMA2, type: dma, bus: ahb}
+    - {name: WDT, type: watchdog, bus: apb1}
+    - {name: RTC, type: rtc, bus: apb1}
+  features: [fpu, dsp, mpu, ethernet, can, usb, dma]
+  toolchain: arm-none-eabi

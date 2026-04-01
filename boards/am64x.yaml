@@ -1,0 +1,41 @@
+# EoS Board: TI AM64x Sitara (Cortex-A53 + Cortex-R5F)
+board:
+  name: am64x
+  mcu: AM6442
+  family: Sitara
+  arch: hybrid
+  vendor: Texas Instruments
+  cores:
+    - name: a53
+      arch: aarch64
+      core: cortex-a53
+      count: 2
+      clock_hz: 1000000000
+    - name: r5f
+      arch: arm
+      core: cortex-r5f
+      count: 2
+      clock_hz: 800000000
+  memory:
+    ospi_flash: 67108864
+    ddr: 2147483648
+    msram: 2097152
+  peripherals:
+    - {name: UART0, type: uart, bus: peripheral}
+    - {name: UART1, type: uart, bus: peripheral}
+    - {name: SPI0, type: spi, bus: peripheral}
+    - {name: I2C0, type: i2c, bus: peripheral}
+    - {name: GPIO, type: gpio, count: 92}
+    - {name: MCAN0, type: can, bus: peripheral}
+    - {name: MCAN1, type: can, bus: peripheral}
+    - {name: CPSW, type: ethernet, speed: gigabit, ports: 2}
+    - {name: USB, type: usb, speed: high}
+    - {name: ADC, type: adc, channels: 8}
+    - {name: PWM, type: pwm, channels: 9}
+    - {name: DMA, type: dma, bus: system}
+    - {name: WDT, type: watchdog, bus: peripheral}
+    - {name: RTC, type: rtc, bus: peripheral}
+    - {name: OSPI, type: spi, bus: peripheral, quad: true}
+    - {name: PCIE, type: pcie, lanes: 1}
+  features: [multicore, amp, industrial, pru, crypto, gigabit_eth, can_fd]
+  toolchain: aarch64-linux-gnu

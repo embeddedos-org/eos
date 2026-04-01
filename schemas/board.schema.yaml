@@ -1,0 +1,99 @@
+# EoS Board Schema — machine-readable board definition format
+# Used by ebuild's LLM to generate and validate board configs
+
+board:
+  name:
+    type: string
+    required: true
+    description: Board identifier (lowercase, no spaces)
+
+  mcu:
+    type: string
+    required: true
+    description: MCU part number (e.g., STM32F407VG, nRF52840)
+
+  family:
+    type: string
+    required: false
+    description: MCU family (e.g., STM32F4, nRF52, ESP32)
+
+  arch:
+    type: string
+    required: true
+    enum: [arm, arm64, riscv32, riscv64, xtensa, x86_64]
+
+  core:
+    type: string
+    required: true
+    enum: [cortex-m0, cortex-m0+, cortex-m3, cortex-m4, cortex-m4f,
+           cortex-m7, cortex-m33, cortex-m55,
+           cortex-a7, cortex-a9, cortex-a35, cortex-a53, cortex-a55, cortex-a72,
+           cortex-r5, cortex-r5f,
+           lx6, lx7,
+           rv32imc, rv64gc]
+
+  vendor:
+    type: string
+    required: false
+    enum: [ST, Nordic, Espressif, NXP, TI, Microchip, Raspberry Pi, SiFive, Intel, AMD]
+
+  clock_hz:
+    type: integer
+    required: true
+    description: Maximum system clock in Hz
+
+  memory:
+    type: object
+    properties:
+      flash:
+        type: integer
+        description: Flash size in bytes
+      ram:
+        type: integer
+        description: RAM size in bytes
+      flash_base:
+        type: string
+        description: Flash base address (hex string)
+        default: "0x08000000"
+      ram_base:
+        type: string
+        description: RAM base address (hex string)
+        default: "0x20000000"
+
+  peripherals:
+    type: array
+    items:
+      type: object
+      properties:
+        name:
+          type: string
+        type:
+          type: string
+          enum: [uart, spi, i2c, can, usb, adc, dac, pwm, timer,
+                 gpio, ethernet, wifi, ble, camera, display, sdio,
+                 watchdog, rtc, dma, motor, nfc, gps, imu, audio,
+                 hdmi, gpu, pcie, cellular, ir, radar, haptic, touch,
+                 flash_ctrl]
+        bus:
+          type: string
+        irq:
+          type: integer
+        pins:
+          type: array
+          items:
+            type: object
+            properties:
+              pin: { type: string }
+              function: { type: string }
+              af: { type: integer }
+
+  features:
+    type: array
+    items:
+      type: string
+      enum: [fpu, dsp, mpu, trustzone, crypto_accelerator,
+             dual_core, multicore, low_power, safety]
+
+  supply_voltage:
+    type: number
+    default: 3.3

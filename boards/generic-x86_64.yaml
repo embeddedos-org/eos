@@ -1,0 +1,54 @@
+# Board Definition — Generic x86_64
+board:
+  name: generic-x86_64
+  description: Generic x86_64 PC / VM target
+  arch: x86_64
+  bsp: layers/bsp/generic-x86
+
+  cpu: x86_64
+  vendor: Intel
+  clock_hz: 3000000000
+
+  peripherals:
+    - {name: COM1, type: uart, bus: isa}
+    - {name: COM2, type: uart, bus: isa}
+    - {name: GPIO, type: gpio, bus: pci, note: "via PCH GPIO"}
+    - {name: DMA, type: dma, bus: system}
+    - {name: TIMER, type: timer, bus: system, note: "HPET/APIC timer"}
+    - {name: ETH, type: ethernet, bus: pcie, speed: gigabit}
+    - {name: USB, type: usb, bus: pcie, speed: high}
+    - {name: DISPLAY, type: display, bus: pcie, note: "GPU framebuffer"}
+    - {name: PCIE, type: pcie, bus: system}
+    - {name: NVME, type: flash, bus: pcie}
+    - {name: SPI, type: spi, bus: pci, note: "PCH SPI controller (BIOS flash)"}
+    - {name: I2C, type: i2c, bus: pci, note: "SMBus / PCH I2C"}
+    - {name: WDT, type: watchdog, bus: acpi, note: "iTCO watchdog timer"}
+    - {name: AUDIO, type: audio, bus: pcie, note: "HDA audio"}
+
+  features: [x86_64, uefi, acpi, pcie, nvme, smbios]
+
+  external_peripherals:
+    - {name: ADC, type: adc, bus: usb, note: "via USB DAQ or SPI ADC on I2C/SPI"}
+    - {name: PWM, type: pwm, bus: pci, note: "via PCIe PWM card"}
+    - {name: CAMERA, type: camera, bus: usb, note: "UVC USB webcam"}
+    - {name: GNSS, type: gnss, bus: uart, note: "via COM port GPS receiver"}
+    - {name: IMU, type: imu, bus: usb, note: "via USB IMU or I2C"}
+    - {name: CAN, type: can, bus: pcie, note: "via PCIe CAN card (PCAN)"}
+    - {name: WIFI, type: wifi, bus: pcie, note: "via PCIe WiFi card (Intel AX200)"}
+    - {name: BLE, type: ble, bus: usb, note: "via USB BLE dongle"}
+
+serial:
+  console: ttyS0
+  baudrate: 115200
+
+boot:
+  method: grub2
+  target: uefi
+
+emulation:
+  command: qemu-system-x86_64
+  memory: 1024
+  options:
+    - -enable-kvm
+    - -nographic
+    - -serial mon:stdio

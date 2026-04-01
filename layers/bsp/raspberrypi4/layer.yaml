@@ -1,0 +1,44 @@
+# BSP Layer — Raspberry Pi 4
+name: raspberrypi4
+type: bsp
+description: Raspberry Pi 4 Model B BSP
+
+machine: raspberrypi4
+arch: aarch64
+
+kernel:
+  provider: kbuild
+  defconfig: bcm2711_defconfig
+  image: Image
+  dtb: bcm2711-rpi-4-b.dtb
+
+bootloader:
+  type: custom
+  files:
+    - bootcode.bin
+    - start4.elf
+    - fixup4.dat
+    - config.txt
+    - cmdline.txt
+
+device_tree:
+  source: arch/arm64/boot/dts/broadcom/bcm2711-rpi-4-b.dts
+
+image:
+  format: raw
+  size_mb: 512
+  partitions:
+    - name: boot
+      filesystem: fat32
+      size_mb: 128
+    - name: rootfs
+      filesystem: ext4
+      size_mb: 384
+
+config_txt: |
+  arm_64bit=1
+  kernel=Image
+  device_tree=bcm2711-rpi-4-b.dtb
+  enable_uart=1
+
+cmdline_txt: "console=serial0,115200 console=tty1 root=/dev/mmcblk0p2 rootfstype=ext4 rootwait"

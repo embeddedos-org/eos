@@ -1,0 +1,19 @@
+# EoS Board: STM32MP1 (Cortex-A7 + Cortex-M4 hybrid)
+name: stm32mp1
+arch: hybrid
+cores:
+  - name: a7
+    arch: arm
+    type: linux
+    toolchain: aarch64-linux-gnu
+  - name: m4
+    arch: arm-cortex-m
+    type: rtos
+    toolchain: arm-none-eabi
+vendor: ST Microelectronics
+memory:
+  ddr: 512M
+  sram: 256K
+features:
+  gpu: true
+  crypto: true

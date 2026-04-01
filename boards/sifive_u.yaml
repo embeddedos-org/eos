@@ -1,0 +1,35 @@
+# EoS Board: SiFive HiFive Unmatched (RISC-V U74, quad-core)
+board:
+  name: sifive_u
+  mcu: FU740-C000
+  family: HiFive
+  arch: riscv64
+  core: u74
+  vendor: SiFive
+  clock_hz: 1200000000
+  cores: 4
+  memory:
+    spi_flash: 33554432
+    ddr: 8589934592
+  peripherals:
+    - {name: UART0, type: uart, bus: peripheral}
+    - {name: UART1, type: uart, bus: peripheral}
+    - {name: SPI0, type: spi, bus: peripheral}
+    - {name: SPI1, type: spi, bus: peripheral}
+    - {name: I2C0, type: i2c, bus: peripheral}
+    - {name: GPIO, type: gpio, count: 16}
+    - {name: ETH, type: ethernet, speed: gigabit}
+    - {name: USB, type: usb, speed: high}
+    - {name: PCIE, type: pcie, lanes: 8}
+    - {name: DMA, type: dma, bus: system}
+    - {name: WDT, type: watchdog, bus: peripheral}
+  features: [riscv, multicore, smp, pcie, gigabit_eth, linux]
+  external_peripherals:
+    - {name: GNSS, type: gnss, bus: uart, note: "via u-blox NEO-M8N on UART"}
+    - {name: IMU, type: imu, bus: i2c, note: "via MPU6050/BMI270 on I2C"}
+    - {name: DISPLAY, type: display, bus: spi, note: "via SPI TFT (ILI9341/ST7789)"}
+    - {name: ADC, type: adc, bus: spi, note: "via MCP3008/ADS1115 on SPI/I2C"}
+    - {name: PWM, type: pwm, bus: peripheral, note: "SiFive PWM controller"}
+    - {name: MOTOR, type: motor, bus: pwm, note: "via DRV8833/A4988 on GPIO+PWM"}
+    - {name: CAN, type: can, bus: spi, note: "via MCP2515 on SPI"}
+  toolchain: riscv64-linux-gnu

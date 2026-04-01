@@ -1,0 +1,10 @@
+# EoS BSP Layer: STM32MP1 (Hybrid Cortex-A7 + Cortex-M4)
+layer:
+  name: bsp-stm32mp1
+  type: bsp
+  description: Board support for STM32MP1 hybrid SoC (Linux + RTOS)
+  board: stm32mp1
+  provides:
+    - hal-stm32mp1
+    - linux-bsp-stm32mp1
+    - rtos-bsp-stm32mp1-m4

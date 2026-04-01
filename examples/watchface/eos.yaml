@@ -1,0 +1,13 @@
+name: watchface
+version: "1.0.0"
+description: "Smartwatch watchface — digital + analog faces with swipe gestures"
+product: watch
+backend: cmake
+cmake:
+  defines:
+    EOS_PRODUCT: "watch"
+    EOS_BUILD_TESTS: "OFF"
+dependencies:
+  - eos_hal
+  - eos_ui
+  - lvgl

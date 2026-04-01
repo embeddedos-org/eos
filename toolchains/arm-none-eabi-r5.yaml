@@ -1,0 +1,9 @@
+# EoS Toolchain: ARM bare-metal (Cortex-R5 real-time processors)
+name: arm-none-eabi-r5
+target: arm-none-eabi
+cc: arm-none-eabi-gcc
+cxx: arm-none-eabi-g++
+ar: arm-none-eabi-ar
+ld: arm-none-eabi-ld
+cflags: -mcpu=cortex-r5 -mfloat-abi=hard -mfpu=vfpv3-d16
+ldflags: -specs=nosys.specs -specs=nano.specs

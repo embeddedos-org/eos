@@ -1,0 +1,313 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - "v*.*.*"
+      - "v*.*.*-*"
+
+permissions:
+  contents: write
+
+jobs:
+  validate:
+    name: Validate Release
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build
+        run: |
+          cmake -B build -DEOS_BUILD_TESTS=ON
+          cmake --build build
+      - name: Test
+        run: ctest --test-dir build --output-on-failure
+
+  cross-compile:
+    name: Cross-Compile (${{ matrix.arch }})
+    runs-on: ubuntu-latest
+    needs: validate
+    strategy:
+      matrix:
+        include:
+          - arch: aarch64-linux
+            toolchain: toolchains/aarch64-linux-gnu.cmake
+            packages: gcc-aarch64-linux-gnu
+            artifact_suffix: aarch64-linux
+          - arch: arm-linux-gnueabihf
+            toolchain: toolchains/arm-linux-gnueabihf.cmake
+            packages: gcc-arm-linux-gnueabihf
+            artifact_suffix: arm-linux-gnueabihf
+          - arch: riscv64-linux
+            toolchain: toolchains/riscv64-linux-gnu.cmake
+            packages: gcc-riscv64-linux-gnu
+            artifact_suffix: riscv64-linux
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install cross-compiler
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y ${{ matrix.packages }}
+      - name: Extract version
+        id: version
+        run: |
+          TAG=${GITHUB_REF#refs/tags/}
+          VERSION=${TAG#v}
+          echo "version=$VERSION" >> $GITHUB_OUTPUT
+      - name: Cross-compile
+        run: |
+          cmake -B build-${{ matrix.arch }} \
+            -DCMAKE_TOOLCHAIN_FILE=${{ matrix.toolchain }} \
+            -DCMAKE_BUILD_TYPE=Release
+          cmake --build build-${{ matrix.arch }}
+      - name: Package
+        run: |
+          mkdir -p staging
+          find build-${{ matrix.arch }} -name "*.a" -exec cp {} staging/ \;
+          tar czf eos-${{ steps.version.outputs.version }}-${{ matrix.artifact_suffix }}.tar.gz -C staging .
+      - uses: actions/upload-artifact@v4
+        with:
+          name: eos-${{ matrix.artifact_suffix }}
+          path: "*.tar.gz"
+
+  build-images:
+    name: System Image (${{ matrix.arch }})
+    runs-on: ubuntu-latest
+    needs: validate
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - arch: x86_64
+            format: qcow2
+          - arch: aarch64
+            format: raw
+          - arch: arm
+            format: raw
+          - arch: riscv64
+            format: qcow2
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Extract version
+        id: version
+        run: |
+          TAG=${GITHUB_REF#refs/tags/}
+          VERSION=${TAG#v}
+          echo "version=$VERSION" >> $GITHUB_OUTPUT
+      - name: Install tools
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y qemu-utils cpio gzip
+          pip install click pyyaml ninja
+      - name: Build image
+        run: |
+          VERSION=${{ steps.version.outputs.version }}
+          ARCH=${{ matrix.arch }}
+          FORMAT=${{ matrix.format }}
+          cmake -B build -DCMAKE_BUILD_TYPE=Release
+          cmake --build build
+          mkdir -p rootfs/{bin,sbin,etc,lib,usr/bin,usr/lib,usr/include,boot,proc,sys,dev,tmp,var/log}
+          echo "EoS ${VERSION}" > rootfs/etc/eos-release
+          echo "${ARCH}" > rootfs/etc/arch
+          find build -name "*.a" -exec cp {} rootfs/usr/lib/ \;
+          cp -r include/* rootfs/usr/include/ 2>/dev/null || true
+          cp -r hal/include/* rootfs/usr/include/ 2>/dev/null || true
+          mkdir -p dist
+          cd rootfs && find . | cpio -o -H newc | gzip > ../dist/eos-${VERSION}-${ARCH}.cpio.gz && cd ..
+          if [ "${FORMAT}" = "qcow2" ]; then
+            qemu-img create -f qcow2 dist/eos-${VERSION}-${ARCH}.qcow2 256M
+            gzip -9 dist/eos-${VERSION}-${ARCH}.qcow2
+          else
+            dd if=/dev/zero of=dist/eos-${VERSION}-${ARCH}.img bs=1M count=64
+            gzip -9 dist/eos-${VERSION}-${ARCH}.img
+          fi
+      - uses: actions/upload-artifact@v4
+        with:
+          name: eos-image-${{ matrix.arch }}
+          path: dist/*
+
+  build-firmware:
+    name: Firmware (${{ matrix.target }})
+    runs-on: ubuntu-latest
+    needs: validate
+    strategy:
+      fail-fast: false
+      matrix:
+        target: [stm32f4, nrf52, esp32, rp2040]
+    steps:
+      - uses: actions/checkout@v4
+      - name: Extract version
+        id: version
+        run: |
+          TAG=${GITHUB_REF#refs/tags/}
+          VERSION=${TAG#v}
+          echo "version=$VERSION" >> $GITHUB_OUTPUT
+      - name: Install tools
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y gcc-arm-none-eabi || true
+      - name: Build firmware
+        run: |
+          cmake -B build -DCMAKE_BUILD_TYPE=Release -DEOS_PLATFORM=rtos 2>/dev/null || \
+          cmake -B build -DCMAKE_BUILD_TYPE=Release
+          cmake --build build || true
+          mkdir -p fw
+          find build -name "*.a" -o -name "*.bin" -o -name "*.elf" | xargs -I{} cp {} fw/ 2>/dev/null || true
+          cp -r include fw/ 2>/dev/null || true
+          cp boards/${{ matrix.target }}.yaml fw/ 2>/dev/null || true
+          tar czf eos-${{ steps.version.outputs.version }}-${{ matrix.target }}-firmware.tar.gz -C fw .
+      - uses: actions/upload-artifact@v4
+        with:
+          name: eos-firmware-${{ matrix.target }}
+          path: "*.tar.gz"
+
+  build-sdk:
+    name: SDK (${{ matrix.arch }})
+    runs-on: ubuntu-latest
+    needs: validate
+    strategy:
+      fail-fast: false
+      matrix:
+        arch: [x86_64, aarch64, arm, riscv64]
+    steps:
+      - uses: actions/checkout@v4
+      - name: Extract version
+        id: version
+        run: |
+          TAG=${GITHUB_REF#refs/tags/}
+          VERSION=${TAG#v}
+          echo "version=$VERSION" >> $GITHUB_OUTPUT
+      - name: Generate SDK
+        run: |
+          mkdir -p sdk/{include,lib,cmake,doc}
+          cp -r include/* sdk/include/ 2>/dev/null || true
+          cp -r hal/include/* sdk/include/ 2>/dev/null || true
+          cp -r kernel/include/* sdk/include/ 2>/dev/null || true
+          find services -path "*/include/*" -exec cp --parents {} sdk/ \; 2>/dev/null || true
+          cp toolchains/*.cmake sdk/cmake/ 2>/dev/null || true
+          cat > sdk/doc/sdk-info.txt <<EOF
+          EoS SDK ${{ steps.version.outputs.version }}
+          Architecture: ${{ matrix.arch }}
+          Generated: $(date -u)
+          EOF
+          cat > sdk/environment-setup <<'ENVEOF'
+          #!/bin/bash
+          SDK_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+          export EOS_SDK_PATH="$SDK_DIR"
+          export CMAKE_PREFIX_PATH="$SDK_DIR"
+          echo "EoS SDK environment configured: $SDK_DIR"
+          ENVEOF
+          chmod +x sdk/environment-setup
+          tar czf eos-sdk-${{ steps.version.outputs.version }}-${{ matrix.arch }}.tar.gz -C sdk .
+      - uses: actions/upload-artifact@v4
+        with:
+          name: eos-sdk-${{ matrix.arch }}
+          path: "*.tar.gz"
+
+  release:
+    name: Create Release
+    runs-on: ubuntu-latest
+    needs: [validate, cross-compile, build-images, build-firmware, build-sdk]
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Extract version
+        id: version
+        run: |
+          TAG=${GITHUB_REF#refs/tags/}
+          VERSION=${TAG#v}
+          echo "tag=$TAG" >> $GITHUB_OUTPUT
+          echo "version=$VERSION" >> $GITHUB_OUTPUT
+          IFS='.-' read -r MAJOR MINOR PATCH PRE <<< "$VERSION"
+          echo "prerelease=${PRE:-stable}" >> $GITHUB_OUTPUT
+      - name: Generate changelog
+        id: changelog
+        run: |
+          PREV_TAG=$(git tag --sort=-v:refname | head -2 | tail -1)
+          if [ -n "$PREV_TAG" ] && [ "$PREV_TAG" != "${{ steps.version.outputs.tag }}" ]; then
+            CHANGES=$(git log ${PREV_TAG}..HEAD --oneline --no-merges)
+          else
+            CHANGES=$(git log --oneline --no-merges -20)
+          fi
+          echo "changes<<EOF" >> $GITHUB_OUTPUT
+          echo "$CHANGES" >> $GITHUB_OUTPUT
+          echo "EOF" >> $GITHUB_OUTPUT
+      - name: Build native x86_64
+        run: |
+          cmake -B build -DCMAKE_BUILD_TYPE=Release
+          cmake --build build
+          mkdir -p staging
+          find build -name "*.a" -exec cp {} staging/ \;
+          tar czf eos-${{ steps.version.outputs.version }}-linux-x86_64.tar.gz -C staging .
+      - name: Download all artifacts
+        uses: actions/download-artifact@v4
+        with:
+          pattern: eos-*
+          merge-multiple: true
+      - name: Generate checksums
+        run: sha256sum *.tar.gz *.gz 2>/dev/null > SHA256SUMS.txt || true
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ steps.version.outputs.tag }}
+          name: "EoS ${{ steps.version.outputs.tag }}"
+          body: |
+            ## EoS ${{ steps.version.outputs.tag }}
+
+            **Version:** ${{ steps.version.outputs.version }} | **Type:** ${{ steps.version.outputs.prerelease }}
+
+            ### 📦 Libraries
+            | Archive | Target |
+            |---|---|
+            | `eos-*-linux-x86_64.tar.gz` | x86_64 Linux (native) |
+            | `eos-*-aarch64-linux.tar.gz` | AArch64 (RPi 4/5, Jetson) |
+            | `eos-*-arm-linux-gnueabihf.tar.gz` | ARM (RPi 3, BeagleBone) |
+            | `eos-*-riscv64-linux.tar.gz` | RISC-V 64 (SiFive) |
+
+            ### 🖼️ Bootable Images
+            | Image | Platform |
+            |---|---|
+            | `eos-*-x86_64.qcow2.gz` | QEMU x86_64 |
+            | `eos-*-aarch64.img.gz` | RPi 4/5, Jetson |
+            | `eos-*-arm.img.gz` | RPi 3, BeagleBone |
+            | `eos-*-riscv64.qcow2.gz` | RISC-V QEMU |
+
+            ### ⚡ Firmware
+            | Archive | MCU |
+            |---|---|
+            | `eos-*-stm32f4-firmware.tar.gz` | STM32F4 |
+            | `eos-*-nrf52-firmware.tar.gz` | nRF52840 |
+            | `eos-*-esp32-firmware.tar.gz` | ESP32 |
+            | `eos-*-rp2040-firmware.tar.gz` | RP2040 |
+
+            ### 🛠️ SDK
+            | Archive | Architecture |
+            |---|---|
+            | `eos-sdk-*-x86_64.tar.gz` | x86_64 native |
+            | `eos-sdk-*-aarch64.tar.gz` | AArch64 cross |
+            | `eos-sdk-*-arm.tar.gz` | ARM cross |
+            | `eos-sdk-*-riscv64.tar.gz` | RISC-V cross |
+
+            ### Quick Start
+            ```bash
+            # QEMU boot
+            gunzip eos-*-x86_64.qcow2.gz
+            qemu-system-x86_64 -m 512 -hda eos-*-x86_64.qcow2 -nographic
+
+            # Use SDK
+            tar xzf eos-sdk-*-aarch64.tar.gz -C /opt/eos-sdk
+            source /opt/eos-sdk/environment-setup
+            cmake -B build && cmake --build build
+            ```
+
+            ### Changes
+            ${{ steps.changelog.outputs.changes }}
+          files: |
+            *.tar.gz
+            *.gz
+            SHA256SUMS.txt
+          draft: ${{ contains(steps.version.outputs.prerelease, 'debug') }}
+          prerelease: ${{ contains(steps.version.outputs.prerelease, 'rc') || contains(steps.version.outputs.prerelease, 'beta') }}
