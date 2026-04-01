@@ -1,0 +1,28 @@
+name: Cross-Repo Dispatch
+
+on:
+  push:
+    branches: [master]
+
+jobs:
+  notify-dependents:
+    name: Trigger dependent repos
+    runs-on: ubuntu-latest
+    steps:
+      - name: Dispatch to dependents
+        env:
+          GH_TOKEN: ${{ secrets.CROSS_REPO_PAT }}
+        run: |
+          echo "========================================"
+          echo "  Cross-Repo CI Dispatch"
+          echo "  Source: eos @ ${{ github.sha }}"
+          echo "========================================"
+          for repo in eboot eai eni ebuild eipc eApps eosim EoStudio; do
+            echo "Dispatching to $repo..."
+            gh api repos/embeddedos-org/$repo/dispatches \
+              -X POST -f event_type=dependency-update \
+              -f client_payload[source]=eos \
+              -f client_payload[sha]=${{ github.sha }} \
+              -f client_payload[ref]=${{ github.ref }} 2>&1 || echo "  (dispatch to $repo skipped — may need PAT)"
+          done
+          echo "All dispatches sent"

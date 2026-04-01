@@ -1,0 +1,26 @@
+# Product Layer — Demo
+name: demo
+type: product
+description: Demo product layer for EoS evaluation
+
+branding:
+  name: EoS Demo
+  version: 0.1.0
+
+features:
+  - networking
+  - serial_console
+  - ssh_server
+
+packages:
+  - name: dropbear
+    version: 2022.83
+    source: https://matt.ucc.asn.au/dropbear/releases/dropbear-2022.83.tar.bz2
+    build:
+      type: make
+    deps:
+      - zlib
+
+release:
+  image_name: eos-demo
+  compression: gzip

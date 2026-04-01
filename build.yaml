@@ -1,0 +1,17 @@
+# EoS — Embedded Operating System
+# Build with: ebuild build
+# ebuild auto-detects CMakeLists.txt and uses the cmake backend.
+
+name: eos
+version: "0.5.0"
+backend: cmake
+
+cmake:
+  build_type: Release
+  defines:
+    EOS_BUILD_TESTS: "ON"
+    EOS_PLATFORM: "linux"
+
+toolchain:
+  compiler: gcc
+  arch: x86_64

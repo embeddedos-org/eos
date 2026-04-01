@@ -1,0 +1,155 @@
+# EoS HAL Mapping — maps hardware concepts to EoS HAL APIs
+# Used by ebuild's LLM to understand which HAL modules to enable
+
+hal_interfaces:
+  gpio:
+    header: eos/hal.h
+    api_prefix: eos_gpio_
+    enable_flag: EOS_ENABLE_GPIO
+    description: General Purpose I/O
+    functions: [init, read, write, toggle, set_mode, set_irq]
+
+  uart:
+    header: eos/hal.h
+    api_prefix: eos_uart_
+    enable_flag: EOS_ENABLE_UART
+    description: Universal Asynchronous Receiver-Transmitter
+    functions: [init, send, recv, set_baud, flush]
+    typical_pins: [TX, RX, RTS, CTS]
+
+  spi:
+    header: eos/hal.h
+    api_prefix: eos_spi_
+    enable_flag: EOS_ENABLE_SPI
+    description: Serial Peripheral Interface
+    functions: [init, transfer, send, recv, set_speed]
+    typical_pins: [MOSI, MISO, SCK, CS]
+
+  i2c:
+    header: eos/hal.h
+    api_prefix: eos_i2c_
+    enable_flag: EOS_ENABLE_I2C
+    description: Inter-Integrated Circuit
+    functions: [init, write, read, transfer]
+    typical_pins: [SCL, SDA]
+
+  timer:
+    header: eos/hal.h
+    api_prefix: eos_timer_
+    enable_flag: EOS_ENABLE_TIMER
+    description: Hardware Timer
+    functions: [init, start, stop, set_period, get_count]
+
+  adc:
+    header: eos/hal_extended.h
+    api_prefix: eos_adc_
+    enable_flag: EOS_ENABLE_ADC
+    description: Analog-to-Digital Converter
+    functions: [init, read, read_mv, set_resolution]
+
+  dac:
+    header: eos/hal_extended.h
+    api_prefix: eos_dac_
+    enable_flag: EOS_ENABLE_DAC
+    description: Digital-to-Analog Converter
+    functions: [init, write, write_mv]
+
+  pwm:
+    header: eos/hal_extended.h
+    api_prefix: eos_pwm_
+    enable_flag: EOS_ENABLE_PWM
+    description: Pulse Width Modulation
+    functions: [init, set_duty, set_frequency, start, stop]
+
+  can:
+    header: eos/hal_extended.h
+    api_prefix: eos_can_
+    enable_flag: EOS_ENABLE_CAN
+    description: Controller Area Network
+    functions: [init, send, recv, set_filter, set_bitrate]
+    typical_pins: [TX, RX]
+
+  usb:
+    header: eos/hal_extended.h
+    api_prefix: eos_usb_
+    enable_flag: EOS_ENABLE_USB
+    description: Universal Serial Bus
+    functions: [init, send, recv, set_class]
+    typical_pins: [DP, DM, VBUS, ID]
+
+  ethernet:
+    header: eos/hal_extended.h
+    api_prefix: eos_eth_
+    enable_flag: EOS_ENABLE_ETHERNET
+    description: Ethernet MAC/PHY
+    functions: [init, send, recv, get_link_status]
+
+  wifi:
+    header: eos/hal_extended.h
+    api_prefix: eos_wifi_
+    enable_flag: EOS_ENABLE_WIFI
+    description: Wi-Fi Radio
+    functions: [init, connect, disconnect, scan, send, recv]
+
+  ble:
+    header: eos/hal_extended.h
+    api_prefix: eos_ble_
+    enable_flag: EOS_ENABLE_BLE
+    description: Bluetooth Low Energy
+    functions: [init, advertise, connect, send, recv, scan]
+
+  camera:
+    header: eos/hal_extended.h
+    api_prefix: eos_camera_
+    enable_flag: EOS_ENABLE_CAMERA
+    description: Camera Interface (DCMI/CSI)
+    functions: [init, capture, stream_start, stream_stop]
+
+  display:
+    header: eos/hal_extended.h
+    api_prefix: eos_display_
+    enable_flag: EOS_ENABLE_DISPLAY
+    description: Display Controller (LCD/LTDC)
+    functions: [init, draw_pixel, fill_rect, set_backlight]
+
+  motor:
+    header: eos/motor_ctrl.h
+    api_prefix: eos_motor_
+    enable_flag: EOS_ENABLE_MOTOR
+    description: Motor Control (DC/BLDC/Stepper)
+    functions: [init, set_speed, set_direction, stop, get_position]
+
+  watchdog:
+    header: eos/hal_extended.h
+    api_prefix: eos_wdt_
+    enable_flag: EOS_ENABLE_WDT
+    description: Watchdog Timer
+    functions: [init, start, kick, set_timeout]
+
+  rtc:
+    header: eos/hal_extended.h
+    api_prefix: eos_rtc_
+    enable_flag: EOS_ENABLE_RTC
+    description: Real-Time Clock
+    functions: [init, get_time, set_time, set_alarm]
+
+  dma:
+    header: eos/hal_extended.h
+    api_prefix: eos_dma_
+    enable_flag: EOS_ENABLE_DMA
+    description: Direct Memory Access
+    functions: [init, start, stop, set_callback]
+
+  gnss:
+    header: eos/hal_extended.h
+    api_prefix: eos_gnss_
+    enable_flag: EOS_ENABLE_GNSS
+    description: GPS/GNSS Receiver
+    functions: [init, get_position, get_speed, get_time]
+
+  imu:
+    header: eos/hal_extended.h
+    api_prefix: eos_imu_
+    enable_flag: EOS_ENABLE_IMU
+    description: Inertial Measurement Unit (Accelerometer + Gyroscope)
+    functions: [init, read_accel, read_gyro, read_mag, calibrate]

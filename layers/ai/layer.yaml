@@ -1,0 +1,87 @@
+# AI Integration Layer — EAI + ENI + EIPC integration into EoS
+name: ai
+description: >
+  Integrates the EAI (AI Layer), ENI (Neural Interface Adapter), and EIPC
+  (Embedded IPC) into the EoS build system. Provides common headers,
+  build configuration, and deployment profiles for embedded AI workloads.
+priority: 50
+
+variants:
+  min:
+    description: Lightweight AI agent runtime (EAI-Min + ENI-Min + EIPC-Min)
+    components:
+      - eai-min
+      - eni-min
+      - eipc-core
+    footprint:
+      ram_kb: 512
+      flash_kb: 256
+
+  framework:
+    description: Industrial AI platform (EAI-Framework + ENI-Framework + EIPC-Framework)
+    components:
+      - eai-framework
+      - eni-framework
+      - eipc-core
+      - eipc-broker
+      - eipc-policy
+    footprint:
+      ram_kb: 4096
+      flash_kb: 2048
+
+packages:
+  eai-min:
+    source: ../../../eai
+    build: cmake
+    defines:
+      EAI_VARIANT: min
+      EAI_EIPC_ENABLED: "ON"
+
+  eai-framework:
+    source: ../../../eai
+    build: cmake
+    defines:
+      EAI_VARIANT: framework
+      EAI_EIPC_ENABLED: "ON"
+
+  eni-min:
+    source: ../../../eni
+    build: cmake
+    defines:
+      ENI_VARIANT: min
+      ENI_EIPC_ENABLED: "ON"
+
+  eni-framework:
+    source: ../../../eni
+    build: cmake
+    defines:
+      ENI_VARIANT: framework
+      ENI_EIPC_ENABLED: "ON"
+
+  eipc-core:
+    source: ../../../eipc/sdk/c
+    build: cmake
+
+  eipc-broker:
+    source: ../../../eipc
+    build: go
+    binary: eipc-server
+
+  eipc-policy:
+    source: ../../../eipc
+    build: go
+    binary: eipc-policyd
+
+eos_integration:
+  config_flags:
+    - EOS_ENABLE_AI
+    - EOS_ENABLE_ENI
+    - EOS_ENABLE_EIPC
+  hal_deps:
+    - uart
+    - spi
+    - gpio
+  kernel_deps:
+    - task
+    - sync
+    - ipc

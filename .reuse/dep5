@@ -1,0 +1,7 @@
+Format: https://www.debian.org/doc/packaging-manuals/copyright-format/1.0/
+Upstream-Name: eos
+Source: https://github.com/embeddedos-org/eos
+
+Files: *
+Copyright: 2026 EoS Project
+License: MIT

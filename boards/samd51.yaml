@@ -1,0 +1,27 @@
+# EoS Board: Microchip SAMD51 (Cortex-M4F)
+board:
+  name: samd51
+  mcu: ATSAMD51J20A
+  family: SAMD51
+  arch: arm
+  core: cortex-m4f
+  vendor: Microchip
+  clock_hz: 120000000
+  memory:
+    flash: 524288
+    ram: 196608
+  peripherals:
+    - {name: SERCOM0, type: uart, bus: apb}
+    - {name: SERCOM1, type: spi, bus: apb}
+    - {name: SERCOM2, type: i2c, bus: apb}
+    - {name: GPIO, type: gpio, count: 64}
+    - {name: ADC0, type: adc, bus: apb, channels: 16}
+    - {name: DAC, type: dac, bus: apb, channels: 2}
+    - {name: TC0, type: timer, bus: apb}
+    - {name: TCC0, type: pwm, bus: apb}
+    - {name: USB, type: usb, speed: full}
+    - {name: DMA, type: dma, bus: ahb}
+    - {name: WDT, type: watchdog, bus: apb}
+    - {name: RTC, type: rtc, bus: apb}
+  features: [fpu, dsp, usb, dma, arduino, adafruit]
+  toolchain: arm-none-eabi

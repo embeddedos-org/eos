@@ -1,0 +1,10 @@
+# ARM64 (AArch64) Cross-Compilation Toolchain
+name: aarch64-linux-gnu
+target: aarch64-linux-gnu
+cc: aarch64-linux-gnu-gcc
+cxx: aarch64-linux-gnu-g++
+ar: aarch64-linux-gnu-ar
+ld: aarch64-linux-gnu-ld
+sysroot: /usr/aarch64-linux-gnu
+cflags: -march=armv8-a -O2
+ldflags: -Wl,--as-needed
