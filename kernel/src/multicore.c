@@ -102,7 +102,7 @@ int eos_core_stop(uint8_t core_id)
 {
     if (!mc_initialized || core_id >= EOS_MAX_CORES) return -1;
     if (core_id == 0) return -1; /* can't stop boot core */
-    cores[core_id].state = EOS_CORE_HALTED;
+    cores[core_id].state = EOS_CORE_OFFLINE;
     return 0;
 }
 
@@ -237,17 +237,23 @@ void eos_shmem_invalidate(const eos_shmem_region_t *region)
 
 /* ---- Task Core Affinity ---- */
 
+#define MAX_TASKS_AFFINITY 64
+static eos_core_mask_t task_affinity[MAX_TASKS_AFFINITY];
+static bool task_affinity_set[MAX_TASKS_AFFINITY];
+
 int eos_task_set_affinity(uint32_t task_id, eos_core_mask_t mask)
 {
-    (void)task_id; (void)mask;
-    return 0; /* stub */
+    if (task_id >= MAX_TASKS_AFFINITY) return -1;
+    task_affinity[task_id] = mask;
+    task_affinity_set[task_id] = true;
+    return 0;
 }
 
 int eos_task_get_affinity(uint32_t task_id, eos_core_mask_t *mask)
 {
     if (!mask) return -1;
-    (void)task_id;
-    *mask = EOS_CORE_MASK_ALL;
+    if (task_id >= MAX_TASKS_AFFINITY) return -1;
+    *mask = task_affinity_set[task_id] ? task_affinity[task_id] : EOS_CORE_MASK_ALL;
     return 0;
 }
 

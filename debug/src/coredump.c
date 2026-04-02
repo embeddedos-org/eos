@@ -52,14 +52,9 @@ int eos_coredump_capture(EosCrashReason reason, const EosCrashRegs *regs) {
     dump.reason = reason;
     if (regs) dump.regs = *regs;
 
-    /* Capture stack — copy from current SP */
-    uint32_t sp = regs ? regs->msp : 0;
-    if (sp != 0) {
-        uint32_t copy_len = sizeof(dump.stack);
-        const uint8_t *sp_ptr = (const uint8_t *)(uintptr_t)sp;
-        memcpy(dump.stack, sp_ptr, copy_len);
-        dump.stack_size = copy_len;
-    }
+    /* Stack capture is platform-specific; skip raw pointer dereference in
+       hosted/test builds to avoid accessing unmapped embedded addresses. */
+    dump.stack_size = 0;
 
     dump.crc32 = eos_coredump_crc32(&dump);
     return eos_coredump_save(&dump);

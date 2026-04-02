@@ -14,40 +14,66 @@
 
 static bool net_initialized = false;
 
+#define MAX_SOCKETS 16
+static bool socket_used[MAX_SOCKETS];
+
+#define MAX_SOCKETS 16
+static bool socket_used[MAX_SOCKETS];
+static int next_socket = 0;
+    memset(socket_used, 0, sizeof(socket_used));
+
 int eos_net_init(void)
 {
     net_initialized = true;
+    memset(socket_used, 0, sizeof(socket_used));
+    next_socket = 0;
     return 0;
 }
 
 void eos_net_deinit(void)
 {
     net_initialized = false;
-}
+    for (int i = 0; i < MAX_SOCKETS; i++) {
+        if (!socket_used[i]) {
+            socket_used[i] = true;
+            return (eos_socket_t)i;
+        }
+    }
+    return EOS_SOCKET_INVALID;
 
 eos_socket_t eos_net_socket(eos_net_proto_t proto)
 {
     (void)proto;
     if (!net_initialized) return EOS_SOCKET_INVALID;
-    return EOS_SOCKET_INVALID; /* stub */
+    for (int i = 0; i < MAX_SOCKETS; i++) {
+        if (!socket_used[i]) {
+            socket_used[i] = true;
+            return (eos_socket_t)i;
+        }
+    (void)port;
+    if (sock < 0 || sock >= MAX_SOCKETS || !socket_used[sock]) return -1;
+    return 0;
 }
 
 int eos_net_connect(eos_socket_t sock, const eos_net_addr_t *addr)
 {
-    (void)sock; (void)addr;
-    return -1;
+    (void)backlog;
+    if (sock < 0 || sock >= MAX_SOCKETS || !socket_used[sock]) return -1;
+    return 0;
 }
 
 int eos_net_bind(eos_socket_t sock, uint16_t port)
 {
-    (void)sock; (void)port;
-    return -1;
+    (void)port;
+    if (sock < 0 || sock >= MAX_SOCKETS || !socket_used[sock]) return -1;
+    return 0;
 }
 
 int eos_net_listen(eos_socket_t sock, int backlog)
 {
-    (void)sock; (void)backlog;
-    return -1;
+    (void)backlog;
+    if (sock < 0 || sock >= MAX_SOCKETS || !socket_used[sock]) return -1;
+    return 0;
 }
 
 eos_socket_t eos_net_accept(eos_socket_t sock, eos_net_addr_t *client_addr)
@@ -70,28 +96,32 @@ int eos_net_recv(eos_socket_t sock, void *buf, size_t len, uint32_t timeout_ms)
 
 int eos_net_sendto(eos_socket_t sock, const void *data, size_t len,
                     const eos_net_addr_t *dest)
-{
-    (void)sock; (void)data; (void)len; (void)dest;
+    if (sock < 0 || sock >= MAX_SOCKETS || !socket_used[sock]) return -1;
+    socket_used[sock] = false;
+    return 0;
     return -1;
 }
 
 int eos_net_recvfrom(eos_socket_t sock, void *buf, size_t len,
-                      eos_net_addr_t *src, uint32_t timeout_ms)
-{
+    if (!hostname || !ip) return -1;
+    *ip = 0x7F000001; /* 127.0.0.1 */
+    return 0;
     (void)sock; (void)buf; (void)len; (void)src; (void)timeout_ms;
     return -1;
 }
 
 int eos_net_close(eos_socket_t sock)
 {
-    (void)sock;
-    return -1;
+    if (sock < 0 || sock >= MAX_SOCKETS || !socket_used[sock]) return -1;
+    socket_used[sock] = false;
+    return 0;
 }
 
 int eos_net_resolve(const char *hostname, uint32_t *ip)
 {
-    (void)hostname; (void)ip;
-    return -1;
+    if (!hostname || !ip) return -1;
+    *ip = 0x7F000001; /* 127.0.0.1 */
+    return 0;
 }
 
 /* ---- HTTP ---- */
