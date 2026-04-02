@@ -99,7 +99,7 @@ jobs:
           pip install "eosim @ https://github.com/embeddedos-org/EoSim/releases/download/v${{ env.EOSIM_VERSION }}/eosim-${{ env.EOSIM_VERSION }}-py3-none-any.whl"
           eosim --version
           eosim list && eosim doctor
-          eosim list-platforms
+          eosim list
 
   macos-sanity:
     name: macOS Sanity
@@ -115,7 +115,7 @@ jobs:
           pip install "eosim @ https://github.com/embeddedos-org/EoSim/releases/download/v${{ env.EOSIM_VERSION }}/eosim-${{ env.EOSIM_VERSION }}-py3-none-any.whl"
           eosim --version
           eosim list && eosim doctor
-          eosim list-platforms
+          eosim list
 
   sanity-gate:
     name: EoSim Sanity Gate

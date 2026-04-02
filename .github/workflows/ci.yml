@@ -32,7 +32,6 @@ jobs:
 
       - name: Test
         run: ctest --test-dir build --output-on-failure -C Release
-        continue-on-error: true
 
   build-products:
     name: Product (${{ matrix.product }})
