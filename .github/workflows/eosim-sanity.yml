@@ -71,11 +71,11 @@ jobs:
       matrix:
         include:
           - guest: Linux x86_64
-            platform: x86_64
+            platform: x86_64-linux
           - guest: Linux aarch64
-            platform: arm64
+            platform: arm64-linux
           - guest: Linux riscv64
-            platform: riscv64
+            platform: riscv64-linux
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
