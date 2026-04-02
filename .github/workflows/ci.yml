@@ -1,6 +1,7 @@
 name: CI
 
 on:
+  workflow_dispatch:
   repository_dispatch:
     types: [dependency-update]
   push:
