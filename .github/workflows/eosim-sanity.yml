@@ -22,8 +22,10 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: ${{ matrix.python-version }}
-      - name: Install EoSim
-        run: pip install "eosim @ https://github.com/embeddedos-org/EoSim/releases/download/v${{ env.EOSIM_VERSION }}/eosim-${{ env.EOSIM_VERSION }}-py3-none-any.whl"
+      - name: Install EoSim from source
+        run: |
+          git clone --depth 1 --branch v${{ env.EOSIM_VERSION }} https://github.com/embeddedos-org/EoSim.git /tmp/EoSim
+          pip install -e /tmp/EoSim
       - name: Verify installation
         run: |
           eosim --version
@@ -51,8 +53,10 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: "3.12"
-      - name: Install EoSim
-        run: pip install "eosim @ https://github.com/embeddedos-org/EoSim/releases/download/v${{ env.EOSIM_VERSION }}/eosim-${{ env.EOSIM_VERSION }}-py3-none-any.whl"
+      - name: Install EoSim from source
+        run: |
+          git clone --depth 1 --branch v${{ env.EOSIM_VERSION }} https://github.com/embeddedos-org/EoSim.git /tmp/EoSim
+          pip install -e /tmp/EoSim
       - name: Simulate ${{ matrix.platform }}
         run: |
           eosim run ${{ matrix.platform }} --headless --timeout 10
@@ -77,8 +81,10 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: "3.12"
-      - name: Install EoSim
-        run: pip install "eosim @ https://github.com/embeddedos-org/EoSim/releases/download/v${{ env.EOSIM_VERSION }}/eosim-${{ env.EOSIM_VERSION }}-py3-none-any.whl"
+      - name: Install EoSim from source
+        run: |
+          git clone --depth 1 --branch v${{ env.EOSIM_VERSION }} https://github.com/embeddedos-org/EoSim.git /tmp/EoSim
+          pip install -e /tmp/EoSim
       - name: Boot guest and test EoSim inside
         run: |
           echo "=== Nested Guest: ${{ matrix.guest }} ==="
