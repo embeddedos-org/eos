@@ -41,7 +41,7 @@ jobs:
       - name: Validate platform
         run: eosim list
       - name: Run simulation
-        run: eosim simulate --platform ${{ matrix.platform }} --duration 15 --headless
+        run: eosim run ${{ matrix.platform }} --headless --timeout 15
       - name: Run platform tests
         run: eosim test ${{ matrix.platform }}
       - uses: actions/upload-artifact@v4
