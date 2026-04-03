@@ -1,0 +1,13 @@
+name: hmi-panel
+version: "1.0.0"
+description: "Industrial HMI panel — motor control, temperature gauge, E-STOP"
+product: hmi
+backend: cmake
+cmake:
+  defines:
+    EOS_PRODUCT: "hmi"
+    EOS_BUILD_TESTS: "OFF"
+dependencies:
+  - eos_hal
+  - eos_ui
+  - lvgl

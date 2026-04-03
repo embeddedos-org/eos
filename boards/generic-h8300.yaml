@@ -1,0 +1,24 @@
+board:
+  name: generic-h8300
+  mcu: H83069
+  family: H8/300H
+  arch: h8300
+  core: h8/300h
+  vendor: Renesas
+  clock_hz: 25000000
+  memory:
+    flash: 524288
+    ram: 131072
+  peripherals:
+    - {name: SCI0, type: uart, bus: peripheral}
+    - {name: SCI1, type: uart, bus: peripheral}
+    - {name: SCI2, type: uart, bus: peripheral}
+    - {name: SPI0, type: spi, bus: peripheral}
+    - {name: I2C0, type: i2c, bus: peripheral}
+    - {name: GPIO, type: gpio, bus: peripheral}
+    - {name: TIMER0, type: timer, bus: peripheral}
+    - {name: ADC, type: adc, bus: peripheral}
+    - {name: WDT, type: watchdog, bus: peripheral}
+    - {name: DMA, type: dma, bus: system}
+    - {name: PWM, type: pwm, bus: peripheral}
+  features: [h8, 16bit, low_power, renesas]

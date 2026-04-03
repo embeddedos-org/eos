@@ -1,0 +1,20 @@
+# EoS Example: UI Touchscreen
+project:
+  name: ui-touchscreen
+  version: 0.1.0
+
+workspace:
+  backend: ninja
+  build_dir: .eos/build
+
+layers:
+  - layers/core
+  - layers/bsp/stm32
+
+toolchain:
+  target: arm-none-eabi
+
+system:
+  kind: rtos
+  entry: main.c
+  output: ui-touchscreen.bin

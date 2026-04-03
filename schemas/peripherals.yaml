@@ -1,0 +1,135 @@
+# EoS Peripheral Database — known peripheral types and their properties
+# Used by ebuild's LLM to map EE components to software modules
+
+peripheral_types:
+  - type: uart
+    category: communication
+    typical_use: [debug, serial_comms, gps, bluetooth_host]
+    bus: apb
+    requires: [gpio]
+
+  - type: spi
+    category: communication
+    typical_use: [flash, sensors, displays, adc_external]
+    bus: apb
+    requires: [gpio]
+
+  - type: i2c
+    category: communication
+    typical_use: [sensors, eeprom, rtc_external, touch]
+    bus: apb
+    requires: [gpio]
+
+  - type: can
+    category: communication
+    typical_use: [automotive, industrial, motor_control]
+    bus: apb
+    requires: [gpio]
+
+  - type: usb
+    category: communication
+    typical_use: [data_transfer, hid, mass_storage, dfu]
+    bus: ahb
+    requires: [gpio]
+
+  - type: ethernet
+    category: networking
+    typical_use: [industrial, gateway, server]
+    bus: ahb
+    requires: [gpio, dma]
+
+  - type: wifi
+    category: networking
+    typical_use: [iot, consumer, gateway]
+    common_chips: [ESP32, CYW43, RTL8720, ATWINC1500]
+
+  - type: ble
+    category: networking
+    typical_use: [wearable, sensor, beacon, mesh]
+    common_chips: [nRF52840, CC2640, DA14531, ESP32]
+
+  - type: adc
+    category: analog
+    typical_use: [sensor_reading, battery_monitor, audio_input]
+    bus: apb
+    requires: []
+
+  - type: dac
+    category: analog
+    typical_use: [audio_output, motor_control, signal_generation]
+    bus: apb
+    requires: []
+
+  - type: pwm
+    category: control
+    typical_use: [motor_speed, led_brightness, servo, buzzer]
+    bus: apb
+    requires: [timer]
+
+  - type: timer
+    category: system
+    typical_use: [scheduling, pwm_base, measurement, watchdog]
+    bus: apb
+    requires: []
+
+  - type: gpio
+    category: system
+    typical_use: [led, button, chip_select, interrupt, reset]
+    bus: ahb
+    requires: []
+
+  - type: camera
+    category: media
+    typical_use: [vision, barcode, surveillance, face_detect]
+    bus: ahb
+    requires: [dma]
+    common_interfaces: [DCMI, CSI-2, DVP]
+
+  - type: display
+    category: media
+    typical_use: [hmi, dashboard, info_display, watch_face]
+    bus: ahb
+    requires: [dma]
+    common_interfaces: [SPI, I2C, LTDC, DSI, HDMI]
+
+  - type: motor
+    category: control
+    typical_use: [robot, ev, drone, cnc, hvac]
+    requires: [pwm, adc, timer]
+    motor_types: [dc_brush, bldc, stepper, servo]
+
+  - type: imu
+    category: sensor
+    typical_use: [motion_tracking, navigation, fall_detect, stabilization]
+    common_chips: [BMI160, MPU6050, LSM6DSO, ICM-42688]
+    interface: [spi, i2c]
+
+  - type: gps
+    category: sensor
+    typical_use: [navigation, tracking, timing, geofencing]
+    common_chips: [u-blox NEO-M8, Quectel L76, SIM28]
+    interface: [uart]
+
+  - type: nfc
+    category: communication
+    typical_use: [payment, access_control, pairing, tag_read]
+    common_chips: [PN532, ST25R, MFRC522]
+    interface: [spi, i2c]
+
+  - type: audio
+    category: media
+    typical_use: [voice, music, alert, intercom]
+    common_interfaces: [I2S, SAI, PDM]
+    requires: [dma]
+
+product_profile_mapping:
+  automotive: [can, uart, adc, pwm, motor, ethernet, watchdog]
+  industrial: [can, uart, adc, dac, ethernet, motor, watchdog]
+  medical: [adc, ble, display, watchdog, rtc]
+  iot: [wifi, ble, adc, uart, gpio]
+  robot: [motor, imu, camera, uart, pwm, adc]
+  gateway: [ethernet, wifi, ble, can, uart]
+  wearable: [ble, display, imu, adc, rtc]
+  drone: [motor, imu, gps, camera, uart, pwm]
+  mobile: [display, camera, audio, wifi, ble, usb, gps]
+  aerospace: [can, imu, gps, uart, watchdog]

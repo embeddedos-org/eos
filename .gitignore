@@ -1,0 +1,9 @@
+build/
+build_test/
+*.o
+*.a
+*.elf
+*.bin
+*.hex
+*.map
+.eos/

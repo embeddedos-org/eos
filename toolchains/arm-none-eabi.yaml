@@ -1,0 +1,9 @@
+# EoS Toolchain: ARM bare-metal (Cortex-M / Cortex-R)
+name: arm-none-eabi
+target: arm-none-eabi
+cc: arm-none-eabi-gcc
+cxx: arm-none-eabi-g++
+ar: arm-none-eabi-ar
+ld: arm-none-eabi-ld
+cflags: -mcpu=cortex-m7 -mthumb -mfloat-abi=hard -mfpu=fpv5-d16
+ldflags: -specs=nosys.specs -specs=nano.specs

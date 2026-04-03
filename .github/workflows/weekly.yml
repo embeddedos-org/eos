@@ -1,0 +1,102 @@
+name: Weekly
+
+on:
+  schedule:
+    - cron: "0 6 * * 1"
+  workflow_dispatch:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  full-build:
+    name: Full Build (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest, macos-latest]
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Install tools (Linux)
+        if: runner.os == 'Linux'
+        run: sudo apt-get update && sudo apt-get install -y cmake ninja-build
+
+      - name: Install tools (macOS)
+        if: runner.os == 'macOS'
+        run: brew install cmake ninja
+
+      - name: Configure
+        run: cmake -B build -DEOS_BUILD_TESTS=ON
+
+      - name: Build
+        run: cmake --build build --config Release
+
+      - name: Test
+        run: ctest --test-dir build --output-on-failure -C Release
+
+  product-builds:
+    name: Product (${{ matrix.product }})
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        product: [robot, gateway, medical, automotive, iot, aerospace, watch, gaming, drone, satellite, server, telecom]
+    steps:
+      - uses: actions/checkout@v6
+      - name: Build ${{ matrix.product }}
+        run: |
+          cmake -B build -DEOS_PRODUCT=${{ matrix.product }}
+          cmake --build build
+
+  cross-compile:
+    name: Cross (${{ matrix.arch }})
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - arch: aarch64-linux
+            toolchain: toolchains/aarch64-linux-gnu.cmake
+            packages: gcc-aarch64-linux-gnu
+          - arch: arm-linux-gnueabihf
+            toolchain: toolchains/arm-linux-gnueabihf.cmake
+            packages: gcc-arm-linux-gnueabihf
+          - arch: riscv64-linux
+            toolchain: toolchains/riscv64-linux-gnu.cmake
+            packages: gcc-riscv64-linux-gnu
+    steps:
+      - uses: actions/checkout@v6
+      - name: Install cross-compiler
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y ${{ matrix.packages }}
+      - name: Build
+        run: |
+          cmake -B build -DCMAKE_TOOLCHAIN_FILE=${{ matrix.toolchain }} -DCMAKE_BUILD_TYPE=Release
+          cmake --build build
+
+  report:
+    name: Weekly Report
+    runs-on: ubuntu-latest
+    needs: [full-build, product-builds, cross-compile]
+    if: always()
+    steps:
+      - name: Summary
+        run: |
+          echo "## Weekly Report — EoS"
+          echo "Date: $(date -u '+%Y-%m-%d %H:%M UTC')"
+          echo "| Job | Status |"
+          echo "|---|---|"
+          echo "| Full builds | ${{ needs.full-build.result }} |"
+          echo "| Product builds | ${{ needs.product-builds.result }} |"
+          echo "| Cross-compile | ${{ needs.cross-compile.result }} |"
+          if [ "${{ needs.full-build.result }}" != "success" ] || \
+             [ "${{ needs.product-builds.result }}" != "success" ] || \
+             [ "${{ needs.cross-compile.result }}" != "success" ]; then
+            echo "❌ REGRESSION DETECTED"
+            exit 1
+          fi
+          echo "✅ All checks passed"

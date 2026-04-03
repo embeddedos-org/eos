@@ -1,0 +1,36 @@
+# Core Layer — Default build rules and package schemas
+name: core
+description: Default EoS build rules, package schemas, and toolchain contracts
+priority: 0
+
+defaults:
+  build_type: cmake
+  optimization: O2
+  strip_binaries: true
+
+filesystem:
+  rootfs_type: ext4
+  image_format: raw
+  default_size_mb: 256
+
+package_schema:
+  required_fields:
+    - name
+    - version
+  optional_fields:
+    - source
+    - hash
+    - build
+    - deps
+    - options
+
+toolchain_contract:
+  required:
+    - cc
+    - ar
+  optional:
+    - cxx
+    - ld
+    - sysroot
+    - cflags
+    - ldflags

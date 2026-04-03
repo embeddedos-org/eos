@@ -1,0 +1,49 @@
+name: CI
+
+on:
+  workflow_dispatch:
+  repository_dispatch:
+    types: [dependency-update]
+  push:
+    branches: [master]
+  pull_request:
+    branches: [master]
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build:
+    name: Build (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest, macos-latest]
+
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Configure
+        run: cmake -B build -DEOS_BUILD_TESTS=ON
+
+      - name: Build
+        run: cmake --build build --config Release
+
+      - name: Test
+        run: ctest --test-dir build --output-on-failure -C Release
+
+  build-products:
+    name: Product (${{ matrix.product }})
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        product: [robot, gateway, medical, automotive, iot, aerospace]
+    steps:
+      - uses: actions/checkout@v6
+      - name: Build ${{ matrix.product }}
+        run: |
+          cmake -B build -DEOS_PRODUCT=${{ matrix.product }}
+          cmake --build build

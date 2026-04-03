@@ -1,0 +1,16 @@
+# EoS Example: Secure OTA
+project:
+  name: secure-ota
+  version: 0.1.0
+
+workspace:
+  backend: ninja
+  build_dir: .eos/build
+
+toolchain:
+  target: host
+
+system:
+  kind: rtos
+  entry: main.c
+  output: secure-ota

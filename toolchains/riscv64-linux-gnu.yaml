@@ -1,0 +1,10 @@
+# RISC-V 64-bit Cross-Compilation Toolchain
+name: riscv64-linux-gnu
+target: riscv64-linux-gnu
+cc: riscv64-linux-gnu-gcc
+cxx: riscv64-linux-gnu-g++
+ar: riscv64-linux-gnu-ar
+ld: riscv64-linux-gnu-ld
+sysroot: /usr/riscv64-linux-gnu
+cflags: -march=rv64gc -mabi=lp64d -O2
+ldflags: -Wl,--as-needed

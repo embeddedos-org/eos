@@ -1,0 +1,28 @@
+# Board Definition — Raspberry Pi 4
+name: raspberrypi4
+description: Raspberry Pi 4 Model B (BCM2711, Cortex-A72)
+arch: aarch64
+bsp: layers/bsp/raspberrypi4
+
+cpu: cortex-a72
+cores: 4
+memory: 1G-8G
+storage: sd
+
+serial:
+  console: ttyS0
+  baudrate: 115200
+
+peripherals:
+  - gpio
+  - i2c
+  - spi
+  - uart
+  - usb3
+  - ethernet
+  - wifi
+  - bluetooth
+
+flash:
+  method: dd
+  target: /dev/sdX

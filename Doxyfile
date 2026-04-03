@@ -1,0 +1,49 @@
+# Doxyfile for EoS
+
+PROJECT_NAME           = "EoS"
+PROJECT_NUMBER         = "0.5.0"
+PROJECT_BRIEF          = "Next-generation embedded OS build system"
+OUTPUT_DIRECTORY       = docs/api
+
+# Input sources
+INPUT                  = hal kernel core services drivers power net systems include
+FILE_PATTERNS          = *.h
+RECURSIVE              = YES
+
+# Extract everything
+EXTRACT_ALL            = YES
+EXTRACT_STATIC         = YES
+
+# Source browsing
+SOURCE_BROWSER         = YES
+INLINE_SOURCES         = NO
+REFERENCED_BY_RELATION = YES
+REFERENCES_RELATION    = YES
+
+# Output formats
+GENERATE_HTML          = YES
+HTML_OUTPUT            = html
+HTML_COLORSTYLE        = LIGHT
+GENERATE_LATEX         = NO
+GENERATE_XML           = YES
+XML_OUTPUT             = xml
+
+# Diagrams
+HAVE_DOT               = NO
+CLASS_DIAGRAMS         = NO
+COLLABORATION_GRAPH    = NO
+INCLUDE_GRAPH          = YES
+INCLUDED_BY_GRAPH      = YES
+
+# Preprocessing
+ENABLE_PREPROCESSING   = YES
+MACRO_EXPANSION        = YES
+PREDEFINED             = _WIN32=0
+
+# Styling
+DISABLE_INDEX          = NO
+GENERATE_TREEVIEW      = YES
+FULL_SIDEBAR           = YES
+OPTIMIZE_OUTPUT_FOR_C  = YES
+TYPEDEF_HIDES_STRUCT   = YES
+SORT_MEMBER_DOCS       = NO

@@ -1,0 +1,32 @@
+board:
+  name: generic-sparc
+  mcu: LEON3
+  family: LEON
+  arch: sparc
+  core: leon3
+  vendor: Gaisler
+  clock_hz: 80000000
+  memory:
+    flash: 4194304
+    ram: 16777216
+  peripherals:
+    - {name: UART0, type: uart, bus: apb}
+    - {name: UART1, type: uart, bus: apb}
+    - {name: SPI0, type: spi, bus: apb}
+    - {name: I2C0, type: i2c, bus: apb}
+    - {name: GPIO, type: gpio, bus: apb}
+    - {name: DMA, type: dma, bus: ahb}
+    - {name: TIMER0, type: timer, bus: apb}
+    - {name: WDT, type: watchdog, bus: apb}
+    - {name: ETH, type: ethernet, bus: ahb}
+    - {name: CAN, type: can, bus: apb}
+    - {name: MIL1553, type: uart, bus: ahb}
+    - {name: SPACEWIRE, type: uart, bus: ahb}
+  features: [sparc, leon, space, rad_hard, aerospace]
+  external_peripherals:
+    - {name: ADC, type: adc, bus: spi, note: "via rad-hard ADC on SPI"}
+    - {name: PWM, type: pwm, bus: gpio, note: "via software PWM on GPIO timer"}
+    - {name: GNSS, type: gnss, bus: uart, note: "via GNSS receiver on UART"}
+    - {name: IMU, type: imu, bus: i2c, note: "via space-rated IMU on I2C"}
+    - {name: DISPLAY, type: display, bus: spi, note: "via SPI display for ground testing"}
+    - {name: MOTOR, type: motor, bus: gpio, note: "via reaction wheel driver on GPIO+PWM"}

@@ -1,0 +1,92 @@
+name: Simulation Test
+
+on:
+  schedule:
+    - cron: "0 3 * * *"
+  workflow_dispatch:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: false
+
+env:
+  EOSIM_VERSION: "0.1.0"
+
+jobs:
+  simulate:
+    name: Simulate (${{ matrix.platform }})
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        platform:
+          - x86_64-linux
+          - arm64-linux
+          - riscv64-linux
+          - stm32f4
+          - raspi4
+          - esp32
+          - nrf52
+          - vexpress-a9
+          - sifive_u
+          - imx8m
+          - jetson-nano
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.12"
+      - name: Install EoSim from source
+        run: |
+          git clone --depth 1 --branch v${{ env.EOSIM_VERSION }} https://github.com/embeddedos-org/EoSim.git /tmp/EoSim
+          pip install -e /tmp/EoSim
+      - name: Validate platform
+        run: eosim list
+      - name: Run simulation
+        run: eosim run ${{ matrix.platform }} --headless --timeout 15
+      - name: Run platform tests
+        run: eosim test ${{ matrix.platform }}
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: sim-${{ matrix.platform }}
+          path: out/
+          retention-days: 7
+
+  cross-platform:
+    name: Cross-Platform (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest, macos-latest]
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.12"
+      - name: Install EoSim from source
+        run: |
+          git clone --depth 1 --branch v${{ env.EOSIM_VERSION }} https://github.com/embeddedos-org/EoSim.git /tmp/EoSim
+          pip install -e /tmp/EoSim
+      - name: Validate all platforms
+        run: eosim list && eosim doctor
+
+  sanity-gate:
+    name: Simulation Gate
+    if: always()
+    needs: [simulate, cross-platform]
+    runs-on: ubuntu-latest
+    steps:
+      - name: Results
+        run: |
+          echo "════════════════════════════════════════════"
+          echo "  EoSim Simulation Test Results"
+          echo "════════════════════════════════════════════"
+          echo "Simulation (11 platforms):     ${{ needs.simulate.result }}"
+          echo "Cross-Platform (Win/Lin/Mac):  ${{ needs.cross-platform.result }}"
+          echo "════════════════════════════════════════════"
+          if [ "${{ needs.simulate.result }}" != "success" ]; then
+            echo "❌ Simulation failed"; exit 1
+          fi
+          echo "✅ All simulation tests passed"

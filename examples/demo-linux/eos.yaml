@@ -1,0 +1,47 @@
+# EoS Demo Project
+# Builds zlib + busybox for QEMU ARM64
+
+project:
+  name: demo-linux
+  version: 0.1.0
+
+workspace:
+  backend: ninja
+  build_dir: .eos/build
+  cache_dir: .eos/cache
+
+layers:
+  - layers/core
+  - layers/bsp/qemu-arm64
+  - layers/distro/minimal
+  - layers/product/demo
+
+toolchain:
+  target: aarch64-linux-gnu
+
+packages:
+  - name: zlib
+    version: 1.2.13
+    source: https://github.com/madler/zlib/releases/download/v1.2.13/zlib-1.2.13.tar.gz
+    hash: b3a24de97a8fdbc835b9833169501030b8977031bcb54b3b3ac13740f846ab30
+    build:
+      type: cmake
+
+  - name: busybox
+    version: 1.36.1
+    source: https://busybox.net/downloads/busybox-1.36.1.tar.bz2
+    build:
+      type: kbuild
+    deps:
+      - zlib
+
+system:
+  kernel:
+    provider: kbuild
+    defconfig: defconfig
+  rootfs:
+    provider: eos
+    init: busybox
+    hostname: demo-linux
+  image_format: raw
+  output: .eos/build/demo-linux.img
