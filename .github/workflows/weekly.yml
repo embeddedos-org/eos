@@ -18,7 +18,7 @@ jobs:
       matrix:
         os: [ubuntu-latest, windows-latest, macos-latest]
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
 
       - name: Install tools (Linux)
         if: runner.os == 'Linux'
@@ -45,7 +45,7 @@ jobs:
       matrix:
         product: [robot, gateway, medical, automotive, iot, aerospace, watch, gaming, drone, satellite, server, telecom]
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
       - name: Build ${{ matrix.product }}
         run: |
           cmake -B build -DEOS_PRODUCT=${{ matrix.product }}
@@ -68,7 +68,7 @@ jobs:
             toolchain: toolchains/riscv64-linux-gnu.cmake
             packages: gcc-riscv64-linux-gnu
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
       - name: Install cross-compiler
         run: |
           sudo apt-get update
