@@ -12,9 +12,9 @@
 | 2026-03-28 | Automated | CI/CD | GitHub Actions on 3 platforms | Info | None | Closed |
 | 2026-03-28 | Automated | Static analysis | gcc -Wall -Wextra enabled | Info | None | Closed |
 | 2026-03-28 | Automated | Code of Conduct | Contributor Covenant v2.1 adopted | Info | None | Closed |
-| 2026-03-28 | Review | Dynamic analysis | Valgrind/ASAN not yet integrated | Medium | Add to CI | Open |
-| 2026-03-28 | Review | Fuzzing | No fuzz testing framework | Medium | Add AFL/libFuzzer | Open |
-| 2026-03-28 | Review | Code signing | Artifacts not signed | Medium | Add GPG/sigstore | Open |
-| 2026-03-28 | Review | Dependency scanning | No automated CVE scanning | Medium | Add dependabot/trivy | Open |
+| 2026-03-28 | Review | Dynamic analysis | Valgrind/ASAN not yet integrated | Medium | Integrated in CI (Phase 1) | Closed |
+| 2026-03-28 | Review | Fuzzing | No fuzz testing framework | Medium | libFuzzer harnesses added (Phase 2) | Closed |
+| 2026-03-28 | Review | Code signing | Artifacts not signed | Medium | Cosign signing in release workflow (Phase 6) | Closed |
+| 2026-03-28 | Review | Dependency scanning | No automated CVE scanning | Medium | Dependabot + scripts/cve_check.sh (Phase 6) | Closed |
 
 ## Next Audit: Q2 2026

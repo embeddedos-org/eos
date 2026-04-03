@@ -1,0 +1,21 @@
+name: "CodeQL — Custom Configuration"
+
+paths:
+  - kernel/
+  - hal/
+  - services/
+  - drivers/
+  - net/
+  - core/
+  - power/
+
+paths-ignore:
+  - tests/
+  - examples/
+  - docs/
+  - cmake/
+  - toolchains/
+  - '**/*.md'
+
+queries:
+  - uses: security-and-quality

@@ -1,0 +1,40 @@
+Checks: >
+  -*,
+  bugprone-*,
+  cert-*,
+  clang-analyzer-*,
+  misc-*,
+  performance-*,
+  readability-braces-around-statements,
+  readability-const-return-type,
+  readability-container-size-empty,
+  readability-duplicate-include,
+  readability-else-after-return,
+  readability-implicit-bool-conversion,
+  readability-inconsistent-declaration-parameter-name,
+  readability-misleading-indentation,
+  readability-non-const-parameter,
+  readability-redundant-control-flow,
+  readability-redundant-declaration,
+  readability-simplify-boolean-expr,
+  readability-uppercase-literal-suffix,
+  -bugprone-easily-swappable-parameters,
+  -cert-err33-c,
+  -clang-analyzer-security.insecureAPI.DeprecatedOrUnsafeBufferHandling,
+  -misc-no-recursion,
+
+WarningsAsErrors: >
+  bugprone-use-after-move,
+  bugprone-sizeof-expression,
+  cert-err34-c,
+  clang-analyzer-core.*,
+
+CheckOptions:
+  - key: readability-function-cognitive-complexity.Threshold
+    value: 25
+  - key: readability-function-size.LineThreshold
+    value: 100
+  - key: bugprone-suspicious-string-compare.WarnOnImplicitComparison
+    value: true
+
+HeaderFilterRegex: '(kernel|hal|services|drivers|net|core|power)/.*\.h$'

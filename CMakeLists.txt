@@ -7,6 +7,7 @@ project(EoS
 
 set(CMAKE_C_STANDARD 11)
 set(CMAKE_C_STANDARD_REQUIRED ON)
+set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 
 if(MSVC)
     add_compile_definitions(_CRT_SECURE_NO_WARNINGS)
@@ -16,7 +17,25 @@ elseif(CMAKE_C_COMPILER_ID MATCHES "GNU|Clang")
 endif()
 
 option(EOS_BUILD_TESTS "Build unit tests" OFF)
+option(EOS_ENABLE_ASAN "Enable AddressSanitizer + UBSan" OFF)
+option(EOS_ENABLE_CPPCHECK "Enable cppcheck static analysis target" OFF)
 set(EOS_PLATFORM "linux" CACHE STRING "Target platform (linux|rtos)")
+set(EOS_BOARD "" CACHE STRING "Target board (e.g. stm32f407_discovery)")
+
+# AddressSanitizer / UndefinedBehaviorSanitizer
+if(EOS_ENABLE_ASAN AND NOT MSVC)
+    add_compile_options(-fsanitize=address,undefined -fno-omit-frame-pointer)
+    add_link_options(-fsanitize=address,undefined)
+endif()
+
+# Board-specific CMake fragment
+if(EOS_BOARD AND EXISTS "${CMAKE_SOURCE_DIR}/boards/${EOS_BOARD}/board.cmake")
+    include("${CMAKE_SOURCE_DIR}/boards/${EOS_BOARD}/board.cmake")
+    message(STATUS "  Board: ${EOS_BOARD}")
+endif()
+
+# Static analysis
+include(cmake/cppcheck.cmake)
 set(EOS_PRODUCT "" CACHE STRING "Target product profile (robot|vacuum|industrial|voice|aerospace|satellite|mobile|watch|adapter|gateway|medical|automotive|drone|iot|hmi|wearable|pos|printer|cockpit|banking|crypto_hw|telecom|diagnostic|telemedicine|ground_control|space_comm|plc|autonomous|infotainment|thermostat|security_cam|smart_home|xr_headset|computer|smart_tv|gaming|server|ai_edge|router|ev|fitness|iptv_stb|cast_device|smart_speaker|home_camera|tv_os|vbox_test)")
 
 # ====================================================================
