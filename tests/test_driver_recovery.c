@@ -184,29 +184,27 @@ TEST(test_driver_read_write_active) {
     eos_driver_unregister("test-rw");
 }
 
+static int mock_suspend(struct eos_driver *d) { (void)d; return 0; }
+static int mock_resume(struct eos_driver *d) { (void)d; return 0; }
+
+static const eos_driver_ops_t pm_ops = {
+    .init    = mock_init_ok,
+    .deinit  = mock_deinit,
+    .open    = mock_open,
+    .close   = mock_close,
+    .read    = mock_read,
+    .write   = mock_write,
+    .suspend = mock_suspend,
+    .resume  = mock_resume,
+};
+
 TEST(test_driver_suspend_resume) {
     eos_driver_t drv = {
         .name = "test-pm",
         .type = EOS_DRIVER_TIMER,
-        .ops  = &ok_ops,
+        .ops  = &pm_ops,
         .instance = 0,
     };
-
-    /* Add suspend/resume to ops */
-    static int mock_suspend(struct eos_driver *d) { (void)d; return 0; }
-    static int mock_resume(struct eos_driver *d) { (void)d; return 0; }
-
-    static const eos_driver_ops_t pm_ops = {
-        .init    = mock_init_ok,
-        .deinit  = mock_deinit,
-        .open    = mock_open,
-        .close   = mock_close,
-        .read    = mock_read,
-        .write   = mock_write,
-        .suspend = mock_suspend,
-        .resume  = mock_resume,
-    };
-    drv.ops = &pm_ops;
 
     eos_driver_register(&drv);
     eos_driver_init_all();
