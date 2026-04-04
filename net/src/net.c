@@ -104,7 +104,9 @@ int eos_net_close(eos_socket_t sock)
 int eos_net_resolve(const char *hostname, uint32_t *ip)
 {
     if (!hostname || !ip) return -1;
-    *ip = 0x7F000001; /* 127.0.0.1 */
+    /* Return 127.0.0.1 in network byte order (big-endian) */
+    *ip = 0x0100007FU;
+    *ip = 0x0100007FU;
     return 0;
 }
 
