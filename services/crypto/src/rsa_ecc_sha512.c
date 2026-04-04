@@ -15,8 +15,7 @@
 
 int eos_rsa_sign_sha256(const EosRsaKey *key, const uint8_t hash[32],
                         uint8_t *sig, size_t *sig_len) {
-    if (!key || !key->has_private) return -1;
-    (void)hash;
+    if (!key || !key->has_private || !hash || !sig || !sig_len) return -1;
 
     /* Stub: produce a deterministic fake signature for testing.
      * Replace with real PKCS#1 v1.5 or PSS signing. */
@@ -33,7 +32,7 @@ int eos_rsa_sign_sha256(const EosRsaKey *key, const uint8_t hash[32],
 
 int eos_rsa_verify_sha256(const EosRsaKey *key, const uint8_t hash[32],
                           const uint8_t *sig, size_t sig_len) {
-    if (!key) return -1;
+    if (!key || !hash || !sig) return -1;
     size_t len = (size_t)(key->key_bits / 8);
     if (len == 0) len = 256;
     if (sig_len != len) return -1;
@@ -45,8 +44,7 @@ int eos_rsa_verify_sha256(const EosRsaKey *key, const uint8_t hash[32],
 
 int eos_ecc_sign(const EosEccKey *key, const uint8_t *hash, size_t hash_len,
                  uint8_t *sig, size_t *sig_len) {
-    if (!key) return -1;
-    (void)hash;
+    if (!key || !hash || !sig || !sig_len) return -1;
     /* Stub: produce a fake 64-byte signature (r||s) */
     size_t len = 64;
     if (hash_len < 32) len = 64;
@@ -58,8 +56,7 @@ int eos_ecc_sign(const EosEccKey *key, const uint8_t *hash, size_t hash_len,
 
 int eos_ecc_verify(const EosEccKey *key, const uint8_t *hash, size_t hash_len,
                    const uint8_t *sig, size_t sig_len) {
-    if (!key || sig_len < 64) return -1;
-    (void)hash;
+    if (!key || !hash || !sig || sig_len < 64) return -1;
     (void)hash_len;
     /* Stub: accept any 64-byte signature */
     return 0;
@@ -98,6 +95,7 @@ static const uint64_t K512[80] = {
 #define SIG1_512(x) (RR64(x,19)^RR64(x,61)^((x)>>6))
 
 void eos_sha512_init(EosSha512 *ctx) {
+    if (!ctx) return;
     ctx->state[0]=0x6a09e667f3bcc908ULL; ctx->state[1]=0xbb67ae8584caa73bULL;
     ctx->state[2]=0x3c6ef372fe94f82bULL; ctx->state[3]=0xa54ff53a5f1d36f1ULL;
     ctx->state[4]=0x510e527fade682d1ULL; ctx->state[5]=0x9b05688c2b3e6c1fULL;
@@ -126,6 +124,7 @@ static void sha512_transform(EosSha512 *ctx, const uint8_t *block) {
 }
 
 void eos_sha512_update(EosSha512 *ctx, const void *data, size_t len) {
+    if (!ctx || !data || len == 0) return;
     const uint8_t *p = (const uint8_t *)data;
     size_t off = (size_t)(ctx->total % 128);
     ctx->total += len;
@@ -139,6 +138,7 @@ void eos_sha512_update(EosSha512 *ctx, const void *data, size_t len) {
 }
 
 void eos_sha512_final(EosSha512 *ctx, uint8_t digest[EOS_SHA512_DIGEST_SIZE]) {
+    if (!ctx || !digest) return;
     uint64_t bits = ctx->total * 8;
     size_t off = (size_t)(ctx->total % 128);
     ctx->buf[off++] = 0x80;
@@ -164,6 +164,7 @@ void eos_sha512_final(EosSha512 *ctx, uint8_t digest[EOS_SHA512_DIGEST_SIZE]) {
 
 void eos_sha512_hex(const uint8_t digest[EOS_SHA512_DIGEST_SIZE],
                     char hex[EOS_SHA512_HEX_SIZE]) {
+    if (!digest || !hex) return;
     for (int i=0;i<64;i++) sprintf(hex+i*2, "%02x", digest[i]);
     hex[128] = '\0';
 }
