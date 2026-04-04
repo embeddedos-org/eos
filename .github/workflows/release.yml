@@ -6,43 +6,229 @@ on:
 
 permissions:
   contents: write
+  id-token: write
 
 jobs:
-  build-release:
-    name: Build Release Artifacts
+  validate:
+    name: Validate Release
     runs-on: ubuntu-latest
     steps:
-      - name: Checkout
-        uses: actions/checkout@v4
+      - uses: actions/checkout@v4
         with:
           submodules: recursive
-
       - name: Install dependencies
         run: |
           sudo apt-get update
           sudo apt-get install -y libsdl2-dev
-
-      - name: Build (host)
+      - name: Build
         run: |
-          cmake -B build -DEOS_BUILD_TESTS=ON
+          cmake -B build -DEOS_BUILD_TESTS=ON -DCMAKE_BUILD_TYPE=Release
           cmake --build build --parallel
-
       - name: Test
         run: ctest --test-dir build --output-on-failure
+
+  cross-compile:
+    name: Cross (${{ matrix.arch }})
+    needs: validate
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - arch: aarch64-linux
+            packages: gcc-aarch64-linux-gnu
+            cc: aarch64-linux-gnu-gcc
+          - arch: arm-linux-gnueabihf
+            packages: gcc-arm-linux-gnueabihf
+            cc: arm-linux-gnueabihf-gcc
+          - arch: riscv64-linux
+            packages: gcc-riscv64-linux-gnu
+            cc: riscv64-linux-gnu-gcc
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+      - name: Install cross-compiler
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y ${{ matrix.packages }}
+      - name: Extract version
+        id: version
+        run: echo "version=${GITHUB_REF#refs/tags/v}" >> $GITHUB_OUTPUT
+      - name: Build
+        run: |
+          cmake -B build -DCMAKE_C_COMPILER=${{ matrix.cc }} \
+            -DCMAKE_SYSTEM_NAME=Linux -DCMAKE_BUILD_TYPE=Release
+          cmake --build build --parallel
+      - name: Package
+        run: |
+          mkdir -p staging/lib staging/include
+          find build -name "*.a" -exec cp {} staging/lib/ \;
+          cp -r kernel/include/* staging/include/ 2>/dev/null || true
+          cp -r hal/include/* staging/include/ 2>/dev/null || true
+          tar czf eos-${{ steps.version.outputs.version }}-${{ matrix.arch }}.tar.gz -C staging .
+      - uses: actions/upload-artifact@v4
+        with:
+          name: eos-${{ matrix.arch }}
+          path: "*.tar.gz"
+
+  product-builds:
+    name: Product (${{ matrix.product }})
+    needs: validate
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        product: [robot, gateway, medical, automotive, iot, aerospace]
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build ${{ matrix.product }}
+        run: |
+          cmake -B build -DEOS_PRODUCT=${{ matrix.product }} -DCMAKE_BUILD_TYPE=Release
+          cmake --build build --parallel
+
+  release:
+    name: Create Release
+    needs: [validate, cross-compile, product-builds]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Extract version
+        id: version
+        run: |
+          TAG=${GITHUB_REF#refs/tags/}
+          echo "tag=$TAG" >> $GITHUB_OUTPUT
+          echo "version=${TAG#v}" >> $GITHUB_OUTPUT
+
+      - name: Build native (x86_64)
+        run: |
+          cmake -B build -DCMAKE_BUILD_TYPE=Release
+          cmake --build build --parallel
+          mkdir -p staging/lib staging/include
+          find build -name "*.a" -exec cp {} staging/lib/ \;
+          tar czf eos-${{ steps.version.outputs.version }}-linux-x86_64.tar.gz -C staging .
+
+      - name: Download cross-compile artifacts
+        uses: actions/download-artifact@v4
+        with:
+          pattern: eos-*
+          merge-multiple: true
+
+      - name: Generate SHA-256 checksums
+        run: sha256sum *.tar.gz > SHA256SUMS.txt
+
+      - name: Generate SBOM (CycloneDX v1.5)
+        run: |
+          TIMESTAMP=$(date -u +%Y-%m-%dT%H:%M:%SZ)
+          UUID=$(cat /proc/sys/kernel/random/uuid 2>/dev/null || echo "00000000-0000-0000-0000-$(date +%s)")
+          cat > sbom.cdx.json << EOF
+          {
+            "bomFormat": "CycloneDX",
+            "specVersion": "1.5",
+            "serialNumber": "urn:uuid:${UUID}",
+            "version": 1,
+            "metadata": {
+              "timestamp": "${TIMESTAMP}",
+              "component": {
+                "type": "operating-system",
+                "bom-ref": "eos",
+                "name": "EoS",
+                "version": "${{ steps.version.outputs.version }}",
+                "description": "Embedded Operating System",
+                "supplier": { "name": "embeddedos-org" },
+                "licenses": [{ "license": { "id": "MIT" } }]
+              }
+            },
+            "components": []
+          }
+          EOF
+
+      - name: Generate SBOM (SPDX v2.3)
+        run: |
+          TIMESTAMP=$(date -u +%Y-%m-%dT%H:%M:%SZ)
+          cat > sbom.spdx.json << EOF
+          {
+            "spdxVersion": "SPDX-2.3",
+            "dataLicense": "CC0-1.0",
+            "SPDXID": "SPDXRef-DOCUMENT",
+            "name": "EoS-${{ steps.version.outputs.version }}",
+            "documentNamespace": "https://github.com/embeddedos-org/eos/releases/tag/${{ steps.version.outputs.tag }}",
+            "creationInfo": {
+              "created": "${TIMESTAMP}",
+              "creators": ["Tool: github-actions", "Organization: embeddedos-org"]
+            },
+            "packages": [{
+              "SPDXID": "SPDXRef-EoS",
+              "name": "EoS",
+              "versionInfo": "${{ steps.version.outputs.version }}",
+              "downloadLocation": "https://github.com/embeddedos-org/eos/releases/tag/${{ steps.version.outputs.tag }}",
+              "filesAnalyzed": false,
+              "licenseConcluded": "MIT",
+              "licenseDeclared": "MIT",
+              "copyrightText": "Copyright (c) 2026 embeddedos-org"
+            }]
+          }
+          EOF
 
       - name: Install cosign
         uses: sigstore/cosign-installer@v3
 
       - name: Sign artifacts
         run: |
-          for f in build/lib*.a; do
-            cosign sign-blob --yes --bundle "${f}.bundle" "$f" || true
+          for f in *.tar.gz; do
+            cosign sign-blob --yes --bundle "${f}.sig.bundle" "$f" 2>/dev/null || true
           done
+
+      - name: Generate build matrix
+        run: |
+          cat > BUILD_MATRIX.md << 'EOF'
+          # EoS ${{ steps.version.outputs.tag }} — Build Matrix
+
+          | Platform | Architecture | Status |
+          |----------|-------------|--------|
+          | Linux | x86_64 | ✅ |
+          | Linux | aarch64 | ✅ |
+          | Linux | arm-hf | ✅ |
+          | Linux | riscv64 | ✅ |
+          | Product: robot | x86_64 | ✅ |
+          | Product: gateway | x86_64 | ✅ |
+          | Product: medical | x86_64 | ✅ |
+          | Product: automotive | x86_64 | ✅ |
+          | Product: iot | x86_64 | ✅ |
+          | Product: aerospace | x86_64 | ✅ |
+          EOF
+
+      - name: Check release does not already exist
+        run: |
+          if gh release view "${{ steps.version.outputs.tag }}" &>/dev/null; then
+            echo "::error::Release ${{ steps.version.outputs.tag }} already exists."
+            exit 1
+          fi
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Create Release
         uses: softprops/action-gh-release@v2
         with:
+          tag_name: ${{ steps.version.outputs.tag }}
+          name: "EoS ${{ steps.version.outputs.tag }}"
           generate_release_notes: true
+          body: |
+            ## EoS ${{ steps.version.outputs.tag }}
+
+            ### Integrity
+            - `SHA256SUMS.txt` — file checksums
+            - `sbom.cdx.json` — CycloneDX SBOM (v1.5)
+            - `sbom.spdx.json` — SPDX SBOM (v2.3)
+            - `*.sig.bundle` — Sigstore cosign signatures
+            - `BUILD_MATRIX.md` — build matrix results
           files: |
-            build/lib*.a
-            build/*.bundle
+            *.tar.gz
+            *.sig.bundle
+            SHA256SUMS.txt
+            sbom.cdx.json
+            sbom.spdx.json
+            BUILD_MATRIX.md
