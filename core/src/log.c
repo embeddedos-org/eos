@@ -163,10 +163,6 @@ static void emit(EosLogLevel level, const char *module, const char *formatted) {
     } else {
         snprintf(timebuf, sizeof(timebuf), "??:??:??");
     }
-        strftime(timebuf, sizeof(timebuf), "%H:%M:%S", tm_info);
-    } else {
-        snprintf(timebuf, sizeof(timebuf), "??:??:??");
-    }
 
     int n;
     if (module) {

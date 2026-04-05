@@ -39,6 +39,13 @@ include(cmake/cppcheck.cmake)
 set(EOS_PRODUCT "" CACHE STRING "Target product profile (robot|vacuum|industrial|voice|aerospace|satellite|mobile|watch|adapter|gateway|medical|automotive|drone|iot|hmi|wearable|pos|printer|cockpit|banking|crypto_hw|telecom|diagnostic|telemedicine|ground_control|space_comm|plc|autonomous|infotainment|thermostat|security_cam|smart_home|xr_headset|computer|smart_tv|gaming|server|ai_edge|router|ev|fitness|iptv_stb|cast_device|smart_speaker|home_camera|tv_os|vbox_test)")
 
 # ====================================================================
+# Dependency Resolution — auto-fetch eboot + ebuild
+# ====================================================================
+# This MUST come before any target definitions so that eboot targets
+# (eboot_hal, eboot_core, eboot_stage1) are available for linking.
+include(cmake/deps.cmake)
+
+# ====================================================================
 # Product Configuration
 # ====================================================================
 if(EOS_PRODUCT)
@@ -73,6 +80,11 @@ target_include_directories(eos_hal PUBLIC
     ${CMAKE_CURRENT_SOURCE_DIR}/hal/include
     ${CMAKE_CURRENT_SOURCE_DIR}/include
 )
+
+# Link eos_hal to eboot_hal when available (shared HAL interface)
+if(EOS_HAS_EBOOT AND TARGET eboot_hal)
+    target_link_libraries(eos_hal PUBLIC eboot_hal)
+endif()
 
 # ====================================================================
 # Kernel — Lightweight RTOS kernel + Multicore
@@ -124,7 +136,6 @@ add_subdirectory(systems)
 # ====================================================================
 add_subdirectory(services)
 
-
 # ====================================================================
 # Debug - GDB stub, core dump handler
 # ====================================================================
@@ -139,6 +150,7 @@ add_subdirectory(drivers/devicetree)
 # Service Manager - daemon lifecycle
 # ====================================================================
 add_subdirectory(services/init)
+
 # ====================================================================
 # Power Management Framework
 # ====================================================================
@@ -168,6 +180,28 @@ target_include_directories(eos_net PUBLIC
 target_link_libraries(eos_net PUBLIC eos_hal)
 
 # ====================================================================
+# eBoot Integration — link eboot_core into eos services
+# ====================================================================
+if(EOS_HAS_EBOOT AND TARGET eboot_core)
+    # Make eboot headers available to eos_systems (for firmware build)
+    if(TARGET eos_systems)
+        target_link_libraries(eos_systems PRIVATE eboot_core)
+    endif()
+
+    # Convenience alias: eos::eboot for downstream consumers
+    if(NOT TARGET eos::eboot)
+        add_library(eos::eboot ALIAS eboot_core)
+    endif()
+
+    message(STATUS "  eBoot targets available: eboot_hal, eboot_core, eboot_stage1")
+endif()
+
+# ====================================================================
+# ebuild Layers — optional components (EAI, ENI, EIPC, eOSuite)
+# ====================================================================
+include(cmake/ebuild_layers.cmake)
+
+# ====================================================================
 # Tests
 # ====================================================================
 if(EOS_BUILD_TESTS)
@@ -191,8 +225,25 @@ else()
     message(STATUS "  Docs:  OFF (doxygen not found)")
 endif()
 
+# ====================================================================
+# Build Summary
+# ====================================================================
 message(STATUS "--------------------------------------------")
 message(STATUS "EoS v${PROJECT_VERSION} — Embedded OS Framework")
 message(STATUS "  Platform: ${EOS_PLATFORM}")
 message(STATUS "  Tests:    ${EOS_BUILD_TESTS}")
+if(EOS_HAS_EBOOT)
+    message(STATUS "  eBoot:    INTEGRATED")
+endif()
+if(EOS_HAS_EBUILD)
+    message(STATUS "  ebuild:   INTEGRATED (layers available)")
+endif()
 message(STATUS "--------------------------------------------")
+message(STATUS "")
+message(STATUS "Quick start:")
+message(STATUS "  cmake --build build                     # Build everything")
+message(STATUS "  cmake -B build -DEOS_BUILD_TESTS=ON     # With tests")
+message(STATUS "  cmake -B build -DEOS_WITH_EBOOT=OFF     # Without bootloader")
+message(STATUS "  cmake -B build -DEOS_WITH_EBUILD=ON     # With ebuild layers")
+message(STATUS "  cmake -B build -DEOS_WITH_ALL_LAYERS=ON # All layers (EAI+ENI+EIPC+eOSuite)")
+message(STATUS "")

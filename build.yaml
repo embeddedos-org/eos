@@ -1,6 +1,13 @@
 # EoS — Embedded Operating System
-# Build with: ebuild build
-# ebuild auto-detects CMakeLists.txt and uses the cmake backend.
+# Unified build configuration
+#
+# Build methods:
+#   1. cmake -B build && cmake --build build   (auto-fetches deps)
+#   2. ebuild build                             (uses this file)
+#   3. ./scripts/bootstrap.sh && cmake -B build (clone-time setup)
+#
+# Single-phase build: eos auto-resolves eboot + ebuild at configure time.
+# No need to clone them separately.
 
 name: eos
 version: "0.1.0"
@@ -11,7 +18,24 @@ cmake:
   defines:
     EOS_BUILD_TESTS: "ON"
     EOS_PLATFORM: "linux"
+    # eBoot integration (ON by default)
+    EOS_WITH_EBOOT: "ON"
+    # ebuild layers (OFF by default — enable for EAI, ENI, EIPC, eOSuite)
+    # EOS_WITH_EBUILD: "ON"
+    # EOS_WITH_ALL_LAYERS: "ON"
 
 toolchain:
   compiler: gcc
   arch: x86_64
+
+# Dependencies — resolved automatically by cmake/deps.cmake
+# Override with explicit paths if needed:
+# deps:
+#   eboot:
+#     source: /path/to/eboot
+#     git: https://github.com/AethOS-EoS/eBoot.git
+#     tag: main
+#   ebuild:
+#     source: /path/to/ebuild
+#     git: https://github.com/AethOS-EoS/ebuild.git
+#     tag: main

@@ -45,55 +45,8 @@ typedef enum {
     EOS_ARCH_ARM_CORTEX_M,  /**< ARM Cortex-M — bare-metal / RTOS */
     EOS_ARCH_ARM_CORTEX_R,  /**< ARM Cortex-R — real-time / safety */
     EOS_ARCH_ARM_LEGACY,    /**< ARM7/9/11 — legacy ARM cores */
-    EOS_ARCH_ARM_LEGACY,    /**< ARM7/9/11 — legacy ARM cores */
     EOS_ARCH_X86,           /**< x86 32-bit */
     EOS_ARCH_X86_64,        /**< x86-64 — desktop / server / EoSim */
-    EOS_ARCH_X86,           /**< x86 32-bit */
-    EOS_ARCH_MIPS,          /**< MIPS 32-bit */
-    EOS_ARCH_MIPS64,        /**< MIPS 64-bit */
-    EOS_ARCH_POWERPC,       /**< PowerPC 32-bit */
-    EOS_ARCH_PPC64,         /**< PowerPC 64-bit (POWER) */
-    EOS_ARCH_SPARC,         /**< SPARC V8 (LEON) */
-    EOS_ARCH_SPARC64,       /**< SPARC V9 (UltraSPARC) */
-    EOS_ARCH_M68K,          /**< Motorola 68000 */
-    EOS_ARCH_SH,            /**< SuperH (Renesas SH-4) */
-    EOS_ARCH_AVR,           /**< Atmel AVR 8-bit */
-    EOS_ARCH_AVR32,         /**< Atmel AVR32 */
-    EOS_ARCH_PIC16,         /**< Microchip PIC16 */
-    EOS_ARCH_PIC18,         /**< Microchip PIC18 */
-    EOS_ARCH_PIC24,         /**< Microchip PIC24 */
-    EOS_ARCH_DSPIC,         /**< Microchip dsPIC */
-    EOS_ARCH_PIC32,         /**< Microchip PIC32 (MIPS) */
-    EOS_ARCH_MSP430,        /**< TI MSP430 */
-    EOS_ARCH_C28X,          /**< TI C2000/C28x DSP */
-    EOS_ARCH_C6000,         /**< TI C6000 DSP */
-    EOS_ARCH_PRU,           /**< TI PRU-ICSS */
-    EOS_ARCH_RL78,          /**< Renesas RL78 */
-    EOS_ARCH_RX,            /**< Renesas RX */
-    EOS_ARCH_TRICORE,       /**< Infineon TriCore (AURIX) */
-    EOS_ARCH_C166,          /**< Infineon C166/XC2000 */
-    EOS_ARCH_MICROBLAZE,    /**< Xilinx MicroBlaze soft-core */
-    EOS_ARCH_NIOS2,         /**< Intel/Altera Nios II */
-    EOS_ARCH_OPENRISC,      /**< OpenRISC (mor1kx) */
-    EOS_ARCH_LM32,          /**< Lattice LatticeMico32 */
-    EOS_ARCH_BLACKFIN,      /**< Analog Devices Blackfin */
-    EOS_ARCH_SHARC,         /**< Analog Devices SHARC */
-    EOS_ARCH_HEXAGON,       /**< Qualcomm Hexagon DSP */
-    EOS_ARCH_CEVA,          /**< CEVA DSP */
-    EOS_ARCH_XTENSA,        /**< Xtensa (ESP32/HiFi) */
-    EOS_ARCH_ARC,           /**< Synopsys ARC */
-    EOS_ARCH_8051,          /**< Intel 8051 */
-    EOS_ARCH_V850,          /**< Renesas V850 */
-    EOS_ARCH_H8300,         /**< Renesas H8/300 */
-    EOS_ARCH_FRV,           /**< Fujitsu FR-V */
-    EOS_ARCH_MN103,         /**< Panasonic MN103 */
-    EOS_ARCH_LOONGARCH,     /**< Loongson LoongArch */
-    EOS_ARCH_PARISC,        /**< HP PA-RISC */
-    EOS_ARCH_IA64,          /**< Intel Itanium (IA-64) */
-    EOS_ARCH_ALPHA,         /**< DEC Alpha */
-    EOS_ARCH_S390,          /**< IBM System/390 (s390x) */
-    EOS_ARCH_CRIS,          /**< Axis CRIS */
-    EOS_ARCH_KALIMBA,       /**< Qualcomm Kalimba DSP */
     EOS_ARCH_RISCV64,       /**< RISC-V 64-bit */
     EOS_ARCH_RISCV32,       /**< RISC-V 32-bit */
     EOS_ARCH_MIPS,          /**< MIPS 32-bit */

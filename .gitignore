@@ -7,3 +7,4 @@ build_test/
 *.hex
 *.map
 .eos/
+_build/
