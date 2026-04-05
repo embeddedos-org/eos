@@ -1,0 +1,23 @@
+# EoS Board: Generic Cortex-M55 (Corstone-300)
+board:
+  name: generic-cortex-m55
+  mcu: Corstone-300
+  family: Corstone
+  arch: arm
+  core: cortex-m55
+  vendor: ARM
+  clock_hz: 250000000
+  memory:
+    flash: 2097152
+    ram: 524288
+  peripherals:
+    - {name: UART0, type: uart, bus: apb}
+    - {name: SPI0, type: spi, bus: apb}
+    - {name: I2C0, type: i2c, bus: apb}
+    - {name: GPIO, type: gpio, count: 64}
+    - {name: TIMER0, type: timer, bus: apb}
+    - {name: ETHOS_U55, type: npu, bus: ahb}
+    - {name: WDT, type: watchdog, bus: apb}
+    - {name: DMA0, type: dma, bus: ahb}
+  features: [cortex-m55, helium-mve, trustzone, dsp, fpu, mpu, npu]
+  toolchain: arm-none-eabi

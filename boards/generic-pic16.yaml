@@ -1,0 +1,23 @@
+# EoS Board: Generic PIC16 (PIC16F877A)
+board:
+  name: generic-pic16
+  mcu: PIC16F877A
+  family: PIC16F
+  arch: pic16
+  core: pic16
+  vendor: Microchip
+  clock_hz: 20000000
+  memory:
+    flash: 14336
+    ram: 368
+  peripherals:
+    - {name: USART, type: uart, bus: internal}
+    - {name: MSSP, type: spi, bus: internal}
+    - {name: I2C, type: i2c, bus: internal}
+    - {name: GPIO, type: gpio, count: 33}
+    - {name: ADC, type: adc, bus: internal, channels: 8}
+    - {name: TMR0, type: timer, bus: internal}
+    - {name: TMR1, type: timer, bus: internal}
+    - {name: WDT, type: watchdog, bus: internal}
+  features: [pic16, 8bit]
+  toolchain: xc8

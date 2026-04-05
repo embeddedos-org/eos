@@ -1,0 +1,19 @@
+# EoS Board: Generic CEVA (CEVA-XM6)
+board:
+  name: generic-ceva
+  mcu: CEVA-XM6
+  family: CEVA
+  arch: ceva
+  core: ceva-xm6
+  vendor: CEVA Inc
+  clock_hz: 1000000000
+  memory:
+    flash: 0
+    ram: 4194304
+  peripherals:
+    - {name: UART0, type: uart, bus: internal}
+    - {name: GPIO, type: gpio, count: 16}
+    - {name: TIMER0, type: timer, bus: internal}
+    - {name: DMA, type: dma, bus: internal}
+  features: [ceva, dsp, vision, neural]
+  toolchain: ceva-toolchain

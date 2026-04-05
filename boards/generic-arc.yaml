@@ -1,0 +1,22 @@
+# EoS Board: Generic ARC (ARC EM9D)
+board:
+  name: generic-arc
+  mcu: ARC-EM9D
+  family: ARC
+  arch: arc
+  core: arc-em
+  vendor: Synopsys
+  clock_hz: 100000000
+  memory:
+    flash: 1048576
+    ram: 262144
+  peripherals:
+    - {name: UART0, type: uart, bus: internal}
+    - {name: SPI0, type: spi, bus: internal}
+    - {name: I2C0, type: i2c, bus: internal}
+    - {name: GPIO, type: gpio, count: 32}
+    - {name: TIMER0, type: timer, bus: internal}
+    - {name: WDT, type: watchdog, bus: internal}
+    - {name: DMA, type: dma, bus: internal}
+  features: [arc, dsp, configurable]
+  toolchain: arc-elf-gcc

@@ -1,0 +1,23 @@
+# EoS Board: Generic PIC18 (PIC18F4550)
+board:
+  name: generic-pic18
+  mcu: PIC18F4550
+  family: PIC18F
+  arch: pic18
+  core: pic18
+  vendor: Microchip
+  clock_hz: 48000000
+  memory:
+    flash: 32768
+    ram: 2048
+  peripherals:
+    - {name: USART, type: uart, bus: internal}
+    - {name: MSSP, type: spi, bus: internal}
+    - {name: I2C, type: i2c, bus: internal}
+    - {name: GPIO, type: gpio, count: 36}
+    - {name: ADC, type: adc, bus: internal, channels: 13}
+    - {name: USB, type: usb, speed: full}
+    - {name: TMR0, type: timer, bus: internal}
+    - {name: WDT, type: watchdog, bus: internal}
+  features: [pic18, 8bit, usb]
+  toolchain: xc8

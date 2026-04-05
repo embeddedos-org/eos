@@ -254,8 +254,8 @@ eos/
 │   ├── linux/              #   Linux-specific services
 │   └── rtos/               #   RTOS-specific services
 ├── systems/                # System image assembly
-├── boards/                 # Board definitions
-├── toolchains/             # Cross-compilation configs (ARM, RISC-V, x86)
+├── boards/                 # Board definitions (83 board YAMLs, 73 architectures)
+├── toolchains/             # Cross-compilation configs (55+ toolchains)
 ├── examples/               # Example projects
 ├── docs/                   # Documentation
 └── tests/                  # Unit tests (8 test suites)
@@ -439,7 +439,7 @@ ar rcs libeos.a *.o
 
 | Project | Repository | Purpose |
 |---|---|---|
-| **eboot** | [embeddedos-org/eboot](https://github.com/embeddedos-org/eboot) | Bootloader — 24 boards, secure boot, A/B slots, recovery |
+| **eboot** | [embeddedos-org/eboot](https://github.com/embeddedos-org/eboot) | Bootloader — 83 boards, 73 architectures, secure boot, A/B slots, recovery |
 | **ebuild** | [embeddedos-org/ebuild](https://github.com/embeddedos-org/ebuild) | Build system — YAML config, SDK generator, packaging |
 | **eipc** | [embeddedos-org/eipc](https://github.com/embeddedos-org/eipc) | IPC — Go + C SDK, shared memory, message passing, RPC |
 | **eai** | [embeddedos-org/eai](https://github.com/embeddedos-org/eai) | AI/ML — on-device LLM inference, agent loop, model management |
@@ -456,7 +456,7 @@ The `schemas/` directory provides machine-readable hardware vocabulary that ebui
 
 | Schema | Coverage |
 |---|---|
-| `board.schema.yaml` | 6 architectures, 19 core types, 32 peripheral types, 10 vendors |
+| `board.schema.yaml` | 73 architectures, 50+ core types, 32 peripheral types, 30+ vendors |
 | `hal_map.yaml` | 22 HAL interfaces → API prefix, enable flags, pin types |
 | `peripherals.yaml` | 20 peripheral types with use cases, common chips, 10 product mappings |
 

@@ -1,0 +1,25 @@
+# EoS Board: Generic PPC64 (POWER9)
+board:
+  name: generic-ppc64
+  mcu: POWER9
+  family: POWER
+  arch: ppc64
+  core: power9
+  vendor: IBM
+  clock_hz: 4000000000
+  memory:
+    flash: 0
+    ram: 68719476736
+  peripherals:
+    - {name: UART0, type: uart, bus: apb}
+    - {name: SPI0, type: spi, bus: apb}
+    - {name: I2C0, type: i2c, bus: apb}
+    - {name: GPIO, type: gpio, count: 64}
+    - {name: ETH, type: ethernet, bus: ahb}
+    - {name: USB, type: usb, speed: high}
+    - {name: PCIE, type: pcie, bus: internal}
+    - {name: NVLink, type: interconnect, bus: internal}
+    - {name: WDT, type: watchdog, bus: apb}
+    - {name: DMA, type: dma, bus: ahb}
+  features: [ppc64, mmu, smp, virtualization, altivec]
+  toolchain: powerpc64-linux-gnu-gcc

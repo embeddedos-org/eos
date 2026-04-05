@@ -1,0 +1,27 @@
+# EoS Board: Generic C28x (TMS320F28379D)
+board:
+  name: generic-c28x
+  mcu: TMS320F28379D
+  family: C2000
+  arch: c28x
+  core: c28x
+  vendor: TI
+  clock_hz: 200000000
+  memory:
+    flash: 1048576
+    ram: 204800
+  peripherals:
+    - {name: SCI_A, type: uart, bus: internal}
+    - {name: SCI_B, type: uart, bus: internal}
+    - {name: SPI_A, type: spi, bus: internal}
+    - {name: I2C_A, type: i2c, bus: internal}
+    - {name: GPIO, type: gpio, count: 169}
+    - {name: ADC_A, type: adc, bus: internal, channels: 16}
+    - {name: DAC_A, type: dac, bus: internal, channels: 3}
+    - {name: ePWM1, type: pwm, bus: internal}
+    - {name: CAN_A, type: can, bus: internal}
+    - {name: WDT, type: watchdog, bus: internal}
+    - {name: DMA, type: dma, bus: internal}
+    - {name: CLA, type: dsp, bus: internal}
+  features: [c28x, fpu, dsp, motor-control, dual-core]
+  toolchain: ti-cgt-c2000

@@ -1,0 +1,21 @@
+# EoS Board: Generic Hexagon (SDM845 DSP)
+board:
+  name: generic-hexagon
+  mcu: SDM845-DSP
+  family: Hexagon
+  arch: hexagon
+  core: hexagon-v66
+  vendor: Qualcomm
+  clock_hz: 1500000000
+  memory:
+    flash: 0
+    ram: 8388608
+  peripherals:
+    - {name: UART0, type: uart, bus: internal}
+    - {name: SPI0, type: spi, bus: internal}
+    - {name: I2C0, type: i2c, bus: internal}
+    - {name: GPIO, type: gpio, count: 32}
+    - {name: TIMER0, type: timer, bus: internal}
+    - {name: DMA, type: dma, bus: internal}
+  features: [hexagon, vliw, dsp, simd, hvx]
+  toolchain: hexagon-clang

@@ -1,0 +1,20 @@
+# EoS Board: Generic Xtensa HiFi (HiFi5)
+board:
+  name: generic-xtensa-hifi
+  mcu: HiFi5
+  family: Xtensa-HiFi
+  arch: xtensa-hifi
+  core: xtensa-hifi5
+  vendor: Cadence
+  clock_hz: 800000000
+  memory:
+    flash: 0
+    ram: 4194304
+  peripherals:
+    - {name: UART0, type: uart, bus: internal}
+    - {name: I2S, type: audio, bus: internal}
+    - {name: GPIO, type: gpio, count: 32}
+    - {name: TIMER0, type: timer, bus: internal}
+    - {name: DMA, type: dma, bus: internal}
+  features: [xtensa-hifi, dsp, audio, simd]
+  toolchain: xt-clang

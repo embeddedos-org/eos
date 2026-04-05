@@ -1,0 +1,22 @@
+# EoS Board: Generic OpenRISC (mor1kx)
+board:
+  name: generic-openrisc
+  mcu: mor1kx
+  family: OpenRISC
+  arch: openrisc
+  core: or1200
+  vendor: Open-source
+  clock_hz: 100000000
+  memory:
+    flash: 4194304
+    ram: 16777216
+  peripherals:
+    - {name: UART16550, type: uart, bus: wishbone}
+    - {name: SPI, type: spi, bus: wishbone}
+    - {name: I2C, type: i2c, bus: wishbone}
+    - {name: GPIO, type: gpio, bus: wishbone}
+    - {name: TIMER, type: timer, bus: wishbone}
+    - {name: DMA, type: dma, bus: wishbone}
+    - {name: ETH, type: ethernet, bus: wishbone}
+  features: [openrisc, soft-core, fpga, open-source]
+  toolchain: or1k-elf-gcc

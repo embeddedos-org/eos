@@ -1,0 +1,28 @@
+# EoS Board: Generic TriCore (AURIX TC397)
+board:
+  name: generic-tricore
+  mcu: TC397
+  family: AURIX
+  arch: tricore
+  core: tricore-1.6.2
+  vendor: Infineon
+  clock_hz: 300000000
+  memory:
+    flash: 16777216
+    ram: 6291456
+  peripherals:
+    - {name: ASCLIN0, type: uart, bus: spb}
+    - {name: ASCLIN1, type: uart, bus: spb}
+    - {name: QSPI0, type: spi, bus: spb}
+    - {name: I2C0, type: i2c, bus: spb}
+    - {name: GPIO, type: gpio, count: 160}
+    - {name: VADC, type: adc, bus: spb, channels: 48}
+    - {name: GTM, type: timer, bus: spb}
+    - {name: CAN0, type: can, bus: spb}
+    - {name: CAN1, type: can, bus: spb}
+    - {name: ETH, type: ethernet, bus: spb}
+    - {name: WDT, type: watchdog, bus: spb}
+    - {name: DMA, type: dma, bus: spb}
+    - {name: HSM, type: crypto, bus: spb}
+  features: [tricore, lockstep, safety, automotive, ecc, can, ethernet]
+  toolchain: tricore-elf-gcc

@@ -1,0 +1,23 @@
+# EoS Board: Generic Nios II (Intel/Altera)
+board:
+  name: generic-nios2
+  mcu: Nios-II
+  family: Nios-II
+  arch: nios2
+  core: nios2
+  vendor: Intel/Altera
+  clock_hz: 250000000
+  memory:
+    flash: 16777216
+    ram: 134217728
+  peripherals:
+    - {name: JTAG_UART, type: uart, bus: avalon}
+    - {name: UART, type: uart, bus: avalon}
+    - {name: SPI, type: spi, bus: avalon}
+    - {name: I2C, type: i2c, bus: avalon}
+    - {name: PIO, type: gpio, bus: avalon}
+    - {name: TIMER, type: timer, bus: avalon}
+    - {name: DMA, type: dma, bus: avalon}
+    - {name: TSE, type: ethernet, bus: avalon}
+  features: [nios2, soft-core, fpga, configurable]
+  toolchain: nios2-elf-gcc

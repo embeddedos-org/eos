@@ -1,0 +1,22 @@
+# EoS Board: Generic SHARC (ADSP-21489)
+board:
+  name: generic-sharc
+  mcu: ADSP-21489
+  family: SHARC
+  arch: sharc
+  core: sharc
+  vendor: Analog Devices
+  clock_hz: 450000000
+  memory:
+    flash: 4194304
+    ram: 5242880
+  peripherals:
+    - {name: UART0, type: uart, bus: internal}
+    - {name: SPI0, type: spi, bus: internal}
+    - {name: GPIO, type: gpio, count: 16}
+    - {name: DAI, type: audio, bus: internal}
+    - {name: TIMER0, type: timer, bus: internal}
+    - {name: WDT, type: watchdog, bus: internal}
+    - {name: DMA, type: dma, bus: internal}
+  features: [sharc, dsp, simd, audio]
+  toolchain: sharc-elf-gcc

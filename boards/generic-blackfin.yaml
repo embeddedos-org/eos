@@ -1,0 +1,24 @@
+# EoS Board: Generic Blackfin (ADSP-BF537)
+board:
+  name: generic-blackfin
+  mcu: ADSP-BF537
+  family: Blackfin
+  arch: blackfin
+  core: blackfin
+  vendor: Analog Devices
+  clock_hz: 600000000
+  memory:
+    flash: 4194304
+    ram: 134217728
+  peripherals:
+    - {name: UART0, type: uart, bus: internal}
+    - {name: SPI0, type: spi, bus: internal}
+    - {name: TWI0, type: i2c, bus: internal}
+    - {name: GPIO, type: gpio, count: 48}
+    - {name: EMAC, type: ethernet, bus: internal}
+    - {name: USB, type: usb, speed: high}
+    - {name: TIMER0, type: timer, bus: internal}
+    - {name: WDT, type: watchdog, bus: internal}
+    - {name: DMA, type: dma, bus: internal}
+  features: [blackfin, dsp, ethernet, usb]
+  toolchain: bfin-elf-gcc

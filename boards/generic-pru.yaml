@@ -1,0 +1,20 @@
+# EoS Board: Generic PRU (AM335x PRU-ICSS)
+board:
+  name: generic-pru
+  mcu: AM335x-PRU
+  family: AM335x
+  arch: pru
+  core: pru
+  vendor: TI
+  clock_hz: 200000000
+  memory:
+    flash: 0
+    ram: 16384
+  peripherals:
+    - {name: UART0, type: uart, bus: internal}
+    - {name: GPIO, type: gpio, count: 32}
+    - {name: IEP, type: timer, bus: internal}
+    - {name: ECAP, type: timer, bus: internal}
+    - {name: SCRATCH, type: memory, bus: internal}
+  features: [pru, real-time, deterministic]
+  toolchain: ti-cgt-pru

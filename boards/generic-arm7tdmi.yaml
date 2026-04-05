@@ -1,0 +1,25 @@
+# EoS Board: Generic ARM7TDMI (LPC2148)
+board:
+  name: generic-arm7tdmi
+  mcu: LPC2148
+  family: LPC2000
+  arch: arm
+  core: arm7tdmi
+  vendor: NXP
+  clock_hz: 60000000
+  memory:
+    flash: 524288
+    ram: 40960
+  peripherals:
+    - {name: UART0, type: uart, bus: apb}
+    - {name: SPI0, type: spi, bus: apb}
+    - {name: I2C0, type: i2c, bus: apb}
+    - {name: GPIO, type: gpio, count: 48}
+    - {name: ADC0, type: adc, bus: apb, channels: 8}
+    - {name: DAC, type: dac, bus: apb, channels: 1}
+    - {name: TIMER0, type: timer, bus: apb}
+    - {name: USB, type: usb, speed: full}
+    - {name: WDT, type: watchdog, bus: apb}
+    - {name: RTC, type: rtc, bus: apb}
+  features: [arm7tdmi, thumb]
+  toolchain: arm-none-eabi

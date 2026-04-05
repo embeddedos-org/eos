@@ -1,0 +1,25 @@
+# EoS Board: Generic AVR32 (AT32UC3A0512)
+board:
+  name: generic-avr32
+  mcu: AT32UC3A0512
+  family: UC3
+  arch: avr32
+  core: avr32
+  vendor: Microchip
+  clock_hz: 66000000
+  memory:
+    flash: 524288
+    ram: 65536
+  peripherals:
+    - {name: USART0, type: uart, bus: pba}
+    - {name: SPI0, type: spi, bus: pba}
+    - {name: TWI0, type: i2c, bus: pba}
+    - {name: GPIO, type: gpio, count: 69}
+    - {name: ADC, type: adc, bus: pba, channels: 8}
+    - {name: USB, type: usb, speed: full}
+    - {name: MACB, type: ethernet, bus: hsb}
+    - {name: TC0, type: timer, bus: pba}
+    - {name: WDT, type: watchdog, bus: pba}
+    - {name: DMA, type: dma, bus: hsb}
+  features: [avr32, dsp, mmu, ethernet, usb]
+  toolchain: avr32-gcc

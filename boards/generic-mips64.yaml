@@ -1,0 +1,24 @@
+# EoS Board: Generic MIPS64 (MIPS64 R6)
+board:
+  name: generic-mips64
+  mcu: MIPS64-R6
+  family: MIPS64
+  arch: mips64
+  core: mips64r6
+  vendor: MIPS/Imagination
+  clock_hz: 1500000000
+  memory:
+    flash: 0
+    ram: 4294967296
+  peripherals:
+    - {name: UART0, type: uart, bus: apb}
+    - {name: SPI0, type: spi, bus: apb}
+    - {name: I2C0, type: i2c, bus: apb}
+    - {name: GPIO, type: gpio, count: 128}
+    - {name: ETH, type: ethernet, bus: ahb}
+    - {name: USB, type: usb, speed: high}
+    - {name: PCIE, type: pcie, bus: internal}
+    - {name: WDT, type: watchdog, bus: apb}
+    - {name: DMA, type: dma, bus: ahb}
+  features: [mips64, mmu, fpu, smp]
+  toolchain: mips64-linux-gnu-gcc

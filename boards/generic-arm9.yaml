@@ -1,0 +1,25 @@
+# EoS Board: Generic ARM926EJ-S (AT91SAM9G25)
+board:
+  name: generic-arm9
+  mcu: AT91SAM9G25
+  family: SAM9
+  arch: arm
+  core: arm926ej-s
+  vendor: Microchip
+  clock_hz: 400000000
+  memory:
+    flash: 0
+    ram: 134217728
+  peripherals:
+    - {name: USART0, type: uart, bus: apb}
+    - {name: SPI0, type: spi, bus: apb}
+    - {name: TWI0, type: i2c, bus: apb}
+    - {name: GPIO, type: gpio, count: 128}
+    - {name: ADC, type: adc, bus: apb, channels: 12}
+    - {name: EMAC, type: ethernet, bus: ahb}
+    - {name: USB, type: usb, speed: full}
+    - {name: WDT, type: watchdog, bus: apb}
+    - {name: TC0, type: timer, bus: apb}
+    - {name: DMA, type: dma, bus: ahb}
+  features: [arm926ej-s, mmu, ethernet, usb]
+  toolchain: arm-none-eabi

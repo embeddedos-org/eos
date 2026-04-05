@@ -1,0 +1,24 @@
+# EoS Board: Generic Cortex-A35 (i.MX8X)
+board:
+  name: generic-cortex-a35
+  mcu: i.MX8X
+  family: i.MX8
+  arch: arm64
+  core: cortex-a35
+  vendor: NXP
+  clock_hz: 1200000000
+  memory:
+    flash: 0
+    ram: 2147483648
+  peripherals:
+    - {name: UART0, type: uart, bus: apb}
+    - {name: SPI0, type: spi, bus: apb}
+    - {name: I2C0, type: i2c, bus: apb}
+    - {name: GPIO, type: gpio, count: 128}
+    - {name: ENET, type: ethernet, bus: ahb}
+    - {name: USB, type: usb, speed: high}
+    - {name: GPU, type: gpu, bus: axi}
+    - {name: WDT, type: watchdog, bus: apb}
+    - {name: DMA, type: dma, bus: ahb}
+  features: [cortex-a35, mmu, neon, fpu, ethernet, usb, gpu]
+  toolchain: aarch64-linux-gnu

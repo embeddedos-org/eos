@@ -1,0 +1,21 @@
+# EoS Board: Generic Kalimba (CSR8675)
+board:
+  name: generic-kalimba
+  mcu: CSR8675
+  family: Kalimba
+  arch: kalimba
+  core: kalimba
+  vendor: Qualcomm/CSR
+  clock_hz: 120000000
+  memory:
+    flash: 4194304
+    ram: 1048576
+  peripherals:
+    - {name: UART0, type: uart, bus: internal}
+    - {name: SPI0, type: spi, bus: internal}
+    - {name: I2S, type: audio, bus: internal}
+    - {name: GPIO, type: gpio, count: 32}
+    - {name: TIMER0, type: timer, bus: internal}
+    - {name: DMA, type: dma, bus: internal}
+  features: [kalimba, dsp, audio, bluetooth]
+  toolchain: kalimba-toolchain

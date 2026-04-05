@@ -1,0 +1,24 @@
+# EoS Board: Generic IA-64 (Itanium 9500)
+board:
+  name: generic-ia64
+  mcu: Itanium-9500
+  family: Itanium
+  arch: ia64
+  core: itanium2
+  vendor: Intel
+  clock_hz: 2530000000
+  memory:
+    flash: 0
+    ram: 549755813888
+  peripherals:
+    - {name: UART0, type: uart, bus: apb}
+    - {name: SPI0, type: spi, bus: apb}
+    - {name: I2C0, type: i2c, bus: apb}
+    - {name: GPIO, type: gpio, count: 64}
+    - {name: ETH, type: ethernet, bus: ahb}
+    - {name: USB, type: usb, speed: high}
+    - {name: PCIE, type: pcie, bus: internal}
+    - {name: WDT, type: watchdog, bus: apb}
+    - {name: DMA, type: dma, bus: ahb}
+  features: [ia64, mmu, epic, smp]
+  toolchain: ia64-linux-gnu-gcc

@@ -1,0 +1,24 @@
+# EoS Board: Generic CRIS (ETRAX 100LX)
+board:
+  name: generic-cris
+  mcu: ETRAX-100LX
+  family: ETRAX
+  arch: cris
+  core: crisv32
+  vendor: Axis
+  clock_hz: 200000000
+  memory:
+    flash: 4194304
+    ram: 67108864
+  peripherals:
+    - {name: UART0, type: uart, bus: internal}
+    - {name: SPI0, type: spi, bus: internal}
+    - {name: I2C0, type: i2c, bus: internal}
+    - {name: GPIO, type: gpio, count: 80}
+    - {name: ETH0, type: ethernet, bus: internal}
+    - {name: USB, type: usb, speed: high}
+    - {name: TIMER0, type: timer, bus: internal}
+    - {name: WDT, type: watchdog, bus: internal}
+    - {name: DMA, type: dma, bus: internal}
+  features: [cris, mmu, ethernet, usb]
+  toolchain: cris-linux-gnu-gcc

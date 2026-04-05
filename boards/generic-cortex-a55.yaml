@@ -1,0 +1,25 @@
+# EoS Board: Generic Cortex-A55 (RK3568)
+board:
+  name: generic-cortex-a55
+  mcu: RK3568
+  family: RK35
+  arch: arm64
+  core: cortex-a55
+  vendor: Rockchip
+  clock_hz: 2000000000
+  memory:
+    flash: 0
+    ram: 4294967296
+  peripherals:
+    - {name: UART0, type: uart, bus: apb}
+    - {name: SPI0, type: spi, bus: apb}
+    - {name: I2C0, type: i2c, bus: apb}
+    - {name: GPIO, type: gpio, count: 160}
+    - {name: GMAC, type: ethernet, bus: ahb}
+    - {name: USB3, type: usb, speed: super}
+    - {name: GPU, type: gpu, bus: axi}
+    - {name: PCIE, type: pcie, bus: axi}
+    - {name: WDT, type: watchdog, bus: apb}
+    - {name: DMA, type: dma, bus: ahb}
+  features: [cortex-a55, mmu, neon, fpu, smp, pcie]
+  toolchain: aarch64-linux-gnu

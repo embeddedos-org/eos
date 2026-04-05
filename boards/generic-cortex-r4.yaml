@@ -1,0 +1,25 @@
+# EoS Board: Generic Cortex-R4F (RM46L852)
+board:
+  name: generic-cortex-r4
+  mcu: RM46L852
+  family: RM46
+  arch: arm
+  core: cortex-r4f
+  vendor: TI
+  clock_hz: 220000000
+  memory:
+    flash: 1310720
+    ram: 262144
+  peripherals:
+    - {name: SCI0, type: uart, bus: apb}
+    - {name: SPI0, type: spi, bus: apb}
+    - {name: I2C0, type: i2c, bus: apb}
+    - {name: GPIO, type: gpio, count: 64}
+    - {name: ADC0, type: adc, bus: apb, channels: 24}
+    - {name: CAN0, type: can, bus: apb}
+    - {name: CAN1, type: can, bus: apb}
+    - {name: N2HET0, type: timer, bus: apb}
+    - {name: WDT, type: watchdog, bus: apb}
+    - {name: DMA0, type: dma, bus: ahb}
+  features: [cortex-r4, fpu, ecc, lockstep, safety]
+  toolchain: arm-none-eabi

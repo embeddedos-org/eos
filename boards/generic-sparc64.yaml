@@ -1,0 +1,24 @@
+# EoS Board: Generic SPARC64 (UltraSPARC T2)
+board:
+  name: generic-sparc64
+  mcu: UltraSPARC-T2
+  family: UltraSPARC
+  arch: sparc64
+  core: sparc-v9
+  vendor: Sun/Oracle
+  clock_hz: 1400000000
+  memory:
+    flash: 0
+    ram: 34359738368
+  peripherals:
+    - {name: UART0, type: uart, bus: apb}
+    - {name: SPI0, type: spi, bus: apb}
+    - {name: I2C0, type: i2c, bus: apb}
+    - {name: GPIO, type: gpio, count: 64}
+    - {name: ETH, type: ethernet, bus: ahb}
+    - {name: USB, type: usb, speed: high}
+    - {name: PCIE, type: pcie, bus: internal}
+    - {name: WDT, type: watchdog, bus: apb}
+    - {name: DMA, type: dma, bus: ahb}
+  features: [sparc64, mmu, smp, virtualization]
+  toolchain: sparc64-linux-gnu-gcc

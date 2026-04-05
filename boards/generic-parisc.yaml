@@ -1,0 +1,23 @@
+# EoS Board: Generic PA-RISC (PA-8700)
+board:
+  name: generic-parisc
+  mcu: PA-8700
+  family: PA-RISC
+  arch: parisc
+  core: pa8700
+  vendor: HP
+  clock_hz: 875000000
+  memory:
+    flash: 0
+    ram: 4294967296
+  peripherals:
+    - {name: UART0, type: uart, bus: apb}
+    - {name: SPI0, type: spi, bus: apb}
+    - {name: I2C0, type: i2c, bus: apb}
+    - {name: GPIO, type: gpio, count: 64}
+    - {name: ETH, type: ethernet, bus: ahb}
+    - {name: USB, type: usb, speed: high}
+    - {name: WDT, type: watchdog, bus: apb}
+    - {name: DMA, type: dma, bus: ahb}
+  features: [parisc, mmu]
+  toolchain: hppa-linux-gnu-gcc

@@ -1,0 +1,24 @@
+# EoS Board: Generic Cortex-A15 (OMAP5432)
+board:
+  name: generic-cortex-a15
+  mcu: OMAP5432
+  family: OMAP5
+  arch: arm
+  core: cortex-a15
+  vendor: TI
+  clock_hz: 1500000000
+  memory:
+    flash: 0
+    ram: 2147483648
+  peripherals:
+    - {name: UART0, type: uart, bus: apb}
+    - {name: SPI0, type: spi, bus: apb}
+    - {name: I2C0, type: i2c, bus: apb}
+    - {name: GPIO, type: gpio, count: 192}
+    - {name: EMAC, type: ethernet, bus: ahb}
+    - {name: USB, type: usb, speed: high}
+    - {name: DSS, type: display, bus: ahb}
+    - {name: WDT, type: watchdog, bus: apb}
+    - {name: DMA, type: dma, bus: ahb}
+  features: [cortex-a15, mmu, neon, fpu, smp, virtualization]
+  toolchain: arm-none-eabi

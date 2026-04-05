@@ -1,0 +1,23 @@
+# EoS Board: Generic AVR (ATmega328P)
+board:
+  name: generic-avr
+  mcu: ATmega328P
+  family: ATmega
+  arch: avr
+  core: avr5
+  vendor: Microchip
+  clock_hz: 16000000
+  memory:
+    flash: 32768
+    ram: 2048
+  peripherals:
+    - {name: USART0, type: uart, bus: internal}
+    - {name: SPI0, type: spi, bus: internal}
+    - {name: TWI0, type: i2c, bus: internal}
+    - {name: GPIO, type: gpio, count: 23}
+    - {name: ADC, type: adc, bus: internal, channels: 6}
+    - {name: TIMER0, type: timer, bus: internal}
+    - {name: TIMER1, type: timer, bus: internal}
+    - {name: WDT, type: watchdog, bus: internal}
+  features: [avr, 8bit]
+  toolchain: avr-gcc

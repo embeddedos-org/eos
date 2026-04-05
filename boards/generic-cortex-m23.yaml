@@ -1,0 +1,24 @@
+# EoS Board: Generic Cortex-M23 (LPC55S06)
+board:
+  name: generic-cortex-m23
+  mcu: LPC55S06
+  family: LPC55
+  arch: arm
+  core: cortex-m23
+  vendor: NXP
+  clock_hz: 96000000
+  memory:
+    flash: 262144
+    ram: 98304
+  peripherals:
+    - {name: USART0, type: uart, bus: apb}
+    - {name: SPI0, type: spi, bus: apb}
+    - {name: I2C0, type: i2c, bus: apb}
+    - {name: GPIO, type: gpio, count: 64}
+    - {name: ADC0, type: adc, bus: apb, channels: 16}
+    - {name: CTIMER0, type: timer, bus: apb}
+    - {name: USB, type: usb, speed: full}
+    - {name: WDT, type: watchdog, bus: apb}
+    - {name: DMA0, type: dma, bus: ahb}
+  features: [cortex-m23, trustzone, mpu]
+  toolchain: arm-none-eabi

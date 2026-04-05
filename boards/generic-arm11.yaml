@@ -1,0 +1,25 @@
+# EoS Board: Generic ARM1176JZF-S (BCM2835)
+board:
+  name: generic-arm11
+  mcu: BCM2835
+  family: BCM2835
+  arch: arm
+  core: arm1176jzf-s
+  vendor: Broadcom
+  clock_hz: 700000000
+  memory:
+    flash: 0
+    ram: 536870912
+  peripherals:
+    - {name: UART0, type: uart, bus: apb}
+    - {name: SPI0, type: spi, bus: apb}
+    - {name: I2C0, type: i2c, bus: apb}
+    - {name: GPIO, type: gpio, count: 54}
+    - {name: USB, type: usb, speed: high}
+    - {name: EMMC, type: mmc, bus: ahb}
+    - {name: DMA, type: dma, bus: ahb}
+    - {name: GPU, type: gpu, bus: ahb}
+    - {name: WDT, type: watchdog, bus: apb}
+    - {name: TIMER, type: timer, bus: apb}
+  features: [arm1176, mmu, vfp, usb, gpu]
+  toolchain: arm-none-eabi

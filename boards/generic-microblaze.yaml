@@ -1,0 +1,23 @@
+# EoS Board: Generic MicroBlaze (Xilinx/AMD)
+board:
+  name: generic-microblaze
+  mcu: MicroBlaze
+  family: MicroBlaze
+  arch: microblaze
+  core: microblaze
+  vendor: Xilinx/AMD
+  clock_hz: 200000000
+  memory:
+    flash: 16777216
+    ram: 134217728
+  peripherals:
+    - {name: UART_LITE, type: uart, bus: axi}
+    - {name: SPI, type: spi, bus: axi}
+    - {name: IIC, type: i2c, bus: axi}
+    - {name: GPIO, type: gpio, bus: axi}
+    - {name: TIMER, type: timer, bus: axi}
+    - {name: INTC, type: intc, bus: axi}
+    - {name: DMA, type: dma, bus: axi}
+    - {name: ETH_LITE, type: ethernet, bus: axi}
+  features: [microblaze, soft-core, fpga, configurable]
+  toolchain: microblaze-elf-gcc

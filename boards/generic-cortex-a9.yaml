@@ -1,0 +1,25 @@
+# EoS Board: Generic Cortex-A9 (Zynq-7020)
+board:
+  name: generic-cortex-a9
+  mcu: Zynq-7020
+  family: Zynq-7000
+  arch: arm
+  core: cortex-a9
+  vendor: Xilinx/AMD
+  clock_hz: 866000000
+  memory:
+    flash: 0
+    ram: 536870912
+  peripherals:
+    - {name: UART0, type: uart, bus: apb}
+    - {name: SPI0, type: spi, bus: apb}
+    - {name: I2C0, type: i2c, bus: apb}
+    - {name: GPIO, type: gpio, count: 118}
+    - {name: GEM0, type: ethernet, bus: ahb}
+    - {name: USB0, type: usb, speed: high}
+    - {name: TTC0, type: timer, bus: apb}
+    - {name: WDT, type: watchdog, bus: apb}
+    - {name: DMA0, type: dma, bus: ahb}
+    - {name: FPGA, type: fpga, bus: axi}
+  features: [cortex-a9, mmu, neon, fpu, smp, fpga]
+  toolchain: arm-none-eabi

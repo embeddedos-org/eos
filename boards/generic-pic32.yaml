@@ -1,0 +1,26 @@
+# EoS Board: Generic PIC32 (PIC32MX795F512L)
+board:
+  name: generic-pic32
+  mcu: PIC32MX795F512L
+  family: PIC32MX
+  arch: pic32
+  core: mips32r2
+  vendor: Microchip
+  clock_hz: 80000000
+  memory:
+    flash: 524288
+    ram: 131072
+  peripherals:
+    - {name: UART1, type: uart, bus: apb}
+    - {name: SPI1, type: spi, bus: apb}
+    - {name: I2C1, type: i2c, bus: apb}
+    - {name: GPIO, type: gpio, count: 85}
+    - {name: ADC1, type: adc, bus: apb, channels: 16}
+    - {name: USB, type: usb, speed: full}
+    - {name: ETH, type: ethernet, bus: ahb}
+    - {name: CAN1, type: can, bus: apb}
+    - {name: TMR1, type: timer, bus: apb}
+    - {name: WDT, type: watchdog, bus: apb}
+    - {name: DMA, type: dma, bus: ahb}
+  features: [pic32, mips, ethernet, usb, can]
+  toolchain: xc32

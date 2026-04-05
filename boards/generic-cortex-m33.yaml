@@ -1,0 +1,24 @@
+# EoS Board: Generic Cortex-M33 (STM32L562)
+board:
+  name: generic-cortex-m33
+  mcu: STM32L562
+  family: STM32L5
+  arch: arm
+  core: cortex-m33
+  vendor: ST Microelectronics
+  clock_hz: 110000000
+  memory:
+    flash: 524288
+    ram: 262144
+  peripherals:
+    - {name: USART1, type: uart, bus: apb2}
+    - {name: SPI1, type: spi, bus: apb2}
+    - {name: I2C1, type: i2c, bus: apb1}
+    - {name: GPIO, type: gpio, count: 90}
+    - {name: ADC1, type: adc, bus: apb2, channels: 16}
+    - {name: DAC1, type: dac, bus: apb1, channels: 2}
+    - {name: TIM1, type: timer, bus: apb2}
+    - {name: WDT, type: watchdog, bus: apb1}
+    - {name: DMA1, type: dma, bus: ahb}
+  features: [cortex-m33, trustzone, dsp, fpu, mpu]
+  toolchain: arm-none-eabi

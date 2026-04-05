@@ -1,0 +1,20 @@
+# EoS Board: Generic 8051 (STC89C52)
+board:
+  name: generic-8051
+  mcu: STC89C52
+  family: 8051
+  arch: 8051
+  core: 8051
+  vendor: STC/Silicon Labs
+  clock_hz: 24000000
+  memory:
+    flash: 8192
+    ram: 256
+  peripherals:
+    - {name: UART0, type: uart, bus: internal}
+    - {name: GPIO, type: gpio, count: 32}
+    - {name: TIMER0, type: timer, bus: internal}
+    - {name: TIMER1, type: timer, bus: internal}
+    - {name: WDT, type: watchdog, bus: internal}
+  features: [8051, 8bit]
+  toolchain: sdcc

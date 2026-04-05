@@ -1,0 +1,24 @@
+# EoS Board: Generic C166 (XC2267M)
+board:
+  name: generic-c166
+  mcu: XC2267M
+  family: XC2000
+  arch: c166
+  core: c166sv2
+  vendor: Infineon
+  clock_hz: 80000000
+  memory:
+    flash: 768000
+    ram: 49152
+  peripherals:
+    - {name: ASC0, type: uart, bus: internal}
+    - {name: ASC1, type: uart, bus: internal}
+    - {name: SSC0, type: spi, bus: internal}
+    - {name: I2C0, type: i2c, bus: internal}
+    - {name: GPIO, type: gpio, count: 111}
+    - {name: ADC0, type: adc, bus: internal, channels: 16}
+    - {name: CAN0, type: can, bus: internal}
+    - {name: GPT12, type: timer, bus: internal}
+    - {name: WDT, type: watchdog, bus: internal}
+  features: [c166, 16bit, can, automotive]
+  toolchain: c166-elf-gcc

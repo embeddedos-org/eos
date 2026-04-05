@@ -1,0 +1,25 @@
+# EoS Board: Generic Cortex-M85 (RA8M1)
+board:
+  name: generic-cortex-m85
+  mcu: RA8M1
+  family: RA8
+  arch: arm
+  core: cortex-m85
+  vendor: Renesas
+  clock_hz: 480000000
+  memory:
+    flash: 2097152
+    ram: 1048576
+  peripherals:
+    - {name: SCI0, type: uart, bus: apb}
+    - {name: SPI0, type: spi, bus: apb}
+    - {name: I2C0, type: i2c, bus: apb}
+    - {name: GPIO, type: gpio, count: 128}
+    - {name: ADC0, type: adc, bus: apb, channels: 16}
+    - {name: GPT0, type: timer, bus: apb}
+    - {name: USB_HS, type: usb, speed: high}
+    - {name: ETH, type: ethernet, bus: ahb}
+    - {name: WDT, type: watchdog, bus: apb}
+    - {name: DMA0, type: dma, bus: ahb}
+  features: [cortex-m85, helium-mve, trustzone, dsp, fpu, mpu]
+  toolchain: arm-none-eabi

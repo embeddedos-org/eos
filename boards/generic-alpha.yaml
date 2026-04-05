@@ -1,0 +1,24 @@
+# EoS Board: Generic Alpha (Alpha 21264)
+board:
+  name: generic-alpha
+  mcu: Alpha-21264
+  family: Alpha
+  arch: alpha
+  core: ev67
+  vendor: DEC/Compaq
+  clock_hz: 1250000000
+  memory:
+    flash: 0
+    ram: 34359738368
+  peripherals:
+    - {name: UART0, type: uart, bus: apb}
+    - {name: SPI0, type: spi, bus: apb}
+    - {name: I2C0, type: i2c, bus: apb}
+    - {name: GPIO, type: gpio, count: 64}
+    - {name: ETH, type: ethernet, bus: ahb}
+    - {name: USB, type: usb, speed: high}
+    - {name: PCIE, type: pcie, bus: internal}
+    - {name: WDT, type: watchdog, bus: apb}
+    - {name: DMA, type: dma, bus: ahb}
+  features: [alpha, mmu, 64bit]
+  toolchain: alpha-linux-gnu-gcc

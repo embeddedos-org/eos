@@ -1,0 +1,24 @@
+# EoS Board: Generic PIC24 (PIC24FJ128GA010)
+board:
+  name: generic-pic24
+  mcu: PIC24FJ128GA010
+  family: PIC24FJ
+  arch: pic24
+  core: pic24
+  vendor: Microchip
+  clock_hz: 32000000
+  memory:
+    flash: 131072
+    ram: 8192
+  peripherals:
+    - {name: UART1, type: uart, bus: internal}
+    - {name: UART2, type: uart, bus: internal}
+    - {name: SPI1, type: spi, bus: internal}
+    - {name: I2C1, type: i2c, bus: internal}
+    - {name: GPIO, type: gpio, count: 85}
+    - {name: ADC1, type: adc, bus: internal, channels: 16}
+    - {name: TMR1, type: timer, bus: internal}
+    - {name: WDT, type: watchdog, bus: internal}
+    - {name: DMA, type: dma, bus: internal}
+  features: [pic24, 16bit]
+  toolchain: xc16

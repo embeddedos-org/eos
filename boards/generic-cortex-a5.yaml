@@ -1,0 +1,25 @@
+# EoS Board: Generic Cortex-A5 (SAMA5D36)
+board:
+  name: generic-cortex-a5
+  mcu: SAMA5D36
+  family: SAMA5D3
+  arch: arm
+  core: cortex-a5
+  vendor: Microchip
+  clock_hz: 536000000
+  memory:
+    flash: 0
+    ram: 268435456
+  peripherals:
+    - {name: USART0, type: uart, bus: apb}
+    - {name: SPI0, type: spi, bus: apb}
+    - {name: TWI0, type: i2c, bus: apb}
+    - {name: GPIO, type: gpio, count: 160}
+    - {name: ADC, type: adc, bus: apb, channels: 12}
+    - {name: EMAC, type: ethernet, bus: ahb}
+    - {name: USB, type: usb, speed: high}
+    - {name: LCD, type: display, bus: ahb}
+    - {name: WDT, type: watchdog, bus: apb}
+    - {name: DMA0, type: dma, bus: ahb}
+  features: [cortex-a5, mmu, neon, fpu, ethernet, usb]
+  toolchain: arm-none-eabi

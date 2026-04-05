@@ -1,0 +1,25 @@
+# EoS Board: Generic dsPIC (dsPIC33FJ256GP710)
+board:
+  name: generic-dspic
+  mcu: dsPIC33FJ256GP710
+  family: dsPIC33F
+  arch: dspic
+  core: dspic
+  vendor: Microchip
+  clock_hz: 40000000
+  memory:
+    flash: 262144
+    ram: 30720
+  peripherals:
+    - {name: UART1, type: uart, bus: internal}
+    - {name: SPI1, type: spi, bus: internal}
+    - {name: I2C1, type: i2c, bus: internal}
+    - {name: GPIO, type: gpio, count: 85}
+    - {name: ADC1, type: adc, bus: internal, channels: 32}
+    - {name: DAC1, type: dac, bus: internal, channels: 2}
+    - {name: CAN1, type: can, bus: internal}
+    - {name: TMR1, type: timer, bus: internal}
+    - {name: WDT, type: watchdog, bus: internal}
+    - {name: DMA, type: dma, bus: internal}
+  features: [dspic, 16bit, dsp, motor-control]
+  toolchain: xc16

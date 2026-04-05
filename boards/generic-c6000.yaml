@@ -1,0 +1,26 @@
+# EoS Board: Generic C6000 (TMS320C6748)
+board:
+  name: generic-c6000
+  mcu: TMS320C6748
+  family: C6748
+  arch: c6000
+  core: c674x
+  vendor: TI
+  clock_hz: 456000000
+  memory:
+    flash: 0
+    ram: 268435456
+  peripherals:
+    - {name: UART0, type: uart, bus: internal}
+    - {name: UART1, type: uart, bus: internal}
+    - {name: SPI0, type: spi, bus: internal}
+    - {name: I2C0, type: i2c, bus: internal}
+    - {name: GPIO, type: gpio, count: 144}
+    - {name: McASP0, type: audio, bus: internal}
+    - {name: EMAC, type: ethernet, bus: internal}
+    - {name: USB, type: usb, speed: high}
+    - {name: TIMER0, type: timer, bus: internal}
+    - {name: WDT, type: watchdog, bus: internal}
+    - {name: EDMA, type: dma, bus: internal}
+  features: [c6000, vliw, dsp, fpu, ethernet, usb]
+  toolchain: ti-cgt-c6000

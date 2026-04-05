@@ -1,0 +1,26 @@
+# EoS Board: Generic MSP430 (MSP430FR5994)
+board:
+  name: generic-msp430
+  mcu: MSP430FR5994
+  family: MSP430FR
+  arch: msp430
+  core: msp430x
+  vendor: TI
+  clock_hz: 16000000
+  memory:
+    flash: 262144
+    ram: 8192
+  peripherals:
+    - {name: eUSCI_A0, type: uart, bus: internal}
+    - {name: eUSCI_A1, type: uart, bus: internal}
+    - {name: eUSCI_B0, type: spi, bus: internal}
+    - {name: eUSCI_B1, type: i2c, bus: internal}
+    - {name: GPIO, type: gpio, count: 68}
+    - {name: ADC12, type: adc, bus: internal, channels: 32}
+    - {name: TIMER_A0, type: timer, bus: internal}
+    - {name: WDT_A, type: watchdog, bus: internal}
+    - {name: RTC_C, type: rtc, bus: internal}
+    - {name: DMA, type: dma, bus: internal}
+    - {name: LEA, type: dsp, bus: internal}
+  features: [msp430, 16bit, ultra-low-power, fram]
+  toolchain: msp430-elf-gcc

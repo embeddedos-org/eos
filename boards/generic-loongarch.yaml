@@ -1,0 +1,25 @@
+# EoS Board: Generic LoongArch (Loongson 3A5000)
+board:
+  name: generic-loongarch
+  mcu: 3A5000
+  family: Loongson
+  arch: loongarch
+  core: la64
+  vendor: Loongson
+  clock_hz: 2500000000
+  memory:
+    flash: 0
+    ram: 17179869184
+  peripherals:
+    - {name: UART0, type: uart, bus: apb}
+    - {name: SPI0, type: spi, bus: apb}
+    - {name: I2C0, type: i2c, bus: apb}
+    - {name: GPIO, type: gpio, count: 64}
+    - {name: ETH, type: ethernet, bus: ahb}
+    - {name: USB, type: usb, speed: high}
+    - {name: PCIE, type: pcie, bus: internal}
+    - {name: GPU, type: gpu, bus: pcie}
+    - {name: WDT, type: watchdog, bus: apb}
+    - {name: DMA, type: dma, bus: ahb}
+  features: [loongarch, mmu, smp, lsx, lasx]
+  toolchain: loongarch64-linux-gnu-gcc

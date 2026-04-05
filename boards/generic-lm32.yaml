@@ -1,0 +1,20 @@
+# EoS Board: Generic LM32 (Lattice)
+board:
+  name: generic-lm32
+  mcu: LM32
+  family: LatticeMico32
+  arch: lm32
+  core: lm32
+  vendor: Lattice
+  clock_hz: 100000000
+  memory:
+    flash: 4194304
+    ram: 8388608
+  peripherals:
+    - {name: UART, type: uart, bus: wishbone}
+    - {name: SPI, type: spi, bus: wishbone}
+    - {name: I2C, type: i2c, bus: wishbone}
+    - {name: GPIO, type: gpio, bus: wishbone}
+    - {name: TIMER, type: timer, bus: wishbone}
+  features: [lm32, soft-core, fpga]
+  toolchain: lm32-elf-gcc

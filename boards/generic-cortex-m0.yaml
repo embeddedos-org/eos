@@ -1,0 +1,25 @@
+# EoS Board: Generic Cortex-M0 (STM32F030)
+board:
+  name: generic-cortex-m0
+  mcu: STM32F030
+  family: STM32F0
+  arch: arm
+  core: cortex-m0
+  vendor: ST Microelectronics
+  clock_hz: 48000000
+  memory:
+    flash: 32768
+    ram: 4096
+  peripherals:
+    - {name: USART1, type: uart, bus: apb}
+    - {name: SPI1, type: spi, bus: apb}
+    - {name: I2C1, type: i2c, bus: apb}
+    - {name: GPIO, type: gpio, count: 55}
+    - {name: ADC1, type: adc, bus: apb, channels: 16}
+    - {name: TIM1, type: timer, bus: apb}
+    - {name: TIM3, type: timer, bus: apb}
+    - {name: WDT, type: watchdog, bus: apb}
+    - {name: RTC, type: rtc, bus: apb}
+    - {name: DMA1, type: dma, bus: ahb}
+  features: [cortex-m0, thumb]
+  toolchain: arm-none-eabi

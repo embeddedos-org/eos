@@ -1,0 +1,25 @@
+# EoS Board: Generic RISC-V 32 (ESP32-C3 / SiFive E31)
+board:
+  name: generic-riscv32
+  mcu: ESP32-C3
+  family: RISC-V
+  arch: riscv32
+  core: rv32imc
+  vendor: Espressif/SiFive
+  clock_hz: 160000000
+  memory:
+    flash: 4194304
+    ram: 409600
+  peripherals:
+    - {name: UART0, type: uart, bus: apb}
+    - {name: SPI0, type: spi, bus: apb}
+    - {name: I2C0, type: i2c, bus: apb}
+    - {name: GPIO, type: gpio, count: 22}
+    - {name: ADC, type: adc, bus: apb, channels: 6}
+    - {name: WiFi, type: wifi, bus: internal}
+    - {name: BLE, type: ble, bus: internal}
+    - {name: TIMER0, type: timer, bus: apb}
+    - {name: WDT, type: watchdog, bus: apb}
+    - {name: DMA, type: dma, bus: ahb}
+  features: [riscv32, wifi, ble]
+  toolchain: riscv32-esp-elf-gcc

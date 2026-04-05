@@ -1,0 +1,29 @@
+# EoS Board: Generic RX (RX65N)
+board:
+  name: generic-rx
+  mcu: RX65N
+  family: RX600
+  arch: rx
+  core: rxv2
+  vendor: Renesas
+  clock_hz: 120000000
+  memory:
+    flash: 2097152
+    ram: 655360
+  peripherals:
+    - {name: SCI0, type: uart, bus: internal}
+    - {name: SCI1, type: uart, bus: internal}
+    - {name: RSPI0, type: spi, bus: internal}
+    - {name: RIIC0, type: i2c, bus: internal}
+    - {name: GPIO, type: gpio, count: 128}
+    - {name: S12AD0, type: adc, bus: internal, channels: 16}
+    - {name: DA, type: dac, bus: internal, channels: 2}
+    - {name: CMT0, type: timer, bus: internal}
+    - {name: CAN0, type: can, bus: internal}
+    - {name: USB0, type: usb, speed: full}
+    - {name: ETHERC, type: ethernet, bus: internal}
+    - {name: WDT, type: watchdog, bus: internal}
+    - {name: RTC, type: rtc, bus: internal}
+    - {name: DMA0, type: dma, bus: internal}
+  features: [rx, fpu, dsp, ethernet, usb, can]
+  toolchain: rx-elf-gcc

@@ -1,0 +1,25 @@
+# EoS Board: Generic RL78 (RL78/G14)
+board:
+  name: generic-rl78
+  mcu: RL78G14
+  family: RL78
+  arch: rl78
+  core: rl78
+  vendor: Renesas
+  clock_hz: 32000000
+  memory:
+    flash: 524288
+    ram: 49152
+  peripherals:
+    - {name: SAU0, type: uart, bus: internal}
+    - {name: SAU1, type: spi, bus: internal}
+    - {name: IICA0, type: i2c, bus: internal}
+    - {name: GPIO, type: gpio, count: 72}
+    - {name: ADC, type: adc, bus: internal, channels: 12}
+    - {name: DAC, type: dac, bus: internal, channels: 2}
+    - {name: TAU0, type: timer, bus: internal}
+    - {name: WDT, type: watchdog, bus: internal}
+    - {name: RTC, type: rtc, bus: internal}
+    - {name: DMA0, type: dma, bus: internal}
+  features: [rl78, 16bit, low-power]
+  toolchain: rl78-elf-gcc

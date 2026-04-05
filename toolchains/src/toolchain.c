@@ -22,8 +22,184 @@ static EosArch arch_from_target(const char *target) {
         return EOS_ARCH_X86_64;
     if (strstr(target, "riscv64"))
         return EOS_ARCH_RISCV64;
+    if (strstr(target, "riscv32"))
+        return EOS_ARCH_RISCV32;
+    if (strstr(target, "riscv32"))
+        return EOS_ARCH_RISCV32;
+    if (strstr(target, "mips64"))
+        return EOS_ARCH_MIPS64;
+    if (strstr(target, "mips"))
+        return EOS_ARCH_MIPS;
+    if (strstr(target, "powerpc64") || strstr(target, "ppc64"))
+        return EOS_ARCH_PPC64;
+    if (strstr(target, "powerpc") || strstr(target, "ppc"))
+        return EOS_ARCH_POWERPC;
+    if (strstr(target, "sparc64"))
+        return EOS_ARCH_SPARC64;
+    if (strstr(target, "sparc") || strstr(target, "leon"))
+        return EOS_ARCH_SPARC;
+    if (strstr(target, "m68k"))
+        return EOS_ARCH_M68K;
+    if (strstr(target, "sh-") || strstr(target, "sh4"))
+        return EOS_ARCH_SH;
+    if (strstr(target, "avr32"))
+        return EOS_ARCH_AVR32;
+    if (strstr(target, "avr"))
+        return EOS_ARCH_AVR;
+    if (strstr(target, "msp430"))
+        return EOS_ARCH_MSP430;
+    if (strstr(target, "c2000") || strstr(target, "c28x"))
+        return EOS_ARCH_C28X;
+    if (strstr(target, "c6000") || strstr(target, "c674"))
+        return EOS_ARCH_C6000;
+    if (strstr(target, "pru"))
+        return EOS_ARCH_PRU;
+    if (strstr(target, "rl78"))
+        return EOS_ARCH_RL78;
+    if (strstr(target, "rx-") || strstr(target, "rxv"))
+        return EOS_ARCH_RX;
+    if (strstr(target, "tricore"))
+        return EOS_ARCH_TRICORE;
+    if (strstr(target, "c166") || strstr(target, "xc22"))
+        return EOS_ARCH_C166;
+    if (strstr(target, "microblaze"))
+        return EOS_ARCH_MICROBLAZE;
+    if (strstr(target, "nios2"))
+        return EOS_ARCH_NIOS2;
+    if (strstr(target, "or1k") || strstr(target, "openrisc"))
+        return EOS_ARCH_OPENRISC;
+    if (strstr(target, "lm32"))
+        return EOS_ARCH_LM32;
+    if (strstr(target, "bfin") || strstr(target, "blackfin"))
+        return EOS_ARCH_BLACKFIN;
+    if (strstr(target, "sharc"))
+        return EOS_ARCH_SHARC;
+    if (strstr(target, "hexagon"))
+        return EOS_ARCH_HEXAGON;
+    if (strstr(target, "ceva"))
+        return EOS_ARCH_CEVA;
+    if (strstr(target, "xtensa"))
+        return EOS_ARCH_XTENSA;
+    if (strstr(target, "arc"))
+        return EOS_ARCH_ARC;
+    if (strstr(target, "sdcc") || strstr(target, "8051"))
+        return EOS_ARCH_8051;
+    if (strstr(target, "xc8") || strstr(target, "pic18"))
+        return EOS_ARCH_PIC18;
+    if (strstr(target, "xc16") || strstr(target, "pic24") || strstr(target, "dspic"))
+        return EOS_ARCH_PIC24;
+    if (strstr(target, "xc32") || strstr(target, "pic32"))
+        return EOS_ARCH_PIC32;
+    if (strstr(target, "v850"))
+        return EOS_ARCH_V850;
+    if (strstr(target, "h8300"))
+        return EOS_ARCH_H8300;
+    if (strstr(target, "frv"))
+        return EOS_ARCH_FRV;
+    if (strstr(target, "mn103"))
+        return EOS_ARCH_MN103;
+    if (strstr(target, "loongarch"))
+        return EOS_ARCH_LOONGARCH;
+    if (strstr(target, "hppa") || strstr(target, "parisc"))
+        return EOS_ARCH_PARISC;
+    if (strstr(target, "ia64") || strstr(target, "itanium"))
+        return EOS_ARCH_IA64;
+    if (strstr(target, "alpha"))
+        return EOS_ARCH_ALPHA;
+    if (strstr(target, "s390"))
+        return EOS_ARCH_S390;
+    if (strstr(target, "cris"))
+        return EOS_ARCH_CRIS;
+    if (strstr(target, "kalimba"))
+        return EOS_ARCH_KALIMBA;
     if (strstr(target, "arm-none-eabi"))
         return EOS_ARCH_ARM_CORTEX_M;
+    if (strstr(target, "mips64"))
+        return EOS_ARCH_MIPS64;
+    if (strstr(target, "mips"))
+        return EOS_ARCH_MIPS;
+    if (strstr(target, "powerpc64") || strstr(target, "ppc64"))
+        return EOS_ARCH_PPC64;
+    if (strstr(target, "powerpc") || strstr(target, "ppc"))
+        return EOS_ARCH_POWERPC;
+    if (strstr(target, "sparc64"))
+        return EOS_ARCH_SPARC64;
+    if (strstr(target, "sparc") || strstr(target, "leon"))
+        return EOS_ARCH_SPARC;
+    if (strstr(target, "m68k"))
+        return EOS_ARCH_M68K;
+    if (strstr(target, "sh-") || strstr(target, "sh4"))
+        return EOS_ARCH_SH;
+    if (strstr(target, "avr32"))
+        return EOS_ARCH_AVR32;
+    if (strstr(target, "avr"))
+        return EOS_ARCH_AVR;
+    if (strstr(target, "msp430"))
+        return EOS_ARCH_MSP430;
+    if (strstr(target, "c2000") || strstr(target, "c28x"))
+        return EOS_ARCH_C28X;
+    if (strstr(target, "c6000") || strstr(target, "c674"))
+        return EOS_ARCH_C6000;
+    if (strstr(target, "pru"))
+        return EOS_ARCH_PRU;
+    if (strstr(target, "rl78"))
+        return EOS_ARCH_RL78;
+    if (strstr(target, "rx-") || strstr(target, "rx65") || strstr(target, "rxv"))
+        return EOS_ARCH_RX;
+    if (strstr(target, "tricore"))
+        return EOS_ARCH_TRICORE;
+    if (strstr(target, "c166") || strstr(target, "xc22"))
+        return EOS_ARCH_C166;
+    if (strstr(target, "microblaze"))
+        return EOS_ARCH_MICROBLAZE;
+    if (strstr(target, "nios2"))
+        return EOS_ARCH_NIOS2;
+    if (strstr(target, "or1k") || strstr(target, "openrisc"))
+        return EOS_ARCH_OPENRISC;
+    if (strstr(target, "lm32"))
+        return EOS_ARCH_LM32;
+    if (strstr(target, "bfin") || strstr(target, "blackfin"))
+        return EOS_ARCH_BLACKFIN;
+    if (strstr(target, "sharc"))
+        return EOS_ARCH_SHARC;
+    if (strstr(target, "hexagon"))
+        return EOS_ARCH_HEXAGON;
+    if (strstr(target, "ceva"))
+        return EOS_ARCH_CEVA;
+    if (strstr(target, "xtensa"))
+        return EOS_ARCH_XTENSA;
+    if (strstr(target, "arc"))
+        return EOS_ARCH_ARC;
+    if (strstr(target, "sdcc") || strstr(target, "8051"))
+        return EOS_ARCH_8051;
+    if (strstr(target, "xc8") || strstr(target, "pic18"))
+        return EOS_ARCH_PIC18;
+    if (strstr(target, "xc16") || strstr(target, "pic24") || strstr(target, "dspic"))
+        return EOS_ARCH_PIC24;
+    if (strstr(target, "xc32") || strstr(target, "pic32"))
+        return EOS_ARCH_PIC32;
+    if (strstr(target, "v850"))
+        return EOS_ARCH_V850;
+    if (strstr(target, "h8300"))
+        return EOS_ARCH_H8300;
+    if (strstr(target, "frv"))
+        return EOS_ARCH_FRV;
+    if (strstr(target, "mn103"))
+        return EOS_ARCH_MN103;
+    if (strstr(target, "loongarch"))
+        return EOS_ARCH_LOONGARCH;
+    if (strstr(target, "hppa") || strstr(target, "parisc"))
+        return EOS_ARCH_PARISC;
+    if (strstr(target, "ia64") || strstr(target, "itanium"))
+        return EOS_ARCH_IA64;
+    if (strstr(target, "alpha"))
+        return EOS_ARCH_ALPHA;
+    if (strstr(target, "s390"))
+        return EOS_ARCH_S390;
+    if (strstr(target, "cris"))
+        return EOS_ARCH_CRIS;
+    if (strstr(target, "kalimba"))
+        return EOS_ARCH_KALIMBA;
     return EOS_ARCH_HOST;
 }
 

@@ -1,0 +1,27 @@
+# EoS Board: Generic ESP32-S3 (Xtensa LX7)
+board:
+  name: generic-esp32s3
+  mcu: ESP32-S3
+  family: ESP32
+  arch: xtensa
+  core: xtensa-lx7
+  vendor: Espressif
+  clock_hz: 240000000
+  memory:
+    flash: 16777216
+    ram: 524288
+  peripherals:
+    - {name: UART0, type: uart, bus: apb}
+    - {name: SPI0, type: spi, bus: apb}
+    - {name: I2C0, type: i2c, bus: apb}
+    - {name: GPIO, type: gpio, count: 45}
+    - {name: ADC, type: adc, bus: apb, channels: 20}
+    - {name: WiFi, type: wifi, bus: internal}
+    - {name: BLE, type: ble, bus: internal}
+    - {name: USB_OTG, type: usb, speed: full}
+    - {name: LCD, type: display, bus: apb}
+    - {name: TIMER0, type: timer, bus: apb}
+    - {name: WDT, type: watchdog, bus: apb}
+    - {name: DMA, type: dma, bus: ahb}
+  features: [xtensa, wifi, ble, usb, ai-acceleration]
+  toolchain: xtensa-esp32s3-elf-gcc
