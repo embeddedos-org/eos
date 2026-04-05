@@ -19,13 +19,21 @@ static EosResult make_configure(EosBackend *self, const char *src_dir,
 
     /* Check for configure script (autotools-style) */
     char configure_path[EOS_MAX_PATH];
+#ifdef _WIN32
+    snprintf(configure_path, sizeof(configure_path), "%s\\configure", src_dir);
+#else
     snprintf(configure_path, sizeof(configure_path), "%s/configure", src_dir);
+#endif
 
     FILE *fp = fopen(configure_path, "r");
     if (fp) {
         fclose(fp);
         char cmd[2048];
+#ifdef _WIN32
+        int offset = snprintf(cmd, sizeof(cmd), "cd /d \"%s\" && configure", src_dir);
+#else
         int offset = snprintf(cmd, sizeof(cmd), "cd \"%s\" && ./configure", src_dir);
+#endif
 
         if (toolchain_file && toolchain_file[0]) {
             offset += snprintf(cmd + offset, sizeof(cmd) - (size_t)offset,
@@ -44,7 +52,12 @@ static EosResult make_configure(EosBackend *self, const char *src_dir,
 static EosResult make_build(EosBackend *self, const char *build_dir, int jobs) {
     (void)self;
     char cmd[1024];
+#ifdef _WIN32
+    snprintf(cmd, sizeof(cmd), "nmake /C \"%s\"", build_dir);
+    (void)jobs;
+#else
     snprintf(cmd, sizeof(cmd), "make -C \"%s\" -j%d", build_dir, jobs > 0 ? jobs : 4);
+#endif
     EOS_INFO("Make build: %s", cmd);
     int rc = system(cmd);
     return (rc == 0) ? EOS_OK : EOS_ERR_BUILD;
@@ -54,8 +67,13 @@ static EosResult make_install(EosBackend *self, const char *build_dir,
                                  const char *install_dir) {
     (void)self;
     char cmd[1024];
+#ifdef _WIN32
+    snprintf(cmd, sizeof(cmd), "nmake /C \"%s\" install DESTDIR=\"%s\"",
+             build_dir, install_dir);
+#else
     snprintf(cmd, sizeof(cmd), "make -C \"%s\" install DESTDIR=\"%s\"",
              build_dir, install_dir);
+#endif
     EOS_INFO("Make install: %s", cmd);
     int rc = system(cmd);
     return (rc == 0) ? EOS_OK : EOS_ERR_BUILD;
@@ -64,7 +82,11 @@ static EosResult make_install(EosBackend *self, const char *build_dir,
 static EosResult make_clean(EosBackend *self, const char *build_dir) {
     (void)self;
     char cmd[1024];
+#ifdef _WIN32
+    snprintf(cmd, sizeof(cmd), "nmake /C \"%s\" clean", build_dir);
+#else
     snprintf(cmd, sizeof(cmd), "make -C \"%s\" clean", build_dir);
+#endif
     EOS_INFO("Make clean: %s", cmd);
     int rc = system(cmd);
     return (rc == 0) ? EOS_OK : EOS_ERR_BUILD;

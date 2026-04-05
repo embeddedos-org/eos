@@ -13,10 +13,13 @@ static EosResult kbuild_configure(EosBackend *self, const char *src_dir,
                                      const EosKeyValue *options, int option_count) {
     (void)self;
     (void)build_dir;
-    (void)options;
-    (void)option_count;
 
-    /* Find defconfig from options */
+#ifdef _WIN32
+    EOS_ERROR("Kbuild (Linux kernel build) is not supported on Windows.");
+    EOS_ERROR("Use WSL, a Linux VM, or cross-compile from Linux.");
+    (void)src_dir; (void)toolchain_file; (void)options; (void)option_count;
+    return EOS_ERR_SYSTEM;
+#else
     const char *defconfig = "defconfig";
     for (int i = 0; i < option_count; i++) {
         if (strcmp(options[i].key, "defconfig") == 0) {
@@ -38,35 +41,54 @@ static EosResult kbuild_configure(EosBackend *self, const char *src_dir,
     EOS_INFO("Kbuild configure: %s", cmd);
     int rc = system(cmd);
     return (rc == 0) ? EOS_OK : EOS_ERR_BUILD;
+#endif
 }
 
 static EosResult kbuild_build(EosBackend *self, const char *build_dir, int jobs) {
     (void)self;
+#ifdef _WIN32
+    (void)build_dir; (void)jobs;
+    EOS_ERROR("Kbuild is not supported on Windows.");
+    return EOS_ERR_SYSTEM;
+#else
     char cmd[1024];
     snprintf(cmd, sizeof(cmd), "make -C \"%s\" -j%d", build_dir, jobs > 0 ? jobs : 4);
     EOS_INFO("Kbuild build: %s", cmd);
     int rc = system(cmd);
     return (rc == 0) ? EOS_OK : EOS_ERR_BUILD;
+#endif
 }
 
 static EosResult kbuild_install(EosBackend *self, const char *build_dir,
                                    const char *install_dir) {
     (void)self;
+#ifdef _WIN32
+    (void)build_dir; (void)install_dir;
+    EOS_ERROR("Kbuild is not supported on Windows.");
+    return EOS_ERR_SYSTEM;
+#else
     char cmd[1024];
     snprintf(cmd, sizeof(cmd), "make -C \"%s\" install INSTALL_PATH=\"%s\"",
              build_dir, install_dir);
     EOS_INFO("Kbuild install: %s", cmd);
     int rc = system(cmd);
     return (rc == 0) ? EOS_OK : EOS_ERR_BUILD;
+#endif
 }
 
 static EosResult kbuild_clean(EosBackend *self, const char *build_dir) {
     (void)self;
+#ifdef _WIN32
+    (void)build_dir;
+    EOS_ERROR("Kbuild is not supported on Windows.");
+    return EOS_ERR_SYSTEM;
+#else
     char cmd[1024];
     snprintf(cmd, sizeof(cmd), "make -C \"%s\" mrproper", build_dir);
     EOS_INFO("Kbuild clean: %s", cmd);
     int rc = system(cmd);
     return (rc == 0) ? EOS_OK : EOS_ERR_BUILD;
+#endif
 }
 
 void eos_backend_kbuild_init(EosBackend *b) {
