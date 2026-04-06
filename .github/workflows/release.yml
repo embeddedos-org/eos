@@ -112,7 +112,7 @@ jobs:
           tar czf eos-${{ steps.version.outputs.version }}-linux-x86_64.tar.gz -C staging .
 
       - name: Download cross-compile artifacts
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v8
         with:
           pattern: eos-*
           merge-multiple: true
