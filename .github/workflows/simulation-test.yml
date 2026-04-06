@@ -46,7 +46,7 @@ jobs:
         run: eosim run ${{ matrix.platform }} --headless --timeout 15
       - name: Run platform tests
         run: eosim test ${{ matrix.platform }}
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         if: always()
         with:
           name: sim-${{ matrix.platform }}
