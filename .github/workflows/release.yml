@@ -13,7 +13,7 @@ jobs:
     name: Validate Release
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
         with:
           submodules: recursive
       - name: Install dependencies
@@ -45,7 +45,7 @@ jobs:
             packages: gcc-riscv64-linux-gnu
             cc: riscv64-linux-gnu-gcc
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
         with:
           submodules: recursive
       - name: Install cross-compiler
@@ -81,7 +81,7 @@ jobs:
       matrix:
         product: [robot, gateway, medical, automotive, iot, aerospace]
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
       - name: Build ${{ matrix.product }}
         run: |
           cmake -B build -DEOS_PRODUCT=${{ matrix.product }} -DCMAKE_BUILD_TYPE=Release
@@ -92,7 +92,7 @@ jobs:
     needs: [validate, cross-compile, product-builds]
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
         with:
           fetch-depth: 0
 
