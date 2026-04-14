@@ -1,0 +1,5 @@
+# CODEOWNERS — at least one admin must approve every PR
+# See: https://docs.github.com/en/repositories/managing-your-repositorys-settings-and-features/customizing-your-repository/about-code-owners
+
+# Default: require admin review on all files
+*   @srpatcha @hshanmug12 @maheshmunnangi @rashmiadvani
