@@ -133,7 +133,18 @@ static int is_tarball(const char *url) {
             strstr(url, ".zip") != NULL);
 }
 
+static int is_url_safe(const char *url) {
+    if (!url) return 0;
+    /* Basic check for common shell metacharacters */
+    if (strpbrk(url, ";|><$()`'")) return 0;
+    return 1;
+}
+
 static EosResult fetch_git(const char *url, const char *dest) {
+    if (!is_url_safe(url)) {
+        EOS_ERROR("Potentially unsafe git URL detected: %s", url);
+        return EOS_ERR_FETCH;
+    }
     char cmd[2048];
     snprintf(cmd, sizeof(cmd), "git clone --depth 1 \"%s\" \"%s\"", url, dest);
     EOS_INFO("Fetching (git): %s", url);
@@ -142,6 +153,10 @@ static EosResult fetch_git(const char *url, const char *dest) {
 }
 
 static EosResult fetch_tarball(const char *url, const char *dest) {
+    if (!is_url_safe(url)) {
+        EOS_ERROR("Potentially unsafe source URL detected: %s", url);
+        return EOS_ERR_FETCH;
+    }
     MKDIR(dest);
 
     char archive[EOS_MAX_PATH];
@@ -187,6 +202,11 @@ EosResult eos_fetch_source(const char *url, const char *dest_dir,
     if (!url || url[0] == '\0') {
         EOS_WARN("No source URL specified, skipping fetch");
         return EOS_OK;
+    }
+
+    if (!is_url_safe(url)) {
+        EOS_ERROR("Potentially unsafe source URL detected: %s", url);
+        return EOS_ERR_FETCH;
     }
 
     /* Determine archive path for checksum verification */
