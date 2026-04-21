@@ -33,6 +33,7 @@ static void test_sensor_read(void) {
     cfg.id = 0; cfg.name = "t";
     eos_sensor_register(&cfg);
     eos_sensor_reading_t r;
+    (void)r;
     assert(eos_sensor_read(0, &r) == 0);
     assert(r.valid);
     eos_sensor_deinit();
@@ -47,6 +48,7 @@ static void test_sensor_calibrate(void) {
     eos_sensor_calib_t cal = { .offset = 10.0f, .scale = 2.0f, .calibrated = true };
     assert(eos_sensor_calibrate(0, &cal) == 0);
     eos_sensor_calib_t out;
+    (void)out;
     assert(eos_sensor_get_calibration(0, &out) == 0);
     assert(out.calibrated);
     eos_sensor_deinit();

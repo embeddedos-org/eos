@@ -42,6 +42,7 @@ static void test_core_id(void) {
 static void test_core_get_info(void) {
     eos_multicore_init(EOS_MP_SMP);
     eos_core_info_t info;
+    (void)info;
     assert(eos_core_get_info(0, &info) == 0);
     assert(info.core_id == 0);
     assert(info.state == EOS_CORE_ONLINE);
@@ -59,6 +60,7 @@ static void test_core_get_info_null(void) {
 static void test_core_get_info_invalid_id(void) {
     eos_multicore_init(EOS_MP_SMP);
     eos_core_info_t info;
+    (void)info;
     assert(eos_core_get_info(EOS_MAX_CORES, &info) != 0);
     eos_multicore_deinit();
     PASS("core get info invalid id");
@@ -67,8 +69,10 @@ static void test_core_get_info_invalid_id(void) {
 static void test_core_start(void) {
     eos_multicore_init(EOS_MP_SMP);
     int r = eos_core_start(1, dummy_entry, NULL);
+    (void)r;
     assert(r == 0);
     eos_core_info_t info;
+    (void)info;
     eos_core_get_info(1, &info);
     assert(info.state == EOS_CORE_ONLINE);
     eos_multicore_deinit();
@@ -80,6 +84,7 @@ static void test_core_stop(void) {
     eos_core_start(1, dummy_entry, NULL);
     assert(eos_core_stop(1) == 0);
     eos_core_info_t info;
+    (void)info;
     eos_core_get_info(1, &info);
     assert(info.state == EOS_CORE_OFFLINE);
     eos_multicore_deinit();
@@ -140,6 +145,7 @@ static void test_shmem_create_close(void) {
     static char buf[256];
     eos_shmem_config_t cfg = { .name = "test", .base = buf, .size = sizeof(buf), .cached = false };
     eos_shmem_region_t region;
+    (void)region;
     assert(eos_shmem_create(&cfg, &region) == 0);
     assert(region.size == sizeof(buf));
     assert(eos_shmem_close(&region) == 0);
@@ -152,6 +158,7 @@ static void test_shmem_open(void) {
     static char buf[128];
     eos_shmem_config_t cfg = { .name = "sh2", .base = buf, .size = sizeof(buf), .cached = false };
     eos_shmem_region_t r1, r2;
+    (void)r1; (void)r2;
     eos_shmem_create(&cfg, &r1);
     assert(eos_shmem_open("sh2", &r2) == 0);
     eos_shmem_close(&r1);
@@ -177,6 +184,7 @@ static void test_task_affinity(void) {
     eos_core_mask_t mask = EOS_CORE_MASK(0) | EOS_CORE_MASK(1);
     assert(eos_task_set_affinity(0, mask) == 0);
     eos_core_mask_t got;
+    (void)got;
     assert(eos_task_get_affinity(0, &got) == 0);
     assert(got == mask);
     eos_multicore_deinit();

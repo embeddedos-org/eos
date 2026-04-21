@@ -17,7 +17,7 @@ static void (*g_uart_fn)(const char *buf, int len) = NULL;
 static uint32_t crc32_byte(uint32_t crc, uint8_t b) {
     crc ^= b;
     for (int i = 0; i < 8; i++)
-        crc = (crc >> 1) ^ (0xEDB88320 & (-(crc & 1)));
+        crc = (crc >> 1) ^ ((crc & 1) ? 0xEDB88320 : 0);
     return crc;
 }
 

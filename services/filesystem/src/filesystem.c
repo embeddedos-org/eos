@@ -20,6 +20,17 @@ static dir_ctx_t g_dirs[4];
 static int g_init = 0;
 static uint32_t g_used = 0;
 
+/* Helper to validate path length and integrity */
+int eos_fs_validate_path(const char *path) {
+    if (!path) return -1;
+    size_t len = 0;
+    while (len < (size_t)EOS_PATH_MAX && path[len]) {
+        len++;
+    }
+    if (len >= (size_t)EOS_PATH_MAX) return -1;
+    return 0;
+}
+
 int eos_fs_init(const eos_fs_config_t *cfg) {
     (void)cfg;
     memset(g_inodes, 0, sizeof(g_inodes)); memset(g_fds, 0, sizeof(g_fds)); memset(g_dirs, 0, sizeof(g_dirs));
@@ -41,7 +52,7 @@ static int alloc_inode(void) { for (int i = 0; i < MAX_INODES; i++) if (!g_inode
 static int alloc_fd(void) { for (int i = 0; i < EOS_FILE_MAX; i++) if (!g_fds[i].in_use) return i; return -1; }
 
 eos_file_t eos_fs_open(const char *path, uint32_t flags) {
-    if (!g_init || !path) return EOS_FILE_INVALID;
+    if (!g_init || eos_fs_validate_path(path) != 0) return EOS_FILE_INVALID;
     int inode = find_inode(path);
     if (inode < 0) {
         if (!(flags & EOS_O_CREATE)) return EOS_FILE_INVALID;
@@ -99,7 +110,7 @@ int eos_fs_truncate(eos_file_t fd, uint32_t size) {
 int eos_fs_sync(eos_file_t fd) { if (fd < 0 || fd >= EOS_FILE_MAX || !g_fds[fd].in_use) return -1; return 0; }
 
 int eos_fs_mkdir(const char *path) {
-    if (!g_init || !path || find_inode(path) >= 0) return -1;
+    if (!g_init || eos_fs_validate_path(path) != 0 || find_inode(path) >= 0) return -1;
     int i = alloc_inode(); if (i < 0) return -1;
     memset(&g_inodes[i], 0, sizeof(inode_t));
     strncpy(g_inodes[i].name, path, EOS_PATH_MAX - 1);
@@ -107,7 +118,7 @@ int eos_fs_mkdir(const char *path) {
 }
 
 eos_dir_t eos_fs_opendir(const char *path) {
-    if (!g_init || !path) return EOS_DIR_INVALID;
+    if (!g_init || eos_fs_validate_path(path) != 0) return EOS_DIR_INVALID;
     for (int i = 0; i < 4; i++) if (!g_dirs[i].in_use) { g_dirs[i].in_use = 1; g_dirs[i].idx = 0; return i; }
     return EOS_DIR_INVALID;
 }
@@ -127,19 +138,19 @@ int eos_fs_readdir(eos_dir_t d, eos_dirent_t *e) {
 int eos_fs_closedir(eos_dir_t d) { if (d < 0 || d >= 4 || !g_dirs[d].in_use) return -1; g_dirs[d].in_use = 0; return 0; }
 
 int eos_fs_remove(const char *path) {
-    if (!g_init || !path) return -1;
+    if (!g_init || eos_fs_validate_path(path) != 0) return -1;
     int i = find_inode(path); if (i < 0) return -1;
     g_used -= g_inodes[i].size; g_inodes[i].in_use = 0; return 0;
 }
 
 int eos_fs_rename(const char *old_path, const char *new_path) {
-    if (!g_init || !old_path || !new_path) return -1;
+    if (!g_init || eos_fs_validate_path(old_path) != 0 || eos_fs_validate_path(new_path) != 0) return -1;
     int i = find_inode(old_path); if (i < 0) return -1;
     strncpy(g_inodes[i].name, new_path, EOS_PATH_MAX - 1); return 0;
 }
 
 bool eos_fs_exists(const char *path) {
-    if (!g_init || !path) return false;
+    if (!g_init || eos_fs_validate_path(path) != 0) return false;
     return find_inode(path) >= 0;
 }
 

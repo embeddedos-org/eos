@@ -13,7 +13,7 @@ uint32_t eos_crc32(uint32_t crc, const void *data, size_t len) {
     for (size_t i = 0; i < len; i++) {
         crc ^= p[i];
         for (int j = 0; j < 8; j++)
-            crc = (crc >> 1) ^ (0xEDB88320 & (-(crc & 1)));
+            crc = (crc >> 1) ^ ((crc & 1) ? 0xEDB88320 : 0);
     }
     return ~crc;
 }
@@ -37,7 +37,7 @@ uint64_t eos_crc64(uint64_t crc, const void *data, size_t len) {
     for (size_t i = 0; i < len; i++) {
         crc ^= (uint64_t)p[i];
         for (int j = 0; j < 8; j++)
-            crc = (crc >> 1) ^ (0xC96C5795D7870F42ULL & (-(crc & 1)));
+            crc = (crc >> 1) ^ ((crc & 1) ? 0xC96C5795D7870F42ULL : 0);
     }
     return ~crc;
 }
