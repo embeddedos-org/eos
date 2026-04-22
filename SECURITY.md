@@ -34,7 +34,7 @@ Fingerprint: XXXX XXXX XXXX XXXX XXXX  XXXX XXXX XXXX XXXX XXXX
 Key ID: 0xXXXXXXXX
 ```
 
-The public key is available at `https://embeddedos.org/.well-known/pgp-key.asc` and on major keyservers.
+The public key is available at `https://embeddedos-org.github.io/.well-known/pgp-key.asc` and on major keyservers.
 
 ### What to Include
 

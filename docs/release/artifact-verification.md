@@ -70,7 +70,7 @@ If verification fails, **do not use the artifact**. Report the issue to security
 
 ```bash
 # Download the public key
-curl -LO https://embeddedos.org/.well-known/pgp-key.asc
+curl -LO https://embeddedos-org.github.io/.well-known/pgp-key.asc
 
 # Import into your GPG keyring
 gpg --import pgp-key.asc
