@@ -7,18 +7,34 @@
 #include <stdio.h>
 
 /*
- * RSA and ECC stubs.
- * Full big-number arithmetic is out of scope for an embedded build tool.
- * These provide the API interface. In production, link against a
- * real library (mbedTLS, wolfSSL, BearSSL, or OpenSSL).
+ * ============================================================================
+ * WARNING: RSA and ECC STUB IMPLEMENTATIONS — NOT FOR PRODUCTION USE
+ * ============================================================================
+ *
+ * These functions are STUBS that do NOT perform real cryptographic operations.
+ * They exist only to provide a compilable API interface for testing and
+ * development. Using these in production is a CRITICAL SECURITY VULNERABILITY.
+ *
+ * For production deployments, you MUST link against a real cryptographic
+ * library such as:
+ *   - mbedTLS  (recommended for embedded)
+ *   - wolfSSL  (FIPS 140-2/3 certified option)
+ *   - BearSSL  (minimal footprint)
+ *   - OpenSSL  (Linux/server targets)
+ *
+ * TODO(security): Replace these stubs with real implementations before any
+ *                 production or field deployment. See SECURITY.md for details.
+ * ============================================================================
  */
 
 int eos_rsa_sign_sha256(const EosRsaKey *key, const uint8_t hash[32],
                         uint8_t *sig, size_t *sig_len) {
     if (!key || !key->has_private || !hash || !sig || !sig_len) return -1;
 
-    /* Stub: produce a deterministic fake signature for testing.
-     * Replace with real PKCS#1 v1.5 or PSS signing. */
+    /* WARNING: STUB — produces a fake PKCS#1-like signature for testing ONLY.
+     * This does NOT perform real RSA modular exponentiation.
+     * DO NOT use in production — signatures are trivially forgeable. */
+    fprintf(stderr, "[SECURITY WARNING] eos_rsa_sign_sha256: using STUB implementation — signatures are NOT cryptographically valid\n");
     size_t len = (size_t)(key->key_bits / 8);
     if (len == 0) len = 256;
     memset(sig, 0, len);
@@ -33,11 +49,16 @@ int eos_rsa_sign_sha256(const EosRsaKey *key, const uint8_t hash[32],
 int eos_rsa_verify_sha256(const EosRsaKey *key, const uint8_t hash[32],
                           const uint8_t *sig, size_t sig_len) {
     if (!key || !hash || !sig) return -1;
+
+    /* WARNING: STUB — only checks if the signature ends with the hash.
+     * This does NOT perform real RSA verification. ANY attacker can forge
+     * a "valid" signature by appending the hash to the signature buffer.
+     * DO NOT use in production. */
+    fprintf(stderr, "[SECURITY WARNING] eos_rsa_verify_sha256: using STUB implementation — verification is NOT cryptographically valid\n");
     size_t len = (size_t)(key->key_bits / 8);
     if (len == 0) len = 256;
     if (sig_len != len) return -1;
 
-    /* Stub: check if signature ends with the hash (matches our stub signing) */
     if (memcmp(sig + len - 32, hash, 32) != 0) return -1;
     return 0;
 }
@@ -45,9 +66,13 @@ int eos_rsa_verify_sha256(const EosRsaKey *key, const uint8_t hash[32],
 int eos_ecc_sign(const EosEccKey *key, const uint8_t *hash, size_t hash_len,
                  uint8_t *sig, size_t *sig_len) {
     if (!key || !hash || !sig || !sig_len) return -1;
-    /* Stub: produce a fake 64-byte signature (r||s) */
+
+    /* WARNING: STUB — produces a constant fake ECDSA signature (0xAA||0xBB).
+     * This does NOT perform real elliptic curve operations.
+     * DO NOT use in production — signatures are trivially forgeable. */
+    fprintf(stderr, "[SECURITY WARNING] eos_ecc_sign: using STUB implementation — signatures are NOT cryptographically valid\n");
     size_t len = 64;
-    if (hash_len < 32) len = 64;
+    (void)hash_len;
     memset(sig, 0xAA, 32);
     memset(sig + 32, 0xBB, 32);
     *sig_len = len;
@@ -58,7 +83,11 @@ int eos_ecc_verify(const EosEccKey *key, const uint8_t *hash, size_t hash_len,
                    const uint8_t *sig, size_t sig_len) {
     if (!key || !hash || !sig || sig_len < 64) return -1;
     (void)hash_len;
-    /* Stub: accept any 64-byte signature */
+
+    /* WARNING: STUB — accepts ANY 64-byte value as a valid signature.
+     * This does NOT perform real ECDSA verification.
+     * DO NOT use in production — any input will be accepted as valid. */
+    fprintf(stderr, "[SECURITY WARNING] eos_ecc_verify: using STUB implementation — accepts ANY signature as valid\n");
     return 0;
 }
 

@@ -521,6 +521,50 @@ git push origin v0.1.0
 
 ---
 
+## 🔐 Security
+
+EoS implements a multi-layered security architecture for embedded systems:
+
+### Cryptographic Services
+
+| Algorithm | Implementation | Status | File |
+|-----------|---------------|--------|------|
+| **SHA-256** | NIST FIPS 180-4, self-contained | Real | `services/crypto/src/sha256.c` |
+| **AES-128/256** | Full S-box, CBC mode | Real | `services/crypto/src/aes.c` |
+| **SHA-512** | Full implementation | Real | `services/crypto/src/rsa_ecc_sha512.c` |
+| **CRC-32** | Lookup table | Real | `services/crypto/src/crc.c` |
+| **RSA** | Sign/verify API | **Stub** | `services/crypto/src/rsa_ecc_sha512.c` |
+| **ECC (P-256)** | Sign/verify API | **Stub** | `services/crypto/src/rsa_ecc_sha512.c` |
+
+> **WARNING**: RSA and ECC implementations are currently stubs that do not perform real cryptographic operations. For production use, link against a real library (mbedTLS, wolfSSL, BearSSL, or OpenSSL). See the source file for details.
+
+### Security Services
+
+| Service | Description |
+|---------|-------------|
+| **Secure Boot** | Image hash verification + signature check (uses RSA — requires real RSA for production) |
+| **Keystore** | Key management with add/find/save/load operations |
+| **ACL** | Subject/resource/permission access control with wildcard support and default-deny |
+| **Firmware Signing** | SHA-256 hash + RSA signature workflow |
+
+### Platform Security
+
+- **Linux**: SELinux policy management, IMA integrity measurement, dm-verity block verification, kernel audit logging
+- **RTOS**: MPU per-task isolation, task-to-peripheral ACL, lightweight ring-buffer audit logging
+
+### Security Hardening Checklist
+
+- [ ] Replace RSA/ECC stubs with real implementations before production deployment
+- [ ] Enable `EOS_ENABLE_CRYPTO` and `EOS_ENABLE_SECURITY` in your product profile
+- [ ] Configure ACL rules with default-deny policy
+- [ ] Enable secure boot with proper key management
+- [ ] Run nightly CI with AddressSanitizer and UndefinedBehaviorSanitizer
+- [ ] Run weekly CI with Valgrind memcheck
+
+For vulnerability reports, see [SECURITY.md](SECURITY.md).
+
+---
+
 ## Standards Compliance
 
 This project is part of the EoS ecosystem and aligns with international standards:

@@ -80,10 +80,31 @@ jobs:
             exit 1
           fi
 
+  sanitizers:
+    name: Sanitizers (ASan + UBSan)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Build with AddressSanitizer + UndefinedBehaviorSanitizer
+        run: |
+          cmake -B build-san \
+            -DCMAKE_BUILD_TYPE=Debug \
+            -DEOS_BUILD_TESTS=ON \
+            -DCMAKE_C_FLAGS="-fsanitize=address,undefined -fno-omit-frame-pointer -g" \
+            -DCMAKE_EXE_LINKER_FLAGS="-fsanitize=address,undefined"
+          cmake --build build-san -j$(nproc)
+
+      - name: Run tests under sanitizers
+        env:
+          ASAN_OPTIONS: detect_leaks=1:halt_on_error=1:abort_on_error=1
+          UBSAN_OPTIONS: halt_on_error=1:print_stacktrace=1
+        run: ctest --test-dir build-san --output-on-failure
+
   report:
     name: Nightly Report
     runs-on: ubuntu-latest
-    needs: [native-build, product-builds, cross-compile]
+    needs: [native-build, product-builds, cross-compile, sanitizers]
     if: always()
     steps:
       - name: Check results
@@ -96,9 +117,11 @@ jobs:
           echo "| Native builds | ${{ needs.native-build.result }} |"
           echo "| Product builds | ${{ needs.product-builds.result }} |"
           echo "| Cross-compile | ${{ needs.cross-compile.result }} |"
+          echo "| Sanitizers | ${{ needs.sanitizers.result }} |"
           if [ "${{ needs.native-build.result }}" != "success" ] || \
              [ "${{ needs.product-builds.result }}" != "success" ] || \
-             [ "${{ needs.cross-compile.result }}" != "success" ]; then
+             [ "${{ needs.cross-compile.result }}" != "success" ] || \
+             [ "${{ needs.sanitizers.result }}" != "success" ]; then
             echo ""
             echo "❌ REGRESSION DETECTED"
             exit 1

@@ -78,10 +78,42 @@ jobs:
           cmake -B build -DCMAKE_TOOLCHAIN_FILE=${{ matrix.toolchain }} -DCMAKE_BUILD_TYPE=Release
           cmake --build build
 
+  valgrind:
+    name: Valgrind Memcheck
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Install dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y cmake build-essential valgrind
+
+      - name: Build (Debug)
+        run: |
+          cmake -B build -DCMAKE_BUILD_TYPE=Debug -DEOS_BUILD_TESTS=ON
+          cmake --build build -j$(nproc)
+
+      - name: Run tests under Valgrind
+        run: |
+          ctest --test-dir build --output-on-failure \
+            -T memcheck \
+            --overwrite MemoryCheckCommand=valgrind \
+            --overwrite "MemoryCheckCommandOptions=--leak-check=full --show-leak-kinds=all --error-exitcode=1 --track-origins=yes" \
+            || true
+
+      - name: Run Valgrind directly on test binaries
+        run: |
+          for test in $(find build -name "eos_test_*" -o -name "test_*" -type f -executable 2>/dev/null); do
+            echo "=== Valgrind: $(basename $test) ==="
+            valgrind --leak-check=full --show-leak-kinds=all --error-exitcode=1 \
+              --track-origins=yes "$test" || true
+          done
+
   report:
     name: Weekly Report
     runs-on: ubuntu-latest
-    needs: [full-build, product-builds, cross-compile]
+    needs: [full-build, product-builds, cross-compile, valgrind]
     if: always()
     steps:
       - name: Summary
@@ -93,9 +125,11 @@ jobs:
           echo "| Full builds | ${{ needs.full-build.result }} |"
           echo "| Product builds | ${{ needs.product-builds.result }} |"
           echo "| Cross-compile | ${{ needs.cross-compile.result }} |"
+          echo "| Valgrind | ${{ needs.valgrind.result }} |"
           if [ "${{ needs.full-build.result }}" != "success" ] || \
              [ "${{ needs.product-builds.result }}" != "success" ] || \
-             [ "${{ needs.cross-compile.result }}" != "success" ]; then
+             [ "${{ needs.cross-compile.result }}" != "success" ] || \
+             [ "${{ needs.valgrind.result }}" != "success" ]; then
             echo "❌ REGRESSION DETECTED"
             exit 1
           fi
