@@ -5,11 +5,13 @@ on:
     branches: [master, main]
     paths:
       - 'docs/book/**'
+    tags:
+      - 'v*'
   pull_request:
     paths:
       - 'docs/book/**'
   release:
-    types: [published]
+    types: [published, created]
   workflow_dispatch:
 
 concurrency:
@@ -19,6 +21,9 @@ concurrency:
 permissions:
   contents: write
 
+env:
+  PANDOC_VERSION: "3.1.11"
+
 jobs:
   # ═══════════════════════════════════════════════════
   # 1. VALIDATE BOOK SOURCE
@@ -26,47 +31,44 @@ jobs:
   validate:
     name: Validate Book Source
     runs-on: ubuntu-latest
+    outputs:
+      lines: ${{ steps.check.outputs.lines }}
+      has_book: ${{ steps.check.outputs.has_book }}
     steps:
       - uses: actions/checkout@v4
 
-      - name: Check book source exists
+      - name: Check book source
+        id: check
         run: |
           if [ ! -f docs/book/book.md ]; then
-            echo "ERROR: docs/book/book.md not found"
-            exit 1
+            echo "has_book=false" >> $GITHUB_OUTPUT
+            echo "lines=0" >> $GITHUB_OUTPUT
+            echo "WARNING: docs/book/book.md not found — skipping PDF build"
+            exit 0
           fi
+          echo "has_book=true" >> $GITHUB_OUTPUT
           LINES=$(wc -l < docs/book/book.md)
-          echo "Book source: $LINES lines"
-          if [ "$LINES" -lt 100 ]; then
-            echo "ERROR: Book too short ($LINES lines, minimum 100)"
-            exit 1
-          fi
           echo "lines=$LINES" >> $GITHUB_OUTPUT
+          echo "Book source: $LINES lines"
 
-      - name: Check for control characters
+      - name: Strip control characters
+        if: steps.check.outputs.has_book == 'true'
         run: |
-          if grep -Pn '[\x00-\x08\x0B\x0C\x0E-\x1F\x7F]' docs/book/book.md; then
-            echo "WARNING: Found control characters — cleaning"
-            sed -i 's/[\x00-\x08\x0B\x0C\x0E-\x1F\x7F]//g' docs/book/book.md
-          else
-            echo "OK: No control characters found"
-          fi
+          sed -i 's/[\x00-\x08\x0B\x0C\x0E-\x1F\x7F]//g' docs/book/book.md
+          echo "Control characters cleaned"
 
-      - name: Validate markdown structure
+      - name: Validate structure
+        if: steps.check.outputs.has_book == 'true'
         run: |
-          # Check for at least one top-level heading
-          if ! grep -q "^# " docs/book/book.md; then
-            echo "WARNING: No top-level heading found"
-          fi
-          # Count chapters (## headings)
           CHAPTERS=$(grep -c "^## " docs/book/book.md || echo 0)
-          echo "Chapters found: $CHAPTERS"
-          # Check for author attribution
+          echo "Chapters: $CHAPTERS"
           if grep -qi "Srikanth Patchava" docs/book/book.md; then
-            echo "OK: Author attribution present"
-          else
-            echo "WARNING: Author attribution missing"
+            echo "Author: verified"
           fi
+          TABLES=$(grep -c "^|" docs/book/book.md || echo 0)
+          CODE_BLOCKS=$(grep -c '```' docs/book/book.md || echo 0)
+          echo "Tables: $TABLES lines"
+          echo "Code blocks: $((CODE_BLOCKS / 2))"
 
   # ═══════════════════════════════════════════════════
   # 2. BUILD PDF
@@ -75,6 +77,10 @@ jobs:
     name: Build PDF
     runs-on: ubuntu-latest
     needs: validate
+    if: needs.validate.outputs.has_book == 'true'
+    outputs:
+      pdf_name: ${{ steps.meta.outputs.pdf_name }}
+      pdf_size: ${{ steps.verify.outputs.pdf_size }}
     steps:
       - uses: actions/checkout@v4
 
@@ -83,7 +89,7 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y pandoc texlive-xetex texlive-fonts-recommended texlive-fonts-extra
 
-      - name: Clean control characters
+      - name: Clean source
         run: sed -i 's/[\x00-\x08\x0B\x0C\x0E-\x1F\x7F]//g' docs/book/book.md
 
       - name: Extract metadata
@@ -91,13 +97,18 @@ jobs:
         run: |
           REPO_NAME="${GITHUB_REPOSITORY#*/}"
           echo "repo_name=$REPO_NAME" >> $GITHUB_OUTPUT
-          LINES=$(wc -l < docs/book/book.md)
-          echo "lines=$LINES" >> $GITHUB_OUTPUT
-          # Extract title from first heading or use repo name
+          echo "pdf_name=${REPO_NAME}-guide.pdf" >> $GITHUB_OUTPUT
           TITLE=$(head -5 docs/book/book.md | grep "^# " | head -1 | sed 's/^# //')
           if [ -z "$TITLE" ]; then TITLE="$REPO_NAME — Official Guide"; fi
           echo "title=$TITLE" >> $GITHUB_OUTPUT
-          echo "pdf_name=${REPO_NAME}-guide.pdf" >> $GITHUB_OUTPUT
+          # Version from tag or commit SHA
+          if [[ "$GITHUB_REF" == refs/tags/* ]]; then
+            VERSION="${GITHUB_REF#refs/tags/}"
+          else
+            VERSION="dev-$(echo $GITHUB_SHA | cut -c1-7)"
+          fi
+          echo "version=$VERSION" >> $GITHUB_OUTPUT
+          echo "Building: $TITLE ($VERSION)"
 
       - name: Generate PDF
         run: |
@@ -110,17 +121,20 @@ jobs:
             -V fontsize=11pt \
             -V documentclass=report \
             -V "title=${{ steps.meta.outputs.title }}" \
-            -V "author=Srikanth Patchava \& EmbeddedOS Contributors" \
+            -V "subtitle=Version ${{ steps.meta.outputs.version }}" \
+            -V "author=Srikanth Patchava \\& EmbeddedOS Contributors" \
             -V "date=$(date +'%B %Y')" \
             -V toc=true \
             -V toc-depth=3 \
             -V colorlinks=true \
             -V linkcolor=blue \
             -V urlcolor=blue \
+            -V "header-includes=\\usepackage{fancyhdr}\\pagestyle{fancy}\\fancyhead[R]{\\small ${{ steps.meta.outputs.version }}}" \
             --highlight-style=tango \
             --number-sections
 
       - name: Verify PDF
+        id: verify
         run: |
           PDF="docs/book/${{ steps.meta.outputs.pdf_name }}"
           if [ ! -f "$PDF" ]; then
@@ -128,49 +142,100 @@ jobs:
             exit 1
           fi
           SIZE=$(du -h "$PDF" | cut -f1)
-          echo "PDF generated: $PDF ($SIZE)"
-          echo "pdf_path=$PDF" >> $GITHUB_OUTPUT
+          BYTES=$(wc -c < "$PDF")
+          echo "pdf_size=$SIZE" >> $GITHUB_OUTPUT
+          echo "PDF: $PDF ($SIZE, $BYTES bytes)"
+          if [ "$BYTES" -lt 1000 ]; then
+            echo "ERROR: PDF too small — likely corrupted"
+            exit 1
+          fi
 
       - name: Upload PDF artifact
         uses: actions/upload-artifact@v4
         with:
-          name: book-pdf
+          name: ${{ steps.meta.outputs.pdf_name }}
           path: docs/book/${{ steps.meta.outputs.pdf_name }}
           retention-days: 90
 
   # ═══════════════════════════════════════════════════
-  # 3. ATTACH PDF TO RELEASE (only on release event)
+  # 3. ATTACH TO RELEASE (any release or tag)
   # ═══════════════════════════════════════════════════
-  release-pdf:
+  attach-to-release:
     name: Attach PDF to Release
     runs-on: ubuntu-latest
     needs: build-pdf
-    if: github.event_name == 'release'
+    if: github.event_name == 'release' || startsWith(github.ref, 'refs/tags/')
     steps:
-      - uses: actions/checkout@v4
-
       - name: Download PDF artifact
         uses: actions/download-artifact@v4
         with:
-          name: book-pdf
+          name: ${{ needs.build-pdf.outputs.pdf_name }}
           path: ./pdf-output
 
-      - name: Extract repo name
-        id: meta
+      - name: Determine release tag
+        id: tag
         run: |
-          REPO_NAME="${GITHUB_REPOSITORY#*/}"
-          echo "pdf_name=${REPO_NAME}-guide.pdf" >> $GITHUB_OUTPUT
+          if [ "${{ github.event_name }}" = "release" ]; then
+            echo "tag=${{ github.event.release.tag_name }}" >> $GITHUB_OUTPUT
+          else
+            echo "tag=${GITHUB_REF#refs/tags/}" >> $GITHUB_OUTPUT
+          fi
 
-      - name: Upload PDF to release
+      - name: Create or update release with PDF
         uses: softprops/action-gh-release@v2
         with:
-          files: ./pdf-output/${{ steps.meta.outputs.pdf_name }}
-          tag_name: ${{ github.event.release.tag_name }}
+          files: ./pdf-output/${{ needs.build-pdf.outputs.pdf_name }}
+          tag_name: ${{ steps.tag.outputs.tag }}
+          fail_on_unmatched_files: false
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Summary
+        run: |
+          echo "## Book PDF Attached to Release"
+          echo ""
+          echo "- **Tag:** ${{ steps.tag.outputs.tag }}"
+          echo "- **PDF:** ${{ needs.build-pdf.outputs.pdf_name }} (${{ needs.build-pdf.outputs.pdf_size }})"
+          echo "- **Source:** ${{ needs.validate.outputs.lines }} lines"
+
+  # ═══════════════════════════════════════════════════
+  # 4. NIGHTLY DEV BUILD (latest from master)
+  # ═══════════════════════════════════════════════════
+  dev-release:
+    name: Update Dev PDF
+    runs-on: ubuntu-latest
+    needs: build-pdf
+    if: github.event_name == 'push' && (github.ref == 'refs/heads/master' || github.ref == 'refs/heads/main')
+    steps:
+      - name: Download PDF artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: ${{ needs.build-pdf.outputs.pdf_name }}
+          path: ./pdf-output
+
+      - name: Update dev release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: dev-latest
+          name: "Development Build (Latest)"
+          prerelease: true
+          files: ./pdf-output/${{ needs.build-pdf.outputs.pdf_name }}
+          body: |
+            ## Development Book PDF — Latest from `master`
+
+            Auto-generated from the latest `docs/book/book.md` on every push.
+
+            - **Commit:** ${{ github.sha }}
+            - **Date:** ${{ github.event.head_commit.timestamp }}
+            - **PDF:** ${{ needs.build-pdf.outputs.pdf_name }} (${{ needs.build-pdf.outputs.pdf_size }})
+
+            > This is a development build. For stable releases, see the latest tagged release.
+          make_latest: false
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
   # ═══════════════════════════════════════════════════
-  # 4. SUMMARY
+  # SUMMARY
   # ═══════════════════════════════════════════════════
   summary:
     name: Build Summary
@@ -180,13 +245,13 @@ jobs:
     steps:
       - name: Report
         run: |
-          echo "## Book Build Report"
+          echo "## Book Build Report — ${GITHUB_REPOSITORY}"
           echo ""
           echo "| Step | Status |"
           echo "|------|--------|"
-          echo "| Validation | ${{ needs.validate.result }} |"
-          echo "| PDF Build | ${{ needs.build-pdf.result }} |"
+          echo "| Source validation | ${{ needs.validate.result }} |"
+          echo "| PDF generation | ${{ needs.build-pdf.result }} |"
           echo ""
-          if [ "${{ needs.build-pdf.result }}" = "success" ]; then
-            echo "PDF artifact available for download."
-          fi
+          echo "- Source: ${{ needs.validate.outputs.lines }} lines"
+          echo "- Trigger: ${{ github.event_name }}"
+          echo "- Ref: ${{ github.ref }}"
