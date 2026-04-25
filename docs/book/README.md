@@ -1,6 +1,9 @@
 # EmbeddedOS: The Complete Guide
 ## From Bootloader to Browser, Kernel to Space
 
+
+![Figure: EoS — 3D SoC Chip Visualization](images/product-3d.png)
+
 **Author:** Srikanth Patchava & EmbeddedOS Contributors
 **Version:** 1.0 (April 2026)
 **License:** CC BY-SA 4.0
