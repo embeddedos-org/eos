@@ -8,3 +8,4 @@ build_test/
 *.map
 .eos/
 _build/
+*.bak
