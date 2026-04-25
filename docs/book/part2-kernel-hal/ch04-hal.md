@@ -6,6 +6,9 @@
 
 ## 4.1 Overview
 
+
+![Figure: EoS HAL Peripheral Map — 9 peripheral types across 83 board ports](images/hal-peripheral-map.png)
+
 The Hardware Abstraction Layer (HAL) is the foundation of EoS portability. It provides
 a **vendor-neutral C API** for accessing hardware peripherals, so application code
 remains unchanged across all supported platforms.

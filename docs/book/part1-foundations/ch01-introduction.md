@@ -6,6 +6,9 @@
 
 ## 1.1 What Is EmbeddedOS?
 
+
+![Figure: The Complete EmbeddedOS Ecosystem — 15 products spanning bootloader to browser](images/ecosystem-map.png)
+
 EmbeddedOS (EoS) is a **universal embedded operating system framework** designed to let
 engineers write hardware-independent firmware that compiles and runs on any target — from
 8-bit microcontrollers to multi-core application processors, from smartwatches to

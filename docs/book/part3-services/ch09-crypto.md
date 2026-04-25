@@ -6,6 +6,9 @@
 
 ## 9.1 Overview
 
+
+![Figure: EoS Platform Services — crypto, filesystem, networking, OTA, UI, security](images/services-overview.png)
+
 The EoS cryptographic subsystem (`eos/crypto.h`) provides hash functions,
 checksums, symmetric encryption, and asymmetric key operations suitable for
 both build-time integrity verification and runtime security. Every algorithm

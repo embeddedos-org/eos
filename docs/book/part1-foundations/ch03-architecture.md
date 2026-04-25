@@ -6,6 +6,9 @@
 
 ## 3.1 Design Principles
 
+
+![Figure: EoS 6-Layer System Architecture — from hardware through kernel to applications](images/eos-architecture.png)
+
 EoS is built on six foundational principles:
 
 1. **Simplicity over completeness** -- Easy to learn, easy to extend

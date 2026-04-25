@@ -6,6 +6,9 @@
 
 ## 6.1 Overview
 
+
+![Figure: EoS Kernel Internals — scheduler, IPC, memory management, sync primitives](images/kernel-internals.png)
+
 The EoS kernel is a lightweight, preemptive real-time operating system designed for
 resource-constrained embedded systems. It provides:
 
