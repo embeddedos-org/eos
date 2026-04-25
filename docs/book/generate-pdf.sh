@@ -1,5 +1,6 @@
 #!/bin/bash
-# Generate PDF from the EmbeddedOS book
+# Generate PDF from the EmbeddedOS multi-chapter book
+# Handles images, figures, tables, code blocks, and citations
 set -e
 
 BOOK_DIR="$(cd "$(dirname "$0")" && pwd)"
@@ -53,35 +54,43 @@ CHAPTERS=(
   appendices/appendix-e-bibliography.md
 )
 
-# Filter to only existing files
+# Filter to only existing files and clean control chars
 EXISTING=()
 for ch in "${CHAPTERS[@]}"; do
   if [ -f "$BOOK_DIR/$ch" ]; then
+    sed -i 's/[\x00-\x08\x0B\x0C\x0E-\x1F\x7F]//g' "$BOOK_DIR/$ch"
     EXISTING+=("$BOOK_DIR/$ch")
   fi
 done
 
 echo "Found ${#EXISTING[@]} chapters"
 
-# Use cover image if available
+# Cover image
 COVER_ARGS=""
 if [ -f "$BOOK_DIR/cover.png" ]; then
   COVER_ARGS="-V titlepage-background=$BOOK_DIR/cover.png"
 fi
 
-# Use references if available
+# Bibliography
 CITE_ARGS=""
 if [ -f "$BOOK_DIR/references.bib" ]; then
   CITE_ARGS="--citeproc --bibliography=$BOOK_DIR/references.bib"
+fi
+
+# Check for Eisvogel
+TEMPLATE_ARGS=""
+if pandoc --template=eisvogel -o /dev/null /dev/null 2>/dev/null; then
+  TEMPLATE_ARGS="--template=eisvogel --listings"
+  echo "Using Eisvogel template"
 fi
 
 pandoc \
   "${EXISTING[@]}" \
   -o "$OUTPUT" \
   --pdf-engine=xelatex \
-  --from=markdown+smart \
-  --template=eisvogel \
-  --listings \
+  --from=markdown+smart+implicit_figures \
+  --resource-path="$BOOK_DIR" \
+  $TEMPLATE_ARGS \
   $COVER_ARGS \
   $CITE_ARGS \
   -V titlepage=true \
@@ -89,10 +98,10 @@ pandoc \
   -V titlepage-text-color="ffffff" \
   -V titlepage-rule-color="58a6ff" \
   -V titlepage-rule-height=2 \
-  -V page-background-color="ffffff" \
-  -V title="EmbeddedOS: The Complete Guide" \
-  -V author="Srikanth Patchava \& EmbeddedOS Contributors" \
-  -V date="$(date +'%B %Y')" \
+  -V "title=EmbeddedOS: The Complete Guide" \
+  -V "subtitle=From Bootloader to Browser — Version 1.0.0" \
+  -V "author=Srikanth Patchava & EmbeddedOS Contributors" \
+  -V "date=$(date +'%B %Y')" \
   -V toc=true \
   -V toc-depth=3 \
   -V toc-own-page=true \
@@ -103,6 +112,23 @@ pandoc \
   -V classoption=oneside \
   -V fontsize=11pt \
   -V geometry:margin=1in \
+  -V float-placement-figure=H \
+  -V table-use-row-colors=true \
+  -V "header-includes=\
+    \usepackage{float}\
+    \usepackage{booktabs}\
+    \usepackage{longtable}\
+    \usepackage{caption}\
+    \captionsetup{font=small,labelfont=bf}\
+    \usepackage{fancyhdr}\
+    \pagestyle{fancy}\
+    \fancyhead[L]{\small\leftmark}\
+    \fancyhead[R]{\small v1.0.0}\
+    \fancyfoot[C]{\small EmbeddedOS Press}\
+    \fancyfoot[R]{\thepage}\
+    \usepackage{graphicx}\
+    \makeatletter\def\maxwidth{\ifdim\Gin@nat@width>\linewidth\linewidth\else\Gin@nat@width\fi}\makeatother\
+    \setkeys{Gin}{width=\maxwidth,keepaspectratio}" \
   --highlight-style=tango \
   --number-sections
 
