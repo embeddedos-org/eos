@@ -1,0 +1,19 @@
+[book]
+title = "EmbeddedOS: The Complete Guide"
+authors = ["Srikanth Patchava", "EmbeddedOS Contributors"]
+description = "From Bootloader to Browser, Kernel to Space — the official guide to the EmbeddedOS ecosystem"
+language = "en"
+src = "."
+
+[build]
+build-dir = "../../build/book"
+
+[output.html]
+default-theme = "navy"
+preferred-dark-theme = "navy"
+git-repository-url = "https://github.com/embeddedos-org/eos"
+edit-url-template = "https://github.com/embeddedos-org/eos/edit/master/docs/book/{path}"
+
+[output.html.fold]
+enable = true
+level = 1
