@@ -8,3 +8,6 @@ build_test/
 *.map
 .eos/
 _build/
+
+# IDE
+.idea/
