@@ -66,7 +66,7 @@ echo "Found ${#EXISTING[@]} chapters"
 pandoc \
   "${EXISTING[@]}" \
   -o "$OUTPUT" \
-  --pdf-engine=xelatex \
+  --pdf-engine=xelatex --from=markdown+smart \
   -V geometry:margin=1in \
   -V fontsize=11pt \
   -V documentclass=report \

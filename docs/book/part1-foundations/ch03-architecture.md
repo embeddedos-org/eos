@@ -47,7 +47,7 @@ neighbors through well-defined C interfaces.
 | **Services** | services/*.h | Cross-cutting concerns (OTA, networking, UI) |
 | **Kernel** | kernel.h, multicore.h | Task scheduling, synchronization, IPC |
 | **HAL** | hal.h, hal_extended.h | Vendor-neutral peripheral access |
-| **Backend** | ackend.h | Platform-specific hardware drivers |
+| **Backend** | backend.h | Platform-specific hardware drivers |
 
 ### Information Flow
 
@@ -101,7 +101,7 @@ scheduling:
 | Module | File | Purpose |
 |--------|------|---------|
 | Types | 	ypes.h | EosArch, EosBuildType, EosSystemKind, EosRtosProvider |
-| Error | rror.h | Error codes and macros |
+| Error | error.h | Error codes and macros |
 | Logger | log.h/c | Leveled logging with color output |
 | Config | config.h/c | YAML config parser (no external deps) |
 | Graph | graph.h/c | DAG with topological sort |
@@ -130,9 +130,9 @@ EoS supports three distinct system kinds, each with its own build pipeline:
 
 | Kind | Pipeline | CLI Command |
 |------|----------|-------------|
-| **Linux** | build -> package -> rootfs -> kernel -> image | os system |
-| **RTOS** | build -> package -> firmware | os firmware |
-| **Hybrid** | Linux pipeline + RTOS firmware(s) | os hybrid |
+| **Linux** | build -> package -> rootfs -> kernel -> image | os system |
+| **RTOS** | build -> package -> firmware | os firmware |
+| **Hybrid** | Linux pipeline + RTOS firmware(s) | os hybrid |
 
 ### Linux Pipeline
 
@@ -265,7 +265,7 @@ Create your own profile by adding a header to products/:
 
 Then build with:
 
-`ash
+```bash
 cmake -B build -DEOS_PRODUCT=my_device
 `
 
@@ -276,13 +276,13 @@ EoS uses six stable layer types for configuration management:
 | Layer | Purpose | Example |
 |-------|---------|---------|
 | **Core** | Default build rules, package schemas | Always included |
-| **BSP** | Board-specific: kernel, bootloader, device tree | oards/stm32h7/ |
+| **BSP** | Board-specific: kernel, bootloader, device tree | boards/stm32h7/ |
 | **Distro** | Package selection, init system, users | layers/minimal/ |
 | **Vendor** | SDK integrations, proprietary components | layers/nordic/ |
 | **Product** | Final config, branding, release images | products/robot.h |
 | **RTOS** | RTOS kernel config, middleware, scheduler | layers/freertos/ |
 
-Layers are stacked in os.yaml:
+Layers are stacked in eos.yaml:
 
 `yaml
 layers:
@@ -327,20 +327,20 @@ Toolchains are YAML-based definitions specifying CC, CXX, AR, sysroot, and flags
 
 | Toolchain File | Target Architecture |
 |---------------|-------------------|
-| arch64-linux-gnu.cmake | ARM64 Linux |
+| aarch64-linux-gnu.cmake | ARM64 Linux |
 | x86_64-linux-gnu.cmake | x86_64 Linux |
 | iscv64-linux-gnu.cmake | RISC-V 64 Linux |
-| rm-none-eabi.cmake | ARM Cortex-M/R bare-metal |
+| arm-none-eabi.cmake | ARM Cortex-M/R bare-metal |
 
 Usage:
 
-`ash
+```bash
 cmake -B build -DCMAKE_TOOLCHAIN_FILE=toolchains/arm-none-eabi.cmake
 `
 
 ## 3.9 Configuration Schema Summary
 
-The os.yaml file drives everything. Key sections:
+The eos.yaml file drives everything. Key sections:
 
 `yaml
 project:
