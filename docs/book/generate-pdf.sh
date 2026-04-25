@@ -63,21 +63,46 @@ done
 
 echo "Found ${#EXISTING[@]} chapters"
 
+# Use cover image if available
+COVER_ARGS=""
+if [ -f "$BOOK_DIR/cover.png" ]; then
+  COVER_ARGS="-V titlepage-background=$BOOK_DIR/cover.png"
+fi
+
+# Use references if available
+CITE_ARGS=""
+if [ -f "$BOOK_DIR/references.bib" ]; then
+  CITE_ARGS="--citeproc --bibliography=$BOOK_DIR/references.bib"
+fi
+
 pandoc \
   "${EXISTING[@]}" \
   -o "$OUTPUT" \
-  --pdf-engine=xelatex --from=markdown+smart \
-  -V geometry:margin=1in \
-  -V fontsize=11pt \
-  -V documentclass=report \
+  --pdf-engine=xelatex \
+  --from=markdown+smart \
+  --template=eisvogel \
+  --listings \
+  $COVER_ARGS \
+  $CITE_ARGS \
+  -V titlepage=true \
+  -V titlepage-color="1a1a2e" \
+  -V titlepage-text-color="ffffff" \
+  -V titlepage-rule-color="58a6ff" \
+  -V titlepage-rule-height=2 \
+  -V page-background-color="ffffff" \
   -V title="EmbeddedOS: The Complete Guide" \
   -V author="Srikanth Patchava \& EmbeddedOS Contributors" \
-  -V date="April 2026" \
+  -V date="$(date +'%B %Y')" \
   -V toc=true \
   -V toc-depth=3 \
+  -V toc-own-page=true \
   -V colorlinks=true \
   -V linkcolor=blue \
   -V urlcolor=blue \
+  -V book=true \
+  -V classoption=oneside \
+  -V fontsize=11pt \
+  -V geometry:margin=1in \
   --highlight-style=tango \
   --number-sections
 
