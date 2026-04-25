@@ -46,6 +46,15 @@ typedef struct {
 
 static rproc_slot_t rprocs[MAX_RPROC];
 
+/* ---- Shared-memory mailbox layout for rproc_send ---- */
+#define RPROC_MBOX_SIZE 256
+typedef struct {
+    volatile uint32_t len;
+    volatile uint8_t  data[RPROC_MBOX_SIZE];
+} rproc_mbox_t;
+
+static rproc_mbox_t rproc_mbox[MAX_RPROC];
+
 /* ---- Core Management ---- */
 
 int eos_multicore_init(eos_mp_mode_t mode)
@@ -55,6 +64,7 @@ int eos_multicore_init(eos_mp_mode_t mode)
     memset(ipi_handlers, 0, sizeof(ipi_handlers));
     memset(shmem_regions, 0, sizeof(shmem_regions));
     memset(rprocs, 0, sizeof(rprocs));
+    memset(rproc_mbox, 0, sizeof(rproc_mbox));
     shmem_count = 0;
 
     /* Core 0 is always online (boot core) */
@@ -79,8 +89,31 @@ uint8_t eos_core_count(void)
 
 uint8_t eos_core_id(void)
 {
-    /* Stub: real implementation reads CPU ID register */
+#if defined(__aarch64__)
+    uint64_t mpidr;
+    __asm__ volatile("mrs %0, mpidr_el1" : "=r"(mpidr));
+    return (uint8_t)(mpidr & 0xFF);
+#elif defined(__arm__)
+    uint32_t mpidr;
+    __asm__ volatile("mrc p15, 0, %0, c0, c0, 5" : "=r"(mpidr));
+    return (uint8_t)(mpidr & 0x03);
+#elif defined(__x86_64__) || defined(__i386__)
+    uint32_t eax, ebx, ecx, edx;
+    __asm__ volatile("cpuid"
+                     : "=a"(eax), "=b"(ebx), "=c"(ecx), "=d"(edx)
+                     : "a"(1));
+    return (uint8_t)((ebx >> 24) & 0xFF); /* Initial APIC ID */
+#elif defined(__riscv)
+    unsigned long hartid;
+    __asm__ volatile("csrr %0, mhartid" : "=r"(hartid));
+    return (uint8_t)(hartid & 0xFF);
+#elif defined(_MSC_VER) && defined(_M_X64)
+    int cpuinfo[4];
+    __cpuid(cpuinfo, 1);
+    return (uint8_t)((cpuinfo[1] >> 24) & 0xFF);
+#else
     return 0;
+#endif
 }
 
 int eos_core_start(uint8_t core_id, eos_core_entry_fn entry, void *arg)
@@ -93,7 +126,9 @@ int eos_core_start(uint8_t core_id, eos_core_entry_fn entry, void *arg)
     cores[core_id].mode = mc_mode;
     if (core_id >= num_cores) num_cores = core_id + 1;
 
-    /* Stub: real implementation powers on core and jumps to entry(arg) */
+    /* Platform-specific core bringup would go here (e.g., PSCI on ARM).
+     * In a real system, the entry point and arg would be written to a
+     * well-known address and a SEV/IPI issued to wake the core. */
     (void)entry; (void)arg;
     return 0;
 }
@@ -117,40 +152,82 @@ int eos_core_get_info(uint8_t core_id, eos_core_info_t *info)
 
 void eos_spin_init(eos_spinlock_t *lock)
 {
-    if (lock) *lock = 0;
+    if (lock) __atomic_store_n(lock, 0, __ATOMIC_RELEASE);
 }
 
 void eos_spin_lock(eos_spinlock_t *lock)
 {
     if (!lock) return;
-    /* Stub: real implementation uses atomic test-and-set */
-    while (*lock) { /* spin */ }
-    *lock = 1;
+    while (__atomic_exchange_n(lock, 1, __ATOMIC_ACQUIRE)) {
+        /* Spin — hint to the processor that this is a spin-wait loop */
+#if defined(__aarch64__) || defined(__arm__)
+        __asm__ volatile("wfe");
+#elif defined(__x86_64__) || defined(__i386__)
+        __asm__ volatile("pause");
+#elif defined(__riscv)
+        /* No standard spin hint on RISC-V; just spin */
+#endif
+    }
 }
 
 bool eos_spin_trylock(eos_spinlock_t *lock)
 {
     if (!lock) return false;
-    if (*lock) return false;
-    *lock = 1;
-    return true;
+    uint32_t expected = 0;
+    return __atomic_compare_exchange_n(lock, &expected, 1, false,
+                                       __ATOMIC_ACQUIRE, __ATOMIC_RELAXED);
 }
 
 void eos_spin_unlock(eos_spinlock_t *lock)
 {
-    if (lock) *lock = 0;
+    if (!lock) return;
+    __atomic_store_n(lock, 0, __ATOMIC_RELEASE);
+#if defined(__aarch64__) || defined(__arm__)
+    __asm__ volatile("sev"); /* Wake cores waiting in WFE */
+#endif
 }
 
 void eos_spin_lock_irqsave(eos_spinlock_t *lock, uint32_t *flags)
 {
-    if (flags) *flags = 0; /* stub: save interrupt state */
+    uint32_t saved = 0;
+#if defined(__aarch64__)
+    __asm__ volatile("mrs %0, daif" : "=r"(saved));
+    __asm__ volatile("msr daifset, #0xF"); /* Mask all exceptions */
+#elif defined(__arm__)
+    __asm__ volatile("mrs %0, cpsr" : "=r"(saved));
+    __asm__ volatile("cpsid if"); /* Disable IRQ + FIQ */
+#elif defined(__x86_64__) || defined(__i386__)
+    __asm__ volatile("pushf; pop %0" : "=r"(saved));
+    __asm__ volatile("cli"); /* Clear interrupt flag */
+#elif defined(__riscv)
+    __asm__ volatile("csrr %0, mstatus" : "=r"(saved));
+    __asm__ volatile("csrc mstatus, %0" :: "r"(0x8)); /* Clear MIE */
+#else
+    __atomic_thread_fence(__ATOMIC_SEQ_CST);
+#endif
+    if (flags) *flags = saved;
     eos_spin_lock(lock);
 }
 
 void eos_spin_unlock_irqrestore(eos_spinlock_t *lock, uint32_t flags)
 {
     eos_spin_unlock(lock);
-    (void)flags; /* stub: restore interrupt state */
+#if defined(__aarch64__)
+    __asm__ volatile("msr daif, %0" :: "r"((uint64_t)flags));
+#elif defined(__arm__)
+    __asm__ volatile("msr cpsr_c, %0" :: "r"(flags));
+#elif defined(__x86_64__) || defined(__i386__)
+    if (flags & 0x200) { /* IF was set — re-enable interrupts */
+        __asm__ volatile("sti");
+    }
+#elif defined(__riscv)
+    if (flags & 0x8) { /* MIE was set — re-enable */
+        __asm__ volatile("csrs mstatus, %0" :: "r"(0x8));
+    }
+#else
+    (void)flags;
+    __atomic_thread_fence(__ATOMIC_SEQ_CST);
+#endif
 }
 
 /* ---- IPI ---- */
@@ -227,12 +304,68 @@ int eos_shmem_close(eos_shmem_region_t *region)
 
 void eos_shmem_flush(const eos_shmem_region_t *region)
 {
-    (void)region; /* stub: real impl flushes cache lines */
+    if (!region || !region->addr || region->size == 0) return;
+
+#if defined(__aarch64__)
+    /* Clean + Invalidate by VA to PoC for each cache line (typically 64 bytes) */
+    uintptr_t start = (uintptr_t)region->addr;
+    uintptr_t end = start + region->size;
+    for (uintptr_t addr = start & ~63UL; addr < end; addr += 64) {
+        __asm__ volatile("dc civac, %0" :: "r"(addr) : "memory");
+    }
+    __asm__ volatile("dsb sy" ::: "memory");
+#elif defined(__arm__)
+    /* ARMv7 DCCIMVAC: Clean + Invalidate D-cache by MVA to PoC */
+    uintptr_t start = (uintptr_t)region->addr;
+    uintptr_t end = start + region->size;
+    for (uintptr_t addr = start & ~31UL; addr < end; addr += 32) {
+        __asm__ volatile("mcr p15, 0, %0, c7, c14, 1" :: "r"(addr) : "memory");
+    }
+    __asm__ volatile("dsb" ::: "memory");
+#elif defined(__x86_64__) || defined(__i386__)
+    uintptr_t start = (uintptr_t)region->addr;
+    uintptr_t end = start + region->size;
+    for (uintptr_t addr = start & ~63UL; addr < end; addr += 64) {
+        __asm__ volatile("clflush (%0)" :: "r"(addr) : "memory");
+    }
+    __asm__ volatile("mfence" ::: "memory");
+#else
+    /* Fallback: compiler barrier only */
+    __atomic_thread_fence(__ATOMIC_SEQ_CST);
+    (void)region;
+#endif
 }
 
 void eos_shmem_invalidate(const eos_shmem_region_t *region)
 {
-    (void)region; /* stub: real impl invalidates cache lines */
+    if (!region || !region->addr || region->size == 0) return;
+
+#if defined(__aarch64__)
+    uintptr_t start = (uintptr_t)region->addr;
+    uintptr_t end = start + region->size;
+    for (uintptr_t addr = start & ~63UL; addr < end; addr += 64) {
+        __asm__ volatile("dc ivac, %0" :: "r"(addr) : "memory");
+    }
+    __asm__ volatile("dsb sy" ::: "memory");
+#elif defined(__arm__)
+    uintptr_t start = (uintptr_t)region->addr;
+    uintptr_t end = start + region->size;
+    for (uintptr_t addr = start & ~31UL; addr < end; addr += 32) {
+        __asm__ volatile("mcr p15, 0, %0, c7, c6, 1" :: "r"(addr) : "memory");
+    }
+    __asm__ volatile("dsb" ::: "memory");
+#elif defined(__x86_64__) || defined(__i386__)
+    /* x86 is cache-coherent; clflush serves as invalidate too */
+    uintptr_t start = (uintptr_t)region->addr;
+    uintptr_t end = start + region->size;
+    for (uintptr_t addr = start & ~63UL; addr < end; addr += 64) {
+        __asm__ volatile("clflush (%0)" :: "r"(addr) : "memory");
+    }
+    __asm__ volatile("mfence" ::: "memory");
+#else
+    __atomic_thread_fence(__ATOMIC_SEQ_CST);
+    (void)region;
+#endif
 }
 
 /* ---- Task Core Affinity ---- */
@@ -260,7 +393,16 @@ int eos_task_get_affinity(uint32_t task_id, eos_core_mask_t *mask)
 int eos_task_migrate(uint32_t task_id, uint8_t target_core)
 {
     if (target_core >= EOS_MAX_CORES) return -1;
-    (void)task_id;
+    if (cores[target_core].state != EOS_CORE_ONLINE) return -1;
+
+    /* Update affinity to include target core */
+    if (task_id < MAX_TASKS_AFFINITY) {
+        task_affinity[task_id] = EOS_CORE_MASK(target_core);
+        task_affinity_set[task_id] = true;
+    }
+
+    /* Send a reschedule IPI to the target core so its scheduler picks up the task */
+    eos_ipi_send(target_core, EOS_IPI_RESCHEDULE, task_id);
     return 0;
 }
 
@@ -275,6 +417,7 @@ int eos_rproc_init(const eos_rproc_config_t *cfg)
     r->rx_cb = NULL;
     r->rx_ctx = NULL;
     r->configured = true;
+    rproc_mbox[cfg->id].len = 0;
     return 0;
 }
 
@@ -300,8 +443,22 @@ eos_rproc_state_t eos_rproc_get_state(uint8_t rproc_id)
 
 int eos_rproc_send(uint8_t rproc_id, const void *data, size_t len)
 {
-    (void)rproc_id; (void)data; (void)len;
-    return -1; /* stub */
+    if (rproc_id >= MAX_RPROC || !rprocs[rproc_id].configured) return -1;
+    if (rprocs[rproc_id].state != EOS_RPROC_RUNNING) return -1;
+    if (!data || len == 0 || len > RPROC_MBOX_SIZE) return -1;
+
+    rproc_mbox_t *mbox = &rproc_mbox[rproc_id];
+
+    /* Write data to shared memory mailbox */
+    memcpy((void *)mbox->data, data, len);
+    eos_dmb();
+    __atomic_store_n(&mbox->len, (uint32_t)len, __ATOMIC_RELEASE);
+    eos_dsb();
+
+    /* Send IPI notification to the remote processor */
+    eos_ipi_send(rproc_id, EOS_IPI_USER, (uint32_t)len);
+
+    return 0;
 }
 
 int eos_rproc_set_rx_callback(uint8_t rproc_id,
@@ -317,50 +474,92 @@ int eos_rproc_set_rx_callback(uint8_t rproc_id,
 
 void eos_dmb(void)
 {
-#if defined(__GNUC__) || defined(__clang__)
-    __asm__ volatile("" ::: "memory");
+#if defined(__aarch64__)
+    __asm__ volatile("dmb sy" ::: "memory");
+#elif defined(__arm__)
+    __asm__ volatile("dmb" ::: "memory");
+#elif defined(__x86_64__) || defined(__i386__)
+    __asm__ volatile("mfence" ::: "memory");
+#elif defined(__riscv)
+    __asm__ volatile("fence rw, rw" ::: "memory");
 #elif defined(_MSC_VER)
     _ReadWriteBarrier();
+    MemoryBarrier();
+#else
+    __atomic_thread_fence(__ATOMIC_SEQ_CST);
 #endif
 }
 
-void eos_dsb(void) { eos_dmb(); }
-void eos_isb(void) { eos_dmb(); }
+void eos_dsb(void)
+{
+#if defined(__aarch64__)
+    __asm__ volatile("dsb sy" ::: "memory");
+#elif defined(__arm__)
+    __asm__ volatile("dsb" ::: "memory");
+#elif defined(__x86_64__) || defined(__i386__)
+    __asm__ volatile("mfence" ::: "memory");
+#elif defined(__riscv)
+    __asm__ volatile("fence iorw, iorw" ::: "memory");
+#elif defined(_MSC_VER)
+    _ReadWriteBarrier();
+    MemoryBarrier();
+#else
+    __atomic_thread_fence(__ATOMIC_SEQ_CST);
+#endif
+}
+
+void eos_isb(void)
+{
+#if defined(__aarch64__)
+    __asm__ volatile("isb" ::: "memory");
+#elif defined(__arm__)
+    __asm__ volatile("isb" ::: "memory");
+#elif defined(__x86_64__) || defined(__i386__)
+    /* x86 serializes instruction fetch on control-flow changes;
+     * cpuid is the closest equivalent if needed. */
+    __asm__ volatile("" ::: "memory");
+#elif defined(__riscv)
+    __asm__ volatile("fence.i" ::: "memory");
+#elif defined(_MSC_VER)
+    _ReadWriteBarrier();
+#else
+    __atomic_thread_fence(__ATOMIC_SEQ_CST);
+#endif
+}
 
 /* ---- Atomics ---- */
 
 int32_t eos_atomic_add(volatile int32_t *ptr, int32_t val)
 {
     if (!ptr) return 0;
-    int32_t old = *ptr;
-    *ptr += val;
-    return old;
+    return __atomic_fetch_add(ptr, val, __ATOMIC_SEQ_CST);
 }
 
 int32_t eos_atomic_sub(volatile int32_t *ptr, int32_t val)
 {
     if (!ptr) return 0;
-    int32_t old = *ptr;
-    *ptr -= val;
-    return old;
+    return __atomic_fetch_sub(ptr, val, __ATOMIC_SEQ_CST);
 }
 
 int32_t eos_atomic_cas(volatile int32_t *ptr, int32_t expected, int32_t desired)
 {
     if (!ptr) return 0;
-    int32_t old = *ptr;
-    if (old == expected) *ptr = desired;
+    int32_t old = expected;
+    __atomic_compare_exchange_n(ptr, &old, desired, false,
+                                __ATOMIC_SEQ_CST, __ATOMIC_SEQ_CST);
     return old;
 }
 
 int32_t eos_atomic_load(volatile const int32_t *ptr)
 {
-    return ptr ? *ptr : 0;
+    if (!ptr) return 0;
+    return __atomic_load_n((const int32_t *)ptr, __ATOMIC_SEQ_CST);
 }
 
 void eos_atomic_store(volatile int32_t *ptr, int32_t val)
 {
-    if (ptr) *ptr = val;
+    if (!ptr) return;
+    __atomic_store_n(ptr, val, __ATOMIC_SEQ_CST);
 }
 
 #endif /* EOS_ENABLE_MULTICORE */

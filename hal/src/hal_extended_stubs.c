@@ -236,10 +236,36 @@ bool eos_eth_link_up(uint8_t port)
 /* ---- WiFi ---- */
 #if EOS_ENABLE_WIFI
 
-int eos_wifi_init(void) { return -1; }
-void eos_wifi_deinit(void) {}
-int eos_wifi_connect(const eos_wifi_config_t *cfg) { (void)cfg; return -1; }
-int eos_wifi_disconnect(void) { return -1; }
+int eos_wifi_init(void)
+{
+    if (s_ext_backend && s_ext_backend->wifi_init)
+        return s_ext_backend->wifi_init(NULL);
+    return -1;
+}
+
+void eos_wifi_deinit(void)
+{
+    if (s_ext_backend && s_ext_backend->wifi_deinit) {
+        s_ext_backend->wifi_deinit();
+        return;
+    }
+}
+
+int eos_wifi_connect(const eos_wifi_config_t *cfg)
+{
+    if (s_ext_backend && s_ext_backend->wifi_connect && cfg)
+        return s_ext_backend->wifi_connect(cfg->ssid, cfg->password);
+    (void)cfg;
+    return -1;
+}
+
+int eos_wifi_disconnect(void)
+{
+    if (s_ext_backend && s_ext_backend->wifi_disconnect)
+        return s_ext_backend->wifi_disconnect();
+    return -1;
+}
+
 bool eos_wifi_is_connected(void) { return false; }
 
 int eos_wifi_scan(eos_wifi_scan_result_t *results, size_t max_results,
@@ -254,12 +280,16 @@ int eos_wifi_get_ip(uint32_t *ip) { (void)ip; return -1; }
 
 int eos_wifi_send(const uint8_t *data, size_t len)
 {
+    if (s_ext_backend && s_ext_backend->wifi_send)
+        return s_ext_backend->wifi_send(data, len);
     (void)data; (void)len;
     return -1;
 }
 
 int eos_wifi_receive(uint8_t *data, size_t max_len, uint32_t timeout_ms)
 {
+    if (s_ext_backend && s_ext_backend->wifi_receive)
+        return s_ext_backend->wifi_receive(data, max_len, timeout_ms);
     (void)data; (void)max_len; (void)timeout_ms;
     return -1;
 }
@@ -269,17 +299,70 @@ int eos_wifi_receive(uint8_t *data, size_t max_len, uint32_t timeout_ms)
 /* ---- BLE ---- */
 #if EOS_ENABLE_BLE
 
-int eos_ble_init(const eos_ble_config_t *cfg) { (void)cfg; return -1; }
-void eos_ble_deinit(void) {}
-int eos_ble_advertise_start(void) { return -1; }
-int eos_ble_advertise_stop(void) { return -1; }
-int eos_ble_connect(const uint8_t addr[6]) { (void)addr; return -1; }
-int eos_ble_disconnect(void) { return -1; }
-bool eos_ble_is_connected(void) { return false; }
-int eos_ble_send(const uint8_t *data, size_t len) { (void)data; (void)len; return -1; }
+int eos_ble_init(const eos_ble_config_t *cfg)
+{
+    if (s_ext_backend && s_ext_backend->ble_init)
+        return s_ext_backend->ble_init(cfg);
+    (void)cfg;
+    return -1;
+}
+
+void eos_ble_deinit(void)
+{
+    if (s_ext_backend && s_ext_backend->ble_deinit) {
+        s_ext_backend->ble_deinit();
+        return;
+    }
+}
+
+int eos_ble_advertise_start(void)
+{
+    if (s_ext_backend && s_ext_backend->ble_advertise_start)
+        return s_ext_backend->ble_advertise_start();
+    return -1;
+}
+
+int eos_ble_advertise_stop(void)
+{
+    if (s_ext_backend && s_ext_backend->ble_advertise_stop)
+        return s_ext_backend->ble_advertise_stop();
+    return -1;
+}
+
+int eos_ble_connect(const uint8_t addr[6])
+{
+    if (s_ext_backend && s_ext_backend->ble_connect)
+        return s_ext_backend->ble_connect(addr);
+    (void)addr;
+    return -1;
+}
+
+int eos_ble_disconnect(void)
+{
+    if (s_ext_backend && s_ext_backend->ble_disconnect)
+        return s_ext_backend->ble_disconnect();
+    return -1;
+}
+
+bool eos_ble_is_connected(void)
+{
+    if (s_ext_backend && s_ext_backend->ble_is_connected)
+        return s_ext_backend->ble_is_connected();
+    return false;
+}
+
+int eos_ble_send(const uint8_t *data, size_t len)
+{
+    if (s_ext_backend && s_ext_backend->ble_send)
+        return s_ext_backend->ble_send(data, len);
+    (void)data; (void)len;
+    return -1;
+}
 
 int eos_ble_set_rx_callback(eos_ble_rx_callback_t cb, void *ctx)
 {
+    if (s_ext_backend && s_ext_backend->ble_set_rx_callback)
+        return s_ext_backend->ble_set_rx_callback(cb, ctx);
     (void)cb; (void)ctx;
     return -1;
 }
@@ -289,11 +372,27 @@ int eos_ble_set_rx_callback(eos_ble_rx_callback_t cb, void *ctx)
 /* ---- Camera ---- */
 #if EOS_ENABLE_CAMERA
 
-int eos_camera_init(const eos_camera_config_t *cfg) { (void)cfg; return -1; }
-void eos_camera_deinit(uint8_t id) { (void)id; }
+int eos_camera_init(const eos_camera_config_t *cfg)
+{
+    if (s_ext_backend && s_ext_backend->camera_init)
+        return s_ext_backend->camera_init(cfg);
+    (void)cfg;
+    return -1;
+}
+
+void eos_camera_deinit(uint8_t id)
+{
+    if (s_ext_backend && s_ext_backend->camera_deinit) {
+        s_ext_backend->camera_deinit(id);
+        return;
+    }
+    (void)id;
+}
 
 int eos_camera_capture(uint8_t id, eos_camera_frame_t *frame)
 {
+    if (s_ext_backend && s_ext_backend->camera_capture)
+        return s_ext_backend->camera_capture(id, frame);
     (void)id; (void)frame;
     return -1;
 }
@@ -306,17 +405,35 @@ int eos_camera_stop_stream(uint8_t id) { (void)id; return -1; }
 /* ---- Audio ---- */
 #if EOS_ENABLE_AUDIO
 
-int eos_audio_init(const eos_audio_config_t *cfg) { (void)cfg; return -1; }
-void eos_audio_deinit(uint8_t id) { (void)id; }
+int eos_audio_init(const eos_audio_config_t *cfg)
+{
+    if (s_ext_backend && s_ext_backend->audio_init)
+        return s_ext_backend->audio_init(cfg);
+    (void)cfg;
+    return -1;
+}
+
+void eos_audio_deinit(uint8_t id)
+{
+    if (s_ext_backend && s_ext_backend->audio_deinit) {
+        s_ext_backend->audio_deinit(id);
+        return;
+    }
+    (void)id;
+}
 
 int eos_audio_play(uint8_t id, const uint8_t *data, size_t len)
 {
+    if (s_ext_backend && s_ext_backend->audio_play)
+        return s_ext_backend->audio_play(id, data, len);
     (void)id; (void)data; (void)len;
     return -1;
 }
 
 int eos_audio_record(uint8_t id, uint8_t *buf, size_t len, uint32_t timeout_ms)
 {
+    if (s_ext_backend && s_ext_backend->audio_record)
+        return s_ext_backend->audio_record(id, buf, len, timeout_ms);
     (void)id; (void)buf; (void)len; (void)timeout_ms;
     return -1;
 }
@@ -403,11 +520,27 @@ int eos_display_set_brightness(uint8_t id, uint8_t brightness_pct)
 /* ---- Motor ---- */
 #if EOS_ENABLE_MOTOR
 
-int eos_motor_init(const eos_motor_config_t *cfg) { (void)cfg; return -1; }
-void eos_motor_deinit(uint8_t id) { (void)id; }
+int eos_motor_init(const eos_motor_config_t *cfg)
+{
+    if (s_ext_backend && s_ext_backend->motor_init)
+        return s_ext_backend->motor_init(cfg);
+    (void)cfg;
+    return -1;
+}
+
+void eos_motor_deinit(uint8_t id)
+{
+    if (s_ext_backend && s_ext_backend->motor_deinit) {
+        s_ext_backend->motor_deinit(id);
+        return;
+    }
+    (void)id;
+}
 
 int eos_motor_set_speed(uint8_t id, int16_t speed_pct)
 {
+    if (s_ext_backend && s_ext_backend->motor_set_speed)
+        return s_ext_backend->motor_set_speed(id, speed_pct);
     (void)id; (void)speed_pct;
     return -1;
 }
@@ -418,7 +551,14 @@ int eos_motor_set_position(uint8_t id, int32_t position)
     return -1;
 }
 
-int eos_motor_brake(uint8_t id) { (void)id; return -1; }
+int eos_motor_brake(uint8_t id)
+{
+    if (s_ext_backend && s_ext_backend->motor_brake)
+        return s_ext_backend->motor_brake(id);
+    (void)id;
+    return -1;
+}
+
 int eos_motor_coast(uint8_t id) { (void)id; return -1; }
 
 #endif /* EOS_ENABLE_MOTOR */
@@ -426,11 +566,26 @@ int eos_motor_coast(uint8_t id) { (void)id; return -1; }
 /* ---- GNSS ---- */
 #if EOS_ENABLE_GNSS
 
-int eos_gnss_init(const eos_gnss_config_t *cfg) { (void)cfg; return -1; }
-void eos_gnss_deinit(void) {}
+int eos_gnss_init(const eos_gnss_config_t *cfg)
+{
+    if (s_ext_backend && s_ext_backend->gnss_init)
+        return s_ext_backend->gnss_init(cfg);
+    (void)cfg;
+    return -1;
+}
+
+void eos_gnss_deinit(void)
+{
+    if (s_ext_backend && s_ext_backend->gnss_deinit) {
+        s_ext_backend->gnss_deinit();
+        return;
+    }
+}
 
 int eos_gnss_get_position(eos_gnss_position_t *pos)
 {
+    if (s_ext_backend && s_ext_backend->gnss_get_position)
+        return s_ext_backend->gnss_get_position(pos);
     (void)pos;
     return -1;
 }
@@ -442,17 +597,35 @@ bool eos_gnss_has_fix(void) { return false; }
 /* ---- IMU ---- */
 #if EOS_ENABLE_IMU
 
-int eos_imu_init(const eos_imu_config_t *cfg) { (void)cfg; return -1; }
-void eos_imu_deinit(uint8_t id) { (void)id; }
+int eos_imu_init(const eos_imu_config_t *cfg)
+{
+    if (s_ext_backend && s_ext_backend->imu_init)
+        return s_ext_backend->imu_init(cfg);
+    (void)cfg;
+    return -1;
+}
+
+void eos_imu_deinit(uint8_t id)
+{
+    if (s_ext_backend && s_ext_backend->imu_deinit) {
+        s_ext_backend->imu_deinit(id);
+        return;
+    }
+    (void)id;
+}
 
 int eos_imu_read_accel(uint8_t id, eos_imu_vec3_t *accel)
 {
+    if (s_ext_backend && s_ext_backend->imu_read_accel)
+        return s_ext_backend->imu_read_accel(id, accel);
     (void)id; (void)accel;
     return -1;
 }
 
 int eos_imu_read_gyro(uint8_t id, eos_imu_vec3_t *gyro)
 {
+    if (s_ext_backend && s_ext_backend->imu_read_gyro)
+        return s_ext_backend->imu_read_gyro(id, gyro);
     (void)id; (void)gyro;
     return -1;
 }
@@ -495,7 +668,6 @@ int eos_touch_read(uint8_t id, eos_touch_point_t *points, uint8_t max_points,
 {
     if (s_ext_backend && s_ext_backend->touch_read)
         return s_ext_backend->touch_read(id, points, max_points, count);
-    if (count) *count = 0;
     return -1;
 }
 

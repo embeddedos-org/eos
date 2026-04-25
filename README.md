@@ -585,3 +585,7 @@ See the [EoS Compliance Documentation](https://github.com/embeddedos-org/.github
 ## 📜 License
 
 MIT License — see [LICENSE](LICENSE) for details.
+
+
+---
+Part of the [EmbeddedOS Organization](https://embeddedos-org.github.io).
