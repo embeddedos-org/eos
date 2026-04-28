@@ -28,24 +28,25 @@ jobs:
         with:
           python-version: '3.11'
 
-      - name: Install Manim, gTTS & dependencies
+      - name: Install dependencies
         run: |
           sudo apt-get update
           sudo apt-get install -y ffmpeg libcairo2-dev libpango1.0-dev
-          pip install manim==0.18.1 gTTS
+          pip install manim==0.18.1 gTTS mutagen
 
-      - name: Generate narration audio
+      - name: Generate narration audio (per-segment)
         run: |
           cd promo
           python generate_audio.py
-          ls -lh narration.mp3
+          cat durations.json
+          ls -lh *.mp3
 
-      - name: Render promo video (1080p)
+      - name: Render synced promo video
         run: |
           cd promo
           manim render -qh --format mp4 promo_scene.py ProductPromo
 
-      - name: Merge video + audio into final MP4
+      - name: Merge video + audio
         run: |
           cd promo
           VIDEO=$(find media/videos -name "ProductPromo.mp4" | head -1)
@@ -54,7 +55,6 @@ jobs:
             -map 0:v:0 -map 1:a:0 \
             -shortest \
             EoS_v1.0_promo.mp4
-          echo "Final video:"
           ls -lh EoS_v1.0_promo.mp4
 
       - name: Upload final video
@@ -73,18 +73,3 @@ jobs:
           fail_on_unmatched_files: false
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-
-  summary:
-    name: Video Build Summary
-    runs-on: ubuntu-latest
-    needs: render-video
-    if: always()
-    steps:
-      - name: Report
-        run: |
-          echo "## Promo Video Build" >> $GITHUB_STEP_SUMMARY
-          echo "| Detail | Value |" >> $GITHUB_STEP_SUMMARY
-          echo "|--------|-------|" >> $GITHUB_STEP_SUMMARY
-          echo "| Product | EoS |" >> $GITHUB_STEP_SUMMARY
-          echo "| Audio | gTTS narration |" >> $GITHUB_STEP_SUMMARY
-          echo "| Render | ${{ needs.render-video.result }} |" >> $GITHUB_STEP_SUMMARY
