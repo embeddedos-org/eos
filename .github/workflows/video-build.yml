@@ -28,45 +28,47 @@ jobs:
         with:
           python-version: '3.11'
 
-      - name: Install Manim & dependencies
+      - name: Install Manim, gTTS & dependencies
         run: |
           sudo apt-get update
           sudo apt-get install -y ffmpeg libcairo2-dev libpango1.0-dev
-          pip install manim==0.18.1
+          pip install manim==0.18.1 gTTS
+
+      - name: Generate narration audio
+        run: |
+          cd promo
+          python generate_audio.py
+          ls -lh narration.mp3
 
       - name: Render promo video (1080p)
         run: |
           cd promo
           manim render -qh --format mp4 promo_scene.py ProductPromo
-          echo "Video rendered"
 
-      - name: Render social media variants
+      - name: Merge video + audio into final MP4
         run: |
           cd promo
-          # Square (1080x1080) for Instagram/LinkedIn
-          manim render -qh --format mp4 \
-            --resolution 1080,1080 \
-            promo_scene.py ProductPromo \
-            -o EoS_square.mp4 || true
-          echo "Social variants rendered"
+          VIDEO=$(find media/videos -name "ProductPromo.mp4" | head -1)
+          ffmpeg -y -i "$VIDEO" -i narration.mp3 \
+            -c:v copy -c:a aac -b:a 192k \
+            -map 0:v:0 -map 1:a:0 \
+            -shortest \
+            EoS_v1.0_promo.mp4
+          echo "Final video:"
+          ls -lh EoS_v1.0_promo.mp4
 
-      - name: List outputs
-        run: |
-          echo "=== Generated Videos ==="
-          find promo/media -name "*.mp4" -exec ls -lh {} \;
-
-      - name: Upload video artifacts
+      - name: Upload final video
         uses: actions/upload-artifact@v4
         with:
-          name: promo-videos
-          path: promo/media/videos/**/*.mp4
+          name: EoS-promo-video
+          path: promo/EoS_v1.0_promo.mp4
           retention-days: 90
 
       - name: Attach to release
         if: github.event_name == 'release'
         uses: softprops/action-gh-release@v2
         with:
-          files: promo/media/videos/**/*.mp4
+          files: promo/EoS_v1.0_promo.mp4
           tag_name: ${{ github.event.release.tag_name }}
           fail_on_unmatched_files: false
         env:
@@ -81,9 +83,8 @@ jobs:
       - name: Report
         run: |
           echo "## Promo Video Build" >> $GITHUB_STEP_SUMMARY
-          echo "" >> $GITHUB_STEP_SUMMARY
           echo "| Detail | Value |" >> $GITHUB_STEP_SUMMARY
           echo "|--------|-------|" >> $GITHUB_STEP_SUMMARY
           echo "| Product | EoS |" >> $GITHUB_STEP_SUMMARY
+          echo "| Audio | gTTS narration |" >> $GITHUB_STEP_SUMMARY
           echo "| Render | ${{ needs.render-video.result }} |" >> $GITHUB_STEP_SUMMARY
-          echo "| Trigger | ${{ github.event_name }} |" >> $GITHUB_STEP_SUMMARY
