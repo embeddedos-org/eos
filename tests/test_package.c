@@ -14,8 +14,8 @@ static void test_package_register(void) {
     memset(&set, 0, sizeof(set));
     EosPackage pkg;
     memset(&pkg, 0, sizeof(pkg));
-    pkg.name = "libfoo";
-    pkg.version = "1.0.0";
+    strncpy(pkg.name, "libfoo", EOS_MAX_NAME - 1);
+    strncpy(pkg.version, "1.0.0", EOS_MAX_NAME - 1);
     pkg.build_type = EOS_BUILD_CMAKE;
     pkg.init_fn = dummy_init;
     assert(eos_package_register(&set, &pkg) == 0);
@@ -28,8 +28,8 @@ static void test_package_find(void) {
     memset(&set, 0, sizeof(set));
     EosPackage pkg;
     memset(&pkg, 0, sizeof(pkg));
-    pkg.name = "libbar";
-    pkg.version = "2.0.0";
+    strncpy(pkg.name, "libbar", EOS_MAX_NAME - 1);
+    strncpy(pkg.version, "2.0.0", EOS_MAX_NAME - 1);
     pkg.build_type = EOS_BUILD_MAKE;
     eos_package_register(&set, &pkg);
     const EosPackage *found = eos_package_find(&set, "libbar");
@@ -55,9 +55,16 @@ static void test_package_find_null(void) {
 static void test_package_register_multiple(void) {
     EosPackageSet set;
     memset(&set, 0, sizeof(set));
-    EosPackage p1 = {0}; p1.name = "a"; p1.version = "1.0";
-    EosPackage p2 = {0}; p2.name = "b"; p2.version = "2.0";
-    EosPackage p3 = {0}; p3.name = "c"; p3.version = "3.0";
+    EosPackage p1, p2, p3;
+    memset(&p1, 0, sizeof(p1));
+    memset(&p2, 0, sizeof(p2));
+    memset(&p3, 0, sizeof(p3));
+    strncpy(p1.name, "a", EOS_MAX_NAME - 1);
+    strncpy(p1.version, "1.0", EOS_MAX_NAME - 1);
+    strncpy(p2.name, "b", EOS_MAX_NAME - 1);
+    strncpy(p2.version, "2.0", EOS_MAX_NAME - 1);
+    strncpy(p3.name, "c", EOS_MAX_NAME - 1);
+    strncpy(p3.version, "3.0", EOS_MAX_NAME - 1);
     eos_package_register(&set, &p1);
     eos_package_register(&set, &p2);
     eos_package_register(&set, &p3);
@@ -71,9 +78,10 @@ static void test_package_register_multiple(void) {
 static void test_package_init_all(void) {
     EosPackageSet set;
     memset(&set, 0, sizeof(set));
-    EosPackage pkg = {0};
-    pkg.name = "init_test";
-    pkg.version = "1.0";
+    EosPackage pkg;
+    memset(&pkg, 0, sizeof(pkg));
+    strncpy(pkg.name, "init_test", EOS_MAX_NAME - 1);
+    strncpy(pkg.version, "1.0", EOS_MAX_NAME - 1);
     pkg.init_fn = dummy_init;
     eos_package_register(&set, &pkg);
     int r = eos_package_init_all(&set);
@@ -84,9 +92,10 @@ static void test_package_init_all(void) {
 static void test_package_build_type(void) {
     EosPackageSet set;
     memset(&set, 0, sizeof(set));
-    EosPackage pkg = {0};
-    pkg.name = "cmake_pkg";
-    pkg.version = "1.0";
+    EosPackage pkg;
+    memset(&pkg, 0, sizeof(pkg));
+    strncpy(pkg.name, "cmake_pkg", EOS_MAX_NAME - 1);
+    strncpy(pkg.version, "1.0", EOS_MAX_NAME - 1);
     pkg.build_type = EOS_BUILD_CMAKE;
     eos_package_register(&set, &pkg);
     const EosPackage *found = eos_package_find(&set, "cmake_pkg");

@@ -21,10 +21,10 @@ ARM Cortex-A:
   NXP i.MX8M        ✅           ✅             ✅ ALIGNED
   TI AM64x          ✅           ✅             ✅ ALIGNED
   STM32MP1          ✅           ✅             ✅ ALIGNED
-  EoSim ARM64       ✅           ✅             ✅ ALIGNED
+  QEMU ARM64        ✅           ✅             ✅ ALIGNED
 
 RISC-V:
-  RISC-V 64 (EoSim) ✅           ✅             ✅ ALIGNED
+  RISC-V 64 (QEMU)  ✅           ✅             ✅ ALIGNED
   SiFive U74        ✅           ✅             ✅ ALIGNED
 
 Xtensa:
@@ -66,8 +66,8 @@ Legacy/Niche:
 | `imx8m.yaml` | ARM64 | Cortex-A53 | NXP | eMMC | 2 GB |
 | `am64x.yaml` | ARM | A53+R5F | TI | 64 MB OSPI | 2 GB DDR |
 | `stm32mp1.yaml` | Hybrid | A7+M4 | ST | eMMC | 512 MB |
-| `qemu-arm64.yaml` | ARM64 | Cortex-A57 | EoSim | virtio | 512 MB |
-| `generic-riscv64.yaml` | RISC-V | RV64GC | EoSim | virtio | 256 MB |
+| `qemu-arm64.yaml` | ARM64 | Cortex-A57 | QEMU | virtio | 512 MB |
+| `generic-riscv64.yaml` | RISC-V | RV64GC | QEMU | virtio | 256 MB |
 | `sifive_u.yaml` | RISC-V | U74 | SiFive | SPI flash | 8 GB DDR |
 | `esp32.yaml` | Xtensa | LX6 | Espressif | 4 MB | 520 KB |
 | `generic-x86.yaml` | x86 | i686 | Generic | disk | 512 MB |
@@ -123,7 +123,7 @@ Legacy/Niche:
 | Architecture | eos Toolchain | eos Boards | eboot Boards | Platform Enum |
 |-------------|--------------|-----------|-------------|---------------|
 | **ARM Cortex-M** | `arm-none-eabi` | nRF52840, STM32F4, STM32H7, SAMD51 | nrf52, stm32f4, stm32h7, samd51 | `ARM_CM0`..`ARM_CM33` |
-| **ARM Cortex-A** | `aarch64-linux-gnu` | RPi4, i.MX8M, AM64x, STM32MP1, EoSim | rpi4, imx8m, am64x, stm32mp1, qemu-arm64 | `ARM_CA53`, `ARM_CA72` |
+| **ARM Cortex-A** | `aarch64-linux-gnu` | RPi4, i.MX8M, AM64x, STM32MP1, QEMU | rpi4, imx8m, am64x, stm32mp1, qemu-arm64 | `ARM_CA53`, `ARM_CA72` |
 | **RISC-V 64** | `riscv64-linux-gnu` | generic-riscv64, SiFive U | riscv64_virt, sifive_u | `RISCV64` |
 | **Xtensa** | (vendor SDK) | ESP32 | esp32 | `XTENSA` |
 | **x86 / x86_64** | `x86_64-linux-gnu` | generic-x86, generic-x86_64 | x86, x86_64_efi | `X86`, `X86_64` |
@@ -256,7 +256,7 @@ These board + profile combinations have been verified to work with both eos and 
 | STM32H7 | `drone` | `stm32h7` | ✅ | ✅ ST-Link | ✅ | ✅ |
 | RPi4 | `gateway` | `rpi4` | ✅ | ✅ SD card | ✅ | ✅ |
 | ESP32 | `smart_home` | `esp32` | ✅ | ✅ esptool | ✅ | ✅ |
-| RISC-V 64 | `iot` | `riscv64_virt` | ✅ | ✅ EoSim | ✅ | ✅ |
+| RISC-V 64 | `iot` | `riscv64_virt` | ✅ | ✅ QEMU | ✅ | ✅ |
 | x86_64 | `server` | `x86_64_efi` | ✅ | ✅ UEFI | ✅ | ✅ |
 | SPARC | `satellite` | `sparc` | ✅ | ✅ GRMON | ✅ | ✅ |
 

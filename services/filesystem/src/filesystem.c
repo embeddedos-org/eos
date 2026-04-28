@@ -23,7 +23,8 @@ static uint32_t g_used = 0;
 int eos_fs_init(const eos_fs_config_t *cfg) {
     (void)cfg;
     memset(g_inodes, 0, sizeof(g_inodes)); memset(g_fds, 0, sizeof(g_fds)); memset(g_dirs, 0, sizeof(g_dirs));
-    g_inodes[0].in_use = 1; g_inodes[0].is_dir = 1; strcpy(g_inodes[0].name, "/");
+    g_inodes[0].in_use = 1; g_inodes[0].is_dir = 1; strncpy(g_inodes[0].name, "/", EOS_PATH_MAX - 1);
+    g_inodes[0].name[EOS_PATH_MAX - 1] = '\0';
     g_used = 0; g_init = 1; return 0;
 }
 

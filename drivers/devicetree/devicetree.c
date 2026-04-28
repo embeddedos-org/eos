@@ -81,10 +81,13 @@ int eos_dt_parse(EosDeviceTree *dt, const uint8_t *dtb, uint32_t size) {
 
                 /* Cache model and compatible at root level */
                 if (depth == 1) {
-                    if (strcmp(pname, "model") == 0)
+                    if (strcmp(pname, "model") == 0) {
                         strncpy(dt->model, (const char *)prop->data, 63);
-                    else if (strcmp(pname, "compatible") == 0)
+                        dt->model[63] = '\0';
+                    } else if (strcmp(pname, "compatible") == 0) {
                         strncpy(dt->compatible, (const char *)prop->data, 127);
+                        dt->compatible[127] = '\0';
+                    }
                 }
                 if (strcmp(pname, "phandle") == 0 && len >= 4)
                     node->phandle = be32(prop->data);

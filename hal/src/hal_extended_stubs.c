@@ -7,9 +7,7 @@
  * @brief EoS Extended HAL — Stub implementations for all extended peripherals
  *
  * Provides default stub implementations that return -1 (not supported).
- * Platform backends override these by registering an eos_hal_ext_backend_t
- * vtable via eos_hal_register_ext_backend(). When a backend is registered,
- * each stub dispatches to the backend function pointer if non-NULL.
+ * Platform backends override these with real implementations.
  */
 
 #include <eos/hal_extended.h>
@@ -236,36 +234,10 @@ bool eos_eth_link_up(uint8_t port)
 /* ---- WiFi ---- */
 #if EOS_ENABLE_WIFI
 
-int eos_wifi_init(void)
-{
-    if (s_ext_backend && s_ext_backend->wifi_init)
-        return s_ext_backend->wifi_init(NULL);
-    return -1;
-}
-
-void eos_wifi_deinit(void)
-{
-    if (s_ext_backend && s_ext_backend->wifi_deinit) {
-        s_ext_backend->wifi_deinit();
-        return;
-    }
-}
-
-int eos_wifi_connect(const eos_wifi_config_t *cfg)
-{
-    if (s_ext_backend && s_ext_backend->wifi_connect && cfg)
-        return s_ext_backend->wifi_connect(cfg->ssid, cfg->password);
-    (void)cfg;
-    return -1;
-}
-
-int eos_wifi_disconnect(void)
-{
-    if (s_ext_backend && s_ext_backend->wifi_disconnect)
-        return s_ext_backend->wifi_disconnect();
-    return -1;
-}
-
+int eos_wifi_init(void) { return -1; }
+void eos_wifi_deinit(void) {}
+int eos_wifi_connect(const eos_wifi_config_t *cfg) { (void)cfg; return -1; }
+int eos_wifi_disconnect(void) { return -1; }
 bool eos_wifi_is_connected(void) { return false; }
 
 int eos_wifi_scan(eos_wifi_scan_result_t *results, size_t max_results,
@@ -280,16 +252,12 @@ int eos_wifi_get_ip(uint32_t *ip) { (void)ip; return -1; }
 
 int eos_wifi_send(const uint8_t *data, size_t len)
 {
-    if (s_ext_backend && s_ext_backend->wifi_send)
-        return s_ext_backend->wifi_send(data, len);
     (void)data; (void)len;
     return -1;
 }
 
 int eos_wifi_receive(uint8_t *data, size_t max_len, uint32_t timeout_ms)
 {
-    if (s_ext_backend && s_ext_backend->wifi_receive)
-        return s_ext_backend->wifi_receive(data, max_len, timeout_ms);
     (void)data; (void)max_len; (void)timeout_ms;
     return -1;
 }
@@ -299,70 +267,17 @@ int eos_wifi_receive(uint8_t *data, size_t max_len, uint32_t timeout_ms)
 /* ---- BLE ---- */
 #if EOS_ENABLE_BLE
 
-int eos_ble_init(const eos_ble_config_t *cfg)
-{
-    if (s_ext_backend && s_ext_backend->ble_init)
-        return s_ext_backend->ble_init(cfg);
-    (void)cfg;
-    return -1;
-}
-
-void eos_ble_deinit(void)
-{
-    if (s_ext_backend && s_ext_backend->ble_deinit) {
-        s_ext_backend->ble_deinit();
-        return;
-    }
-}
-
-int eos_ble_advertise_start(void)
-{
-    if (s_ext_backend && s_ext_backend->ble_advertise_start)
-        return s_ext_backend->ble_advertise_start();
-    return -1;
-}
-
-int eos_ble_advertise_stop(void)
-{
-    if (s_ext_backend && s_ext_backend->ble_advertise_stop)
-        return s_ext_backend->ble_advertise_stop();
-    return -1;
-}
-
-int eos_ble_connect(const uint8_t addr[6])
-{
-    if (s_ext_backend && s_ext_backend->ble_connect)
-        return s_ext_backend->ble_connect(addr);
-    (void)addr;
-    return -1;
-}
-
-int eos_ble_disconnect(void)
-{
-    if (s_ext_backend && s_ext_backend->ble_disconnect)
-        return s_ext_backend->ble_disconnect();
-    return -1;
-}
-
-bool eos_ble_is_connected(void)
-{
-    if (s_ext_backend && s_ext_backend->ble_is_connected)
-        return s_ext_backend->ble_is_connected();
-    return false;
-}
-
-int eos_ble_send(const uint8_t *data, size_t len)
-{
-    if (s_ext_backend && s_ext_backend->ble_send)
-        return s_ext_backend->ble_send(data, len);
-    (void)data; (void)len;
-    return -1;
-}
+int eos_ble_init(const eos_ble_config_t *cfg) { (void)cfg; return -1; }
+void eos_ble_deinit(void) {}
+int eos_ble_advertise_start(void) { return -1; }
+int eos_ble_advertise_stop(void) { return -1; }
+int eos_ble_connect(const uint8_t addr[6]) { (void)addr; return -1; }
+int eos_ble_disconnect(void) { return -1; }
+bool eos_ble_is_connected(void) { return false; }
+int eos_ble_send(const uint8_t *data, size_t len) { (void)data; (void)len; return -1; }
 
 int eos_ble_set_rx_callback(eos_ble_rx_callback_t cb, void *ctx)
 {
-    if (s_ext_backend && s_ext_backend->ble_set_rx_callback)
-        return s_ext_backend->ble_set_rx_callback(cb, ctx);
     (void)cb; (void)ctx;
     return -1;
 }
@@ -372,27 +287,11 @@ int eos_ble_set_rx_callback(eos_ble_rx_callback_t cb, void *ctx)
 /* ---- Camera ---- */
 #if EOS_ENABLE_CAMERA
 
-int eos_camera_init(const eos_camera_config_t *cfg)
-{
-    if (s_ext_backend && s_ext_backend->camera_init)
-        return s_ext_backend->camera_init(cfg);
-    (void)cfg;
-    return -1;
-}
-
-void eos_camera_deinit(uint8_t id)
-{
-    if (s_ext_backend && s_ext_backend->camera_deinit) {
-        s_ext_backend->camera_deinit(id);
-        return;
-    }
-    (void)id;
-}
+int eos_camera_init(const eos_camera_config_t *cfg) { (void)cfg; return -1; }
+void eos_camera_deinit(uint8_t id) { (void)id; }
 
 int eos_camera_capture(uint8_t id, eos_camera_frame_t *frame)
 {
-    if (s_ext_backend && s_ext_backend->camera_capture)
-        return s_ext_backend->camera_capture(id, frame);
     (void)id; (void)frame;
     return -1;
 }
@@ -405,35 +304,17 @@ int eos_camera_stop_stream(uint8_t id) { (void)id; return -1; }
 /* ---- Audio ---- */
 #if EOS_ENABLE_AUDIO
 
-int eos_audio_init(const eos_audio_config_t *cfg)
-{
-    if (s_ext_backend && s_ext_backend->audio_init)
-        return s_ext_backend->audio_init(cfg);
-    (void)cfg;
-    return -1;
-}
-
-void eos_audio_deinit(uint8_t id)
-{
-    if (s_ext_backend && s_ext_backend->audio_deinit) {
-        s_ext_backend->audio_deinit(id);
-        return;
-    }
-    (void)id;
-}
+int eos_audio_init(const eos_audio_config_t *cfg) { (void)cfg; return -1; }
+void eos_audio_deinit(uint8_t id) { (void)id; }
 
 int eos_audio_play(uint8_t id, const uint8_t *data, size_t len)
 {
-    if (s_ext_backend && s_ext_backend->audio_play)
-        return s_ext_backend->audio_play(id, data, len);
     (void)id; (void)data; (void)len;
     return -1;
 }
 
 int eos_audio_record(uint8_t id, uint8_t *buf, size_t len, uint32_t timeout_ms)
 {
-    if (s_ext_backend && s_ext_backend->audio_record)
-        return s_ext_backend->audio_record(id, buf, len, timeout_ms);
     (void)id; (void)buf; (void)len; (void)timeout_ms;
     return -1;
 }
@@ -455,63 +336,35 @@ int eos_audio_mute(uint8_t id, bool mute)
 /* ---- Display ---- */
 #if EOS_ENABLE_DISPLAY
 
-int eos_display_init(const eos_display_config_t *cfg)
-{
-    if (s_ext_backend && s_ext_backend->display_init)
-        return s_ext_backend->display_init(cfg);
-    return -1;
-}
-
-void eos_display_deinit(uint8_t id)
-{
-    if (s_ext_backend && s_ext_backend->display_deinit) {
-        s_ext_backend->display_deinit(id);
-        return;
-    }
-    (void)id;
-}
+int eos_display_init(const eos_display_config_t *cfg) { (void)cfg; return -1; }
+void eos_display_deinit(uint8_t id) { (void)id; }
 
 int eos_display_draw_pixel(uint8_t id, uint16_t x, uint16_t y, uint32_t color)
 {
-    if (s_ext_backend && s_ext_backend->display_draw_pixel)
-        return s_ext_backend->display_draw_pixel(id, x, y, color);
+    (void)id; (void)x; (void)y; (void)color;
     return -1;
 }
 
 int eos_display_draw_rect(uint8_t id, uint16_t x, uint16_t y,
                            uint16_t w, uint16_t h, uint32_t color)
 {
-    if (s_ext_backend && s_ext_backend->display_draw_rect)
-        return s_ext_backend->display_draw_rect(id, x, y, w, h, color);
+    (void)id; (void)x; (void)y; (void)w; (void)h; (void)color;
     return -1;
 }
 
 int eos_display_draw_bitmap(uint8_t id, uint16_t x, uint16_t y,
                              uint16_t w, uint16_t h, const uint8_t *data)
 {
-    if (s_ext_backend && s_ext_backend->display_draw_bitmap)
-        return s_ext_backend->display_draw_bitmap(id, x, y, w, h, data);
+    (void)id; (void)x; (void)y; (void)w; (void)h; (void)data;
     return -1;
 }
 
-int eos_display_flush(uint8_t id)
-{
-    if (s_ext_backend && s_ext_backend->display_flush)
-        return s_ext_backend->display_flush(id);
-    return -1;
-}
-
-int eos_display_clear(uint8_t id, uint32_t color)
-{
-    if (s_ext_backend && s_ext_backend->display_clear)
-        return s_ext_backend->display_clear(id, color);
-    return -1;
-}
+int eos_display_flush(uint8_t id) { (void)id; return -1; }
+int eos_display_clear(uint8_t id, uint32_t color) { (void)id; (void)color; return -1; }
 
 int eos_display_set_brightness(uint8_t id, uint8_t brightness_pct)
 {
-    if (s_ext_backend && s_ext_backend->display_set_brightness)
-        return s_ext_backend->display_set_brightness(id, brightness_pct);
+    (void)id; (void)brightness_pct;
     return -1;
 }
 
@@ -520,27 +373,11 @@ int eos_display_set_brightness(uint8_t id, uint8_t brightness_pct)
 /* ---- Motor ---- */
 #if EOS_ENABLE_MOTOR
 
-int eos_motor_init(const eos_motor_config_t *cfg)
-{
-    if (s_ext_backend && s_ext_backend->motor_init)
-        return s_ext_backend->motor_init(cfg);
-    (void)cfg;
-    return -1;
-}
-
-void eos_motor_deinit(uint8_t id)
-{
-    if (s_ext_backend && s_ext_backend->motor_deinit) {
-        s_ext_backend->motor_deinit(id);
-        return;
-    }
-    (void)id;
-}
+int eos_motor_init(const eos_motor_config_t *cfg) { (void)cfg; return -1; }
+void eos_motor_deinit(uint8_t id) { (void)id; }
 
 int eos_motor_set_speed(uint8_t id, int16_t speed_pct)
 {
-    if (s_ext_backend && s_ext_backend->motor_set_speed)
-        return s_ext_backend->motor_set_speed(id, speed_pct);
     (void)id; (void)speed_pct;
     return -1;
 }
@@ -551,14 +388,7 @@ int eos_motor_set_position(uint8_t id, int32_t position)
     return -1;
 }
 
-int eos_motor_brake(uint8_t id)
-{
-    if (s_ext_backend && s_ext_backend->motor_brake)
-        return s_ext_backend->motor_brake(id);
-    (void)id;
-    return -1;
-}
-
+int eos_motor_brake(uint8_t id) { (void)id; return -1; }
 int eos_motor_coast(uint8_t id) { (void)id; return -1; }
 
 #endif /* EOS_ENABLE_MOTOR */
@@ -566,26 +396,11 @@ int eos_motor_coast(uint8_t id) { (void)id; return -1; }
 /* ---- GNSS ---- */
 #if EOS_ENABLE_GNSS
 
-int eos_gnss_init(const eos_gnss_config_t *cfg)
-{
-    if (s_ext_backend && s_ext_backend->gnss_init)
-        return s_ext_backend->gnss_init(cfg);
-    (void)cfg;
-    return -1;
-}
-
-void eos_gnss_deinit(void)
-{
-    if (s_ext_backend && s_ext_backend->gnss_deinit) {
-        s_ext_backend->gnss_deinit();
-        return;
-    }
-}
+int eos_gnss_init(const eos_gnss_config_t *cfg) { (void)cfg; return -1; }
+void eos_gnss_deinit(void) {}
 
 int eos_gnss_get_position(eos_gnss_position_t *pos)
 {
-    if (s_ext_backend && s_ext_backend->gnss_get_position)
-        return s_ext_backend->gnss_get_position(pos);
     (void)pos;
     return -1;
 }
@@ -597,35 +412,17 @@ bool eos_gnss_has_fix(void) { return false; }
 /* ---- IMU ---- */
 #if EOS_ENABLE_IMU
 
-int eos_imu_init(const eos_imu_config_t *cfg)
-{
-    if (s_ext_backend && s_ext_backend->imu_init)
-        return s_ext_backend->imu_init(cfg);
-    (void)cfg;
-    return -1;
-}
-
-void eos_imu_deinit(uint8_t id)
-{
-    if (s_ext_backend && s_ext_backend->imu_deinit) {
-        s_ext_backend->imu_deinit(id);
-        return;
-    }
-    (void)id;
-}
+int eos_imu_init(const eos_imu_config_t *cfg) { (void)cfg; return -1; }
+void eos_imu_deinit(uint8_t id) { (void)id; }
 
 int eos_imu_read_accel(uint8_t id, eos_imu_vec3_t *accel)
 {
-    if (s_ext_backend && s_ext_backend->imu_read_accel)
-        return s_ext_backend->imu_read_accel(id, accel);
     (void)id; (void)accel;
     return -1;
 }
 
 int eos_imu_read_gyro(uint8_t id, eos_imu_vec3_t *gyro)
 {
-    if (s_ext_backend && s_ext_backend->imu_read_gyro)
-        return s_ext_backend->imu_read_gyro(id, gyro);
     (void)id; (void)gyro;
     return -1;
 }
@@ -647,43 +444,24 @@ int eos_imu_read_temp(uint8_t id, float *temp_c)
 /* ---- Touch ---- */
 #if EOS_ENABLE_TOUCH
 
-int eos_touch_init(const eos_touch_config_t *cfg)
-{
-    if (s_ext_backend && s_ext_backend->touch_init)
-        return s_ext_backend->touch_init(cfg);
-    return -1;
-}
-
-void eos_touch_deinit(uint8_t id)
-{
-    if (s_ext_backend && s_ext_backend->touch_deinit) {
-        s_ext_backend->touch_deinit(id);
-        return;
-    }
-    (void)id;
-}
+int eos_touch_init(const eos_touch_config_t *cfg) { (void)cfg; return -1; }
+void eos_touch_deinit(uint8_t id) { (void)id; }
 
 int eos_touch_read(uint8_t id, eos_touch_point_t *points, uint8_t max_points,
                     uint8_t *count)
 {
-    if (s_ext_backend && s_ext_backend->touch_read)
-        return s_ext_backend->touch_read(id, points, max_points, count);
+    (void)id; (void)points; (void)max_points;
+    if (count) *count = 0;
     return -1;
 }
 
 int eos_touch_set_callback(uint8_t id, eos_touch_callback_t cb, void *ctx)
 {
-    if (s_ext_backend && s_ext_backend->touch_set_callback)
-        return s_ext_backend->touch_set_callback(id, cb, ctx);
+    (void)id; (void)cb; (void)ctx;
     return -1;
 }
 
-int eos_touch_calibrate(uint8_t id)
-{
-    if (s_ext_backend && s_ext_backend->touch_calibrate)
-        return s_ext_backend->touch_calibrate(id);
-    return -1;
-}
+int eos_touch_calibrate(uint8_t id) { (void)id; return -1; }
 
 #endif /* EOS_ENABLE_TOUCH */
 
@@ -906,91 +684,23 @@ int eos_radar_stop_continuous(uint8_t id) { (void)id; return -1; }
 /* ---- GPU ---- */
 #if EOS_ENABLE_GPU
 
-int eos_gpu_init(const eos_gpu_config_t *cfg)
-{
-    if (s_ext_backend && s_ext_backend->gpu_init)
-        return s_ext_backend->gpu_init(cfg);
-    return -1;
-}
-
-void eos_gpu_deinit(uint8_t id)
-{
-    if (s_ext_backend && s_ext_backend->gpu_deinit) {
-        s_ext_backend->gpu_deinit(id);
-        return;
-    }
-    (void)id;
-}
-
-int eos_gpu_submit(uint8_t id, const void *cmd_buf, size_t len)
-{
-    if (s_ext_backend && s_ext_backend->gpu_submit)
-        return s_ext_backend->gpu_submit(id, cmd_buf, len);
-    return -1;
-}
-
-int eos_gpu_wait_idle(uint8_t id)
-{
-    if (s_ext_backend && s_ext_backend->gpu_wait_idle)
-        return s_ext_backend->gpu_wait_idle(id);
-    return -1;
-}
-
-int eos_gpu_alloc(uint8_t id, size_t size, void **ptr)
-{
-    if (s_ext_backend && s_ext_backend->gpu_alloc)
-        return s_ext_backend->gpu_alloc(id, size, ptr);
-    return -1;
-}
-
-int eos_gpu_free(uint8_t id, void *ptr)
-{
-    if (s_ext_backend && s_ext_backend->gpu_free)
-        return s_ext_backend->gpu_free(id, ptr);
-    return -1;
-}
+int eos_gpu_init(const eos_gpu_config_t *cfg) { (void)cfg; return -1; }
+void eos_gpu_deinit(uint8_t id) { (void)id; }
+int eos_gpu_submit(uint8_t id, const void *cmd_buf, size_t len) { (void)id; (void)cmd_buf; (void)len; return -1; }
+int eos_gpu_wait_idle(uint8_t id) { (void)id; return -1; }
+int eos_gpu_alloc(uint8_t id, size_t size, void **ptr) { (void)id; (void)size; (void)ptr; return -1; }
+int eos_gpu_free(uint8_t id, void *ptr) { (void)id; (void)ptr; return -1; }
 
 #endif /* EOS_ENABLE_GPU */
 
 /* ---- HDMI ---- */
 #if EOS_ENABLE_HDMI
 
-int eos_hdmi_init(const eos_hdmi_config_t *cfg)
-{
-    if (s_ext_backend && s_ext_backend->hdmi_init)
-        return s_ext_backend->hdmi_init(cfg);
-    return -1;
-}
-
-void eos_hdmi_deinit(uint8_t id)
-{
-    if (s_ext_backend && s_ext_backend->hdmi_deinit) {
-        s_ext_backend->hdmi_deinit(id);
-        return;
-    }
-    (void)id;
-}
-
-bool eos_hdmi_is_connected(uint8_t id)
-{
-    if (s_ext_backend && s_ext_backend->hdmi_is_connected)
-        return s_ext_backend->hdmi_is_connected(id);
-    return false;
-}
-
-int eos_hdmi_set_resolution(uint8_t id, eos_hdmi_resolution_t res, uint8_t hz)
-{
-    if (s_ext_backend && s_ext_backend->hdmi_set_resolution)
-        return s_ext_backend->hdmi_set_resolution(id, res, hz);
-    return -1;
-}
-
-int eos_hdmi_output_frame(uint8_t id, const void *framebuffer, size_t size)
-{
-    if (s_ext_backend && s_ext_backend->hdmi_output_frame)
-        return s_ext_backend->hdmi_output_frame(id, framebuffer, size);
-    return -1;
-}
+int eos_hdmi_init(const eos_hdmi_config_t *cfg) { (void)cfg; return -1; }
+void eos_hdmi_deinit(uint8_t id) { (void)id; }
+bool eos_hdmi_is_connected(uint8_t id) { (void)id; return false; }
+int eos_hdmi_set_resolution(uint8_t id, eos_hdmi_resolution_t res, uint8_t hz) { (void)id; (void)res; (void)hz; return -1; }
+int eos_hdmi_output_frame(uint8_t id, const void *framebuffer, size_t size) { (void)id; (void)framebuffer; (void)size; return -1; }
 
 #endif /* EOS_ENABLE_HDMI */
 

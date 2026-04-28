@@ -21,8 +21,6 @@
 #define EOS_ENABLE_CAN       1
 #define EOS_ENABLE_USB       1
 #define EOS_ENABLE_DISPLAY   1
-#define EOS_ENABLE_UI        1
-#define EOS_ENABLE_UI        1
 #define EOS_ENABLE_TOUCH     1
 #define EOS_ENABLE_AUDIO     1
 #define EOS_ENABLE_FLASH     1

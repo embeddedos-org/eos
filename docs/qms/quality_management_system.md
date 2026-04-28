@@ -23,7 +23,7 @@
 
 ### Verification & Validation
 - Unit tests: 73+ across 14 suites
-- Integration: EoSim boot on 11 board types
+- Integration: QEMU boot on 11 board types
 - Cross-compilation: 3 architectures (ARM, ARM64, RISC-V)
 - Platform: Linux, macOS, Windows
 

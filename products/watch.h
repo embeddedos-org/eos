@@ -19,8 +19,6 @@
 #define EOS_ENABLE_ADC       1
 #define EOS_ENABLE_BLE       1
 #define EOS_ENABLE_DISPLAY   1
-#define EOS_ENABLE_UI        1
-#define EOS_ENABLE_UI        1
 #define EOS_ENABLE_IMU       1
 
 /* Services */

@@ -20,8 +20,6 @@
 #define EOS_ENABLE_IMU       1
 #define EOS_ENABLE_GNSS      1
 #define EOS_ENABLE_DISPLAY   1
-#define EOS_ENABLE_UI        1
-#define EOS_ENABLE_UI        1
 #define EOS_ENABLE_TOUCH     1
 #define EOS_ENABLE_DMA       1
 #define EOS_ENABLE_FLASH     1
@@ -41,3 +39,4 @@
 #define EOS_ENABLE_FILESYSTEM 1
 #define EOS_ENABLE_MULTICORE 1
 #endif
+

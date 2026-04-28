@@ -23,8 +23,6 @@
 #define EOS_ENABLE_CAMERA    1
 #define EOS_ENABLE_AUDIO     1
 #define EOS_ENABLE_DISPLAY   1
-#define EOS_ENABLE_UI        1
-#define EOS_ENABLE_UI        1
 #define EOS_ENABLE_GNSS      1
 #define EOS_ENABLE_IMU       1
 

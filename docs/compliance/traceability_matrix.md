@@ -19,18 +19,8 @@
 | REQ-013 | Device tree parsing | devicetree.h API | drivers/devicetree/devicetree.c | — | v0.1.0 |
 | REQ-014 | Secure boot chain | eboot headers | core/eboot/stage0+stage1 | test_bootctl.c | v0.1.0 |
 | REQ-015 | Cross-platform build | CMakeLists.txt | CI workflow | CI 3 platforms | v0.1.0 |
-| REQ-016 | AES-128/256 encryption | crypto.h API | services/crypto/src/aes.c | test_crypto_aes.c | v0.2.0 |
-| REQ-017 | SHA-512 hashing | crypto.h API | services/crypto/src/sha512.c | test_crypto_sha512.c | v0.2.0 |
-| REQ-018 | RSA sign/verify | crypto.h API | services/crypto/src/rsa.c | test_crypto_rsa.c | v0.2.0 |
-| REQ-019 | ECC sign/verify | crypto.h API | services/crypto/src/ecc.c | test_crypto_ecc.c | v0.2.0 |
-| REQ-020 | Board config validation | boards/*.yaml | boards/ | test_board_configs.c | v0.2.0 |
-| REQ-021 | Product profile regression | products/*.yaml | products/ | test_profiles.c | v0.2.0 |
-| REQ-022 | Driver error recovery | drivers.h API | drivers/src/driver_framework.c | test_driver_recovery.c | v0.2.0 |
-| REQ-023 | STM32F4 GPIO | hal_extended.h | hal/src/hal_stm32f4/hal_stm32f4_gpio.c | bsp_test_runner.c | v0.2.0 |
-| REQ-024 | STM32F4 UART | hal_extended.h | hal/src/hal_stm32f4/hal_stm32f4_uart.c | bsp_test_runner.c | v0.2.0 |
-| REQ-025 | Fuzz testing | — | tests/fuzz/ | fuzz_sha256.c, fuzz_aes.c | v0.2.0 |
 
 ## Traceability Coverage
-- Requirements with tests: 21/25 (84%)
-- Requirements with implementation: 25/25 (100%)
-- Requirements in release: 25/25 (100%)
+- Requirements with tests: 12/15 (80%)
+- Requirements with implementation: 15/15 (100%)
+- Requirements in release: 15/15 (100%)

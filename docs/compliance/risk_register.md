@@ -12,7 +12,7 @@
 | RSK-008 | Quality | Untested code paths | Medium | Medium | 73+ unit tests, CI on 3 platforms | Monitored |
 | RSK-009 | Quality | API contract violations | Low | High | Header-first development, NIST test vectors | Mitigated |
 | RSK-010 | Compliance | License violation | Low | Medium | SPDX on all files, REUSE dep5 | Mitigated |
-| RSK-011 | Portability | Platform-specific failures | Medium | Medium | Cross-compile 3 archs, EoSim 11 boards | Mitigated |
+| RSK-011 | Portability | Platform-specific failures | Medium | Medium | Cross-compile 3 archs, QEMU 11 boards | Mitigated |
 | RSK-012 | Performance | Real-time deadline miss | Medium | High | O(n) scheduler, no malloc, fixed structs | Monitored |
 
 ## Risk Assessment Method

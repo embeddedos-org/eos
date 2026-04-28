@@ -4,7 +4,6 @@
 [![Nightly](https://github.com/embeddedos-org/eos/actions/workflows/nightly.yml/badge.svg)](https://github.com/embeddedos-org/eos/actions/workflows/nightly.yml)
 [![Release](https://github.com/embeddedos-org/eos/actions/workflows/release.yml/badge.svg)](https://github.com/embeddedos-org/eos/actions/workflows/release.yml)
 [![Version](https://img.shields.io/github/v/tag/embeddedos-org/eos?label=version)](https://github.com/embeddedos-org/eos/releases/latest)
-[![Book](https://github.com/embeddedos-org/eos/actions/workflows/book-build.yml/badge.svg)](https://github.com/embeddedos-org/eos/actions/workflows/book-build.yml)
 
 **Universal embedded OS framework — compile once, run on any hardware**
 
@@ -13,7 +12,7 @@ EoS is a modular, portable operating system framework supporting **41 product ca
 ---
 
 
-## What's New in 0.1.0
+## What's New in 0.5.0
 
 | Feature | Description |
 |---|---|
@@ -255,8 +254,8 @@ eos/
 │   ├── linux/              #   Linux-specific services
 │   └── rtos/               #   RTOS-specific services
 ├── systems/                # System image assembly
-├── boards/                 # Board definitions (83 board YAMLs, 73 architectures)
-├── toolchains/             # Cross-compilation configs (55+ toolchains)
+├── boards/                 # Board definitions
+├── toolchains/             # Cross-compilation configs (ARM, RISC-V, x86)
 ├── examples/               # Example projects
 ├── docs/                   # Documentation
 └── tests/                  # Unit tests (8 test suites)
@@ -438,16 +437,14 @@ ar rcs libeos.a *.o
 
 ## Related Projects
 
-| Project | Repository | Purpose |
+| Project | Description | Link |
 |---|---|---|
-| **eboot** | [embeddedos-org/eboot](https://github.com/embeddedos-org/eboot) | Bootloader — 83 boards, 73 architectures, secure boot, A/B slots, recovery |
-| **ebuild** | [embeddedos-org/ebuild](https://github.com/embeddedos-org/ebuild) | Build system — YAML config, SDK generator, packaging |
-| **eipc** | [embeddedos-org/eipc](https://github.com/embeddedos-org/eipc) | IPC — Go + C SDK, shared memory, message passing, RPC |
-| **eai** | [embeddedos-org/eai](https://github.com/embeddedos-org/eai) | AI/ML — on-device LLM inference, agent loop, model management |
-| **eni** | [embeddedos-org/eni](https://github.com/embeddedos-org/eni) | Neural interface — BCI, Neuralink adapter, assistive input |
-| **eApps** | [embeddedos-org/eApps](https://github.com/embeddedos-org/eApps) | Cross-platform apps — 38 C + LVGL apps (productivity, media, games) |
-| **eosim** | [embeddedos-org/eosim](https://github.com/embeddedos-org/eosim) | Multi-architecture simulator — 41 platforms, 12 architectures |
-| **EoStudio** | [embeddedos-org/EoStudio](https://github.com/embeddedos-org/EoStudio) | Design suite — 10 editors with LLM integration |
+| **eboot** | Bootloader — staged boot, secure boot, A/B slots, recovery | [embeddedos-org/eboot](https://github.com/embeddedos-org/eboot) |
+| **ebuild** | Build system — YAML config, Ninja backend, package management | [embeddedos-org/ebuild](https://github.com/embeddedos-org/ebuild) |
+| **eipc** | Inter-process communication — shared memory, message passing, RPC | [embeddedos-org/eipc](https://github.com/embeddedos-org/eipc) |
+| **eai** | AI/ML framework — on-device inference, model management, edge AI | [embeddedos-org/eai](https://github.com/embeddedos-org/eai) |
+| **eni** | Network infrastructure — protocol stacks, mesh networking, discovery | [embeddedos-org/eni](https://github.com/embeddedos-org/eni) |
+| **eos-sdk** | SDK and tooling — developer tools, templates, CLI, documentation | [embeddedos-org/eos-sdk](https://github.com/embeddedos-org/eos-sdk) |
 
 ---
 
@@ -457,7 +454,7 @@ The `schemas/` directory provides machine-readable hardware vocabulary that ebui
 
 | Schema | Coverage |
 |---|---|
-| `board.schema.yaml` | 73 architectures, 50+ core types, 32 peripheral types, 30+ vendors |
+| `board.schema.yaml` | 6 architectures, 19 core types, 32 peripheral types, 10 vendors |
 | `hal_map.yaml` | 22 HAL interfaces → API prefix, enable flags, pin types |
 | `peripherals.yaml` | 20 peripheral types with use cases, common chips, 10 product mappings |
 
@@ -490,21 +487,17 @@ ebuild analyze --file board.kicad_sch --eos-schemas ../eos/schemas/
 
 ## 🚀 CI/CD
 
-GitHub Actions runs comprehensive validation on every push/PR to `master`:
+GitHub Actions runs on every push/PR to `master`:
 
-| Workflow | Schedule | Coverage |
-|----------|----------|----------|
-| **CI** | Every push/PR | Build matrix (Linux × Windows × macOS) + product profiles + tests |
-| **Nightly** | 2:00 AM UTC daily | Full build + test + cross-compile (AArch64, ARM, RISC-V) + regression report |
-| **Weekly** | Monday 6:00 AM UTC | Comprehensive build + 12 product profiles + dependency audit |
-| **EoSim Sanity** | 4:00 AM UTC daily | EoSim install validation (3 OS × 3 Python) + 7-platform simulation + nested guest boot |
-| **Simulation Test** | 3:00 AM UTC daily | QEMU/EoSim platform simulation across 7 architectures |
-| **Release** | Tag `v*.*.*` | Validate → cross-compile → GitHub Release with artifacts |
+- **Build matrix**: Linux × Windows × macOS
+- **Product profiles**: 8 products built in parallel (robot, gateway, medical, automotive, iot, aerospace, wearable, industrial)
+- **Tests**: `ctest` runs all test suites
+- **Releases**: Tag `v*.*.*` → auto-generate changelog → GitHub Release with artifacts
 
 ```bash
 # Create a release
-git tag v0.1.0
-git push origin v0.1.0
+git tag v1.0.0
+git push origin v1.0.0
 ```
 
 ---
@@ -522,71 +515,6 @@ git push origin v0.1.0
 
 ---
 
-## 🔐 Security
-
-EoS implements a multi-layered security architecture for embedded systems:
-
-### Cryptographic Services
-
-| Algorithm | Implementation | Status | File |
-|-----------|---------------|--------|------|
-| **SHA-256** | NIST FIPS 180-4, self-contained | Real | `services/crypto/src/sha256.c` |
-| **AES-128/256** | Full S-box, CBC mode | Real | `services/crypto/src/aes.c` |
-| **SHA-512** | Full implementation | Real | `services/crypto/src/rsa_ecc_sha512.c` |
-| **CRC-32** | Lookup table | Real | `services/crypto/src/crc.c` |
-| **RSA** | Sign/verify API | **Stub** | `services/crypto/src/rsa_ecc_sha512.c` |
-| **ECC (P-256)** | Sign/verify API | **Stub** | `services/crypto/src/rsa_ecc_sha512.c` |
-
-> **WARNING**: RSA and ECC implementations are currently stubs that do not perform real cryptographic operations. For production use, link against a real library (mbedTLS, wolfSSL, BearSSL, or OpenSSL). See the source file for details.
-
-### Security Services
-
-| Service | Description |
-|---------|-------------|
-| **Secure Boot** | Image hash verification + signature check (uses RSA — requires real RSA for production) |
-| **Keystore** | Key management with add/find/save/load operations |
-| **ACL** | Subject/resource/permission access control with wildcard support and default-deny |
-| **Firmware Signing** | SHA-256 hash + RSA signature workflow |
-
-### Platform Security
-
-- **Linux**: SELinux policy management, IMA integrity measurement, dm-verity block verification, kernel audit logging
-- **RTOS**: MPU per-task isolation, task-to-peripheral ACL, lightweight ring-buffer audit logging
-
-### Security Hardening Checklist
-
-- [ ] Replace RSA/ECC stubs with real implementations before production deployment
-- [ ] Enable `EOS_ENABLE_CRYPTO` and `EOS_ENABLE_SECURITY` in your product profile
-- [ ] Configure ACL rules with default-deny policy
-- [ ] Enable secure boot with proper key management
-- [ ] Run nightly CI with AddressSanitizer and UndefinedBehaviorSanitizer
-- [ ] Run weekly CI with Valgrind memcheck
-
-For vulnerability reports, see [SECURITY.md](SECURITY.md).
-
----
-
-## Standards Compliance
-
-This project is part of the EoS ecosystem and aligns with international standards:
-
-| Category | Standards |
-|----------|----------|
-| **Systems Engineering** | ISO/IEC/IEEE 15288:2023, ISO/IEC 12207, ISO/IEC/IEEE 42010, ISO/IEC/IEEE 828 |
-| **Quality** | ISO/IEC 25000 (SQuaRE), ISO/IEC 25010, ISO/IEC 25040, ISO 9001 |
-| **Testing** | ISO/IEC/IEEE 29119, ISO/IEC 330xx |
-| **Security** | ISO/IEC 27001, ISO/IEC 15408, FIPS 140-3, ISO/IEC 27701, ISO/IEC 27040 |
-| **Safety** | IEC 61508, ISO 26262, DO-178C, EN 50128 |
-| **Platform** | POSIX (IEEE 1003), Linux Standard Base |
-| **Supply Chain** | NTIA SBOM, SPDX, CycloneDX, OpenChain (ISO/IEC 5230), ISO/IEC 20243 |
-| **Accessibility** | WCAG 2.1, ISO 9241 |
-
-See the [EoS Compliance Documentation](https://github.com/embeddedos-org/.github/tree/master/docs/compliance) for full details.
-
 ## 📜 License
 
-MIT License — see [LICENSE](LICENSE) for details.
-
-
----
-Part of the [EmbeddedOS Organization](https://embeddedos-org.github.io).
+MIT License

@@ -970,14 +970,6 @@ typedef struct {
     int  (*gpu_alloc)(uint8_t id, size_t size, void **ptr);
     int  (*gpu_free)(uint8_t id, void *ptr);
 #endif
-
-#if EOS_ENABLE_HDMI
-    int  (*hdmi_init)(const eos_hdmi_config_t *cfg);
-    void (*hdmi_deinit)(uint8_t id);
-    bool (*hdmi_is_connected)(uint8_t id);
-    int  (*hdmi_set_resolution)(uint8_t id, eos_hdmi_resolution_t res, uint8_t hz);
-    int  (*hdmi_output_frame)(uint8_t id, const void *framebuffer, size_t size);
-#endif
 } eos_hal_ext_backend_t;
 
 /**

@@ -158,11 +158,7 @@ static void emit(EosLogLevel level, const char *module, const char *formatted) {
     time_t now = time(NULL);
     struct tm *tm_info = localtime(&now);
     char timebuf[20];
-    if (tm_info) {
-        strftime(timebuf, sizeof(timebuf), "%H:%M:%S", tm_info);
-    } else {
-        snprintf(timebuf, sizeof(timebuf), "??:??:??");
-    }
+    strftime(timebuf, sizeof(timebuf), "%H:%M:%S", tm_info);
 
     int n;
     if (module) {

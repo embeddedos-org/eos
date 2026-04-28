@@ -16,8 +16,6 @@
 #define EOS_ENABLE_BLE       1
 #define EOS_ENABLE_ETHERNET  1
 #define EOS_ENABLE_DISPLAY   1
-#define EOS_ENABLE_UI        1
-#define EOS_ENABLE_UI        1
 #define EOS_ENABLE_TOUCH     1
 #define EOS_ENABLE_AUDIO     1
 #define EOS_ENABLE_GPU       1
@@ -34,3 +32,4 @@
 #define EOS_ENABLE_FILESYSTEM 1
 #define EOS_ENABLE_MULTICORE 1
 #endif
+

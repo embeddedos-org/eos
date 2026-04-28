@@ -36,7 +36,7 @@ void eos_cache_compute_hash(const char *input, size_t len, char *out, size_t out
     snprintf(out, out_size, "%08lx%08lx%08lx%08lx%08lx%08lx%08lx%08lx",
              h1 & 0xFFFFFFFF, h2 & 0xFFFFFFFF,
              (h1 >> 4) & 0xFFFFFFFF, (h2 >> 4) & 0xFFFFFFFF,
-             (h1 ^ h2) & 0xFFFFFFFF, ((h2 ^ h1) >> 8) & 0xFFFFFFFF,
+             (h1 ^ h2) & 0xFFFFFFFF, (h2 ^ h1 >> 8) & 0xFFFFFFFF,
              (h1 + h2) & 0xFFFFFFFF, (h1 * h2) & 0xFFFFFFFF);
 }
 

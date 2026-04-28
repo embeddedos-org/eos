@@ -31,7 +31,7 @@ This document tracks alignment between all three EoS components to ensure they r
 | RPi4 | `raspberrypi4.yaml` ✅ | `rpi4/` ✅ | `rpi4→rpi4` ✅ | `rpi4→raspberrypi4.yaml` ✅ |
 | i.MX8M | `imx8m.yaml` ✅ | `imx8m/` ✅ | `imx8m→imx8m` ✅ | `imx8→imx8m.yaml` ✅ |
 | AM64x | `am64x.yaml` ✅ | `am64x/` ✅ | `am64x→am64x` ✅ | `am64→am64x.yaml` ✅ |
-| QEMU ARM64 | `qemu-arm64.yaml` ✅ | `qemu_arm64/` ✅ | `qemu_arm64→qemu_arm64` ✅ | — (EoSim only) |
+| QEMU ARM64 | `qemu-arm64.yaml` ✅ | `qemu_arm64/` ✅ | `qemu_arm64→qemu_arm64` ✅ | — (QEMU only) |
 | RISC-V 64 | `generic-riscv64.yaml` ✅ | `riscv64_virt/` ✅ | `riscv64_virt→riscv64_virt` ✅ | `riscv→generic-riscv64.yaml` ✅ |
 | SiFive U74 | `sifive_u.yaml` ✅ | `sifive_u/` ✅ | `sifive_u→sifive_u` ✅ | `sifive→sifive_u.yaml` ✅ |
 | ESP32 | `esp32.yaml` ✅ | `esp32/` ✅ | `esp32→esp32` ✅ | `esp32→esp32.yaml` ✅ |

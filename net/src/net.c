@@ -4,7 +4,7 @@
 
 /**
  * @file net.c
- * @brief EoS Networking — Stub implementation
+ * @brief EoS Networking ΓÇö Stub implementation
  */
 
 #include <eos/net.h>
@@ -14,13 +14,9 @@
 
 static bool net_initialized = false;
 
-#define MAX_SOCKETS 16
-static bool socket_used[MAX_SOCKETS];
-
 int eos_net_init(void)
 {
     net_initialized = true;
-    memset(socket_used, 0, sizeof(socket_used));
     return 0;
 }
 
@@ -33,13 +29,8 @@ eos_socket_t eos_net_socket(eos_net_proto_t proto)
 {
     (void)proto;
     if (!net_initialized) return EOS_SOCKET_INVALID;
-    for (int i = 0; i < MAX_SOCKETS; i++) {
-        if (!socket_used[i]) {
-            socket_used[i] = true;
-            return (eos_socket_t)i;
-        }
-    }
-    return EOS_SOCKET_INVALID;
+    static int next_fd = 1;
+    return (eos_socket_t)next_fd++;
 }
 
 int eos_net_connect(eos_socket_t sock, const eos_net_addr_t *addr)
@@ -50,15 +41,15 @@ int eos_net_connect(eos_socket_t sock, const eos_net_addr_t *addr)
 
 int eos_net_bind(eos_socket_t sock, uint16_t port)
 {
-    (void)port;
-    if (sock < 0 || sock >= MAX_SOCKETS || !socket_used[sock]) return -1;
+    (void)sock; (void)port;
+    if (!net_initialized) return -1;
     return 0;
 }
 
 int eos_net_listen(eos_socket_t sock, int backlog)
 {
-    (void)backlog;
-    if (sock < 0 || sock >= MAX_SOCKETS || !socket_used[sock]) return -1;
+    (void)sock; (void)backlog;
+    if (!net_initialized) return -1;
     return 0;
 }
 
@@ -96,18 +87,15 @@ int eos_net_recvfrom(eos_socket_t sock, void *buf, size_t len,
 
 int eos_net_close(eos_socket_t sock)
 {
-    if (sock < 0 || sock >= MAX_SOCKETS || !socket_used[sock]) return -1;
-    socket_used[sock] = false;
+    if (sock == EOS_SOCKET_INVALID) return -1;
+    (void)sock;
     return 0;
 }
 
 int eos_net_resolve(const char *hostname, uint32_t *ip)
 {
-    if (!hostname || !ip) return -1;
-    /* Return 127.0.0.1 in network byte order (big-endian) */
-    *ip = 0x0100007FU;
-    *ip = 0x0100007FU;
-    return 0;
+    (void)hostname; (void)ip;
+    return -1;
 }
 
 /* ---- HTTP ---- */

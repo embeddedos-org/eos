@@ -67,42 +67,6 @@ static void hex_encode(char *dst, const uint8_t *src, int len) {
 }
 
 static void handle_read_regs(EosGdbStub *stub) {
-    /*
-     * Read register state from the stub's saved register context.
-     * On a real target, these would have been populated from the
-     * trap/exception frame when eos_gdb_handle_exception was called.
-     * The regs struct is architecture-neutral: r[0..15], cpsr, pc, sp, lr.
-     */
-#if defined(__GNUC__) && defined(__arm__)
-    /* On ARM, try to snapshot live registers into the stub if pc == 0
-     * (i.e., regs haven't been populated from a trap frame yet). */
-    if (stub->regs.pc == 0) {
-        __asm__ volatile(
-            "str r0,  [%0, #0]\n"
-            "str r1,  [%0, #4]\n"
-            "str r2,  [%0, #8]\n"
-            "str r3,  [%0, #12]\n"
-            "str r4,  [%0, #16]\n"
-            "str r5,  [%0, #20]\n"
-            "str r6,  [%0, #24]\n"
-            "str r7,  [%0, #28]\n"
-            "str r8,  [%0, #32]\n"
-            "str r9,  [%0, #36]\n"
-            "str r10, [%0, #40]\n"
-            "str r11, [%0, #44]\n"
-            "str r12, [%0, #48]\n"
-            "str sp,  [%0, #52]\n"
-            "str lr,  [%0, #56]\n"
-            "str pc,  [%0, #60]\n"
-            :: "r"(&stub->regs.r[0])
-            : "memory"
-        );
-        __asm__ volatile("mrs %0, cpsr" : "=r"(stub->regs.cpsr));
-        stub->regs.pc = stub->regs.r[15];
-        stub->regs.sp = stub->regs.r[13];
-        stub->regs.lr = stub->regs.r[14];
-    }
-#endif
     char resp[256];
     hex_encode(resp, (const uint8_t *)&stub->regs, sizeof(stub->regs));
     send_packet(stub, resp);
@@ -185,70 +149,6 @@ static void handle_remove_breakpoint(EosGdbStub *stub, const char *pkt) {
         send_packet(stub, "E02");
 }
 
-static void handle_single_step(EosGdbStub *stub, const char *pkt) {
-    /* Parse optional address: 's' or 'sADDR' */
-    uint32_t step_addr = stub->regs.pc;
-    if (pkt[1] != '\0') {
-        sscanf(pkt + 1, "%x", &step_addr);
-        stub->regs.pc = step_addr;
-    }
-
-    /*
-     * Single-step implementation:
-     * Set a temporary software breakpoint at the next instruction,
-     * then resume execution. When the breakpoint fires, the exception
-     * handler will re-enter the GDB loop.
-     *
-     * For architectures with hardware single-step support:
-     *   ARM:    Set bit 0 of MDSCR_EL1 (SS) and SPSR_EL1.SS
-     *   x86:    Set TF (bit 8) in EFLAGS
-     *   RISC-V: Use dcsr.step in debug mode
-     *
-     * For software single-step (portable): place a temporary breakpoint
-     * at PC + instruction_size.
-     */
-#if defined(__GNUC__) && (defined(__x86_64__) || defined(__i386__))
-    /* x86: set Trap Flag in saved EFLAGS for single-step */
-    stub->regs.cpsr |= (1U << 8); /* TF bit in EFLAGS */
-    stub->connected = 0;
-    return;
-#elif defined(__GNUC__) && defined(__aarch64__)
-    /* AArch64: set SS bit in saved PSTATE (SPSR_EL1) */
-    stub->regs.cpsr |= (1U << 21); /* SS bit */
-    stub->connected = 0;
-    return;
-#elif defined(__GNUC__) && defined(__arm__)
-    /* ARM: software single-step — set temp breakpoint at next insn */
-    {
-        uint32_t next_pc = stub->regs.pc + 4; /* ARM mode: 4 bytes */
-        if (stub->regs.cpsr & (1U << 5)) {
-            next_pc = stub->regs.pc + 2; /* Thumb mode: 2 bytes */
-        }
-        eos_gdb_add_breakpoint(stub, next_pc);
-        stub->connected = 0;
-        return;
-    }
-#elif defined(__GNUC__) && defined(__riscv)
-    /* RISC-V: software single-step — compressed insns are 2 bytes */
-    {
-        uint16_t insn_half;
-        eos_gdb_read_mem(stub->regs.pc, (uint8_t *)&insn_half, 2);
-        uint32_t insn_size = ((insn_half & 0x03) != 0x03) ? 2 : 4;
-        eos_gdb_add_breakpoint(stub, stub->regs.pc + insn_size);
-        stub->connected = 0;
-        return;
-    }
-#else
-    /* Generic fallback: estimate next PC at +4 (most RISC architectures) */
-    {
-        uint32_t next_pc = step_addr + 4;
-        eos_gdb_add_breakpoint(stub, next_pc);
-        stub->connected = 0;
-        return;
-    }
-#endif
-}
-
 int eos_gdb_init(EosGdbStub *stub, EosGdbTransport transport) {
     if (!stub) return -1;
     memset(stub, 0, sizeof(*stub));
@@ -306,8 +206,8 @@ void eos_gdb_handle_exception(EosGdbStub *stub, int signal) {
             send_packet(stub, "OK");
             return;
         case 's':
-            handle_single_step(stub, pkt);
-            return;
+            send_packet(stub, "S05");
+            break;
         case 'Z': handle_set_breakpoint(stub, pkt); break;
         case 'z': handle_remove_breakpoint(stub, pkt); break;
         case 'k':

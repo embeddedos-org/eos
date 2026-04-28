@@ -116,3 +116,34 @@ void eos_package_dump(const EosPackageSet *set) {
         printf("\n");
     }
 }
+
+/* ---- Registry API ---- */
+
+int eos_package_register(EosPackageSet *set, const EosPackage *pkg) {
+    if (!set || !pkg) return -1;
+    if (set->count >= EOS_MAX_PACKAGES) return -1;
+    memcpy(&set->packages[set->count], pkg, sizeof(EosPackage));
+    set->count++;
+    return 0;
+}
+
+const EosPackage *eos_package_find(const EosPackageSet *set, const char *name) {
+    if (!set || !name) return NULL;
+    for (int i = 0; i < set->count; i++) {
+        if (strcmp(set->packages[i].name, name) == 0)
+            return &set->packages[i];
+    }
+    return NULL;
+}
+
+int eos_package_init_all(EosPackageSet *set) {
+    if (!set) return -1;
+    for (int i = 0; i < set->count; i++) {
+        if (set->packages[i].init_fn) {
+            int r = set->packages[i].init_fn();
+            if (r != 0) return r;
+        }
+        set->packages[i].installed = true;
+    }
+    return 0;
+}

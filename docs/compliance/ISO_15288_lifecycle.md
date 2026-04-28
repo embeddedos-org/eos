@@ -8,8 +8,8 @@
 | Architecture | Monorepo layers, HAL abstraction, provider pattern |
 | Implementation | C11/Go/Python, SPDX headers, quality macros |
 | Integration | CMake build system, ebuild orchestrator |
-| Verification | Unit tests, CI pipeline, EoSim board testing |
-| Validation | Full-stack EoSim boot, integration suite |
+| Verification | Unit tests, CI pipeline, QEMU board testing |
+| Validation | Full-stack QEMU boot, integration suite |
 | Operation | Service manager, GDB stub, core dump handler |
 | Maintenance | OTA updates, loadable drivers, device tree |
 | Configuration | Git, semantic versioning, tagged releases |

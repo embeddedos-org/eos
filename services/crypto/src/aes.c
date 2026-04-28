@@ -58,7 +58,6 @@ static uint32_t rot_word(uint32_t w) {
 }
 
 void eos_aes_init(EosAesCtx *ctx, const uint8_t *key, int key_bits) {
-    if (!ctx || !key) return;
     int nk = key_bits / 32;
     ctx->nr = nk + 6;
 
@@ -78,7 +77,6 @@ void eos_aes_init(EosAesCtx *ctx, const uint8_t *key, int key_bits) {
 
 void eos_aes_encrypt_block(const EosAesCtx *ctx,
                            const uint8_t in[16], uint8_t out[16]) {
-    if (!ctx || !in || !out) return;
     uint8_t s[16];
     memcpy(s, in, 16);
 
@@ -122,7 +120,6 @@ void eos_aes_encrypt_block(const EosAesCtx *ctx,
 
 void eos_aes_decrypt_block(const EosAesCtx *ctx,
                            const uint8_t in[16], uint8_t out[16]) {
-    if (!ctx || !in || !out) return;
     uint8_t s[16];
     memcpy(s, in, 16);
 
@@ -182,7 +179,6 @@ void eos_aes_decrypt_block(const EosAesCtx *ctx,
 
 void eos_aes_cbc_encrypt(const EosAesCtx *ctx, const uint8_t *iv,
                          const uint8_t *in, uint8_t *out, size_t len) {
-    if (!ctx || !iv || !in || !out) return;
     uint8_t prev[16];
     memcpy(prev, iv, 16);
     for (size_t off = 0; off + 16 <= len; off += 16) {
@@ -195,7 +191,6 @@ void eos_aes_cbc_encrypt(const EosAesCtx *ctx, const uint8_t *iv,
 
 void eos_aes_cbc_decrypt(const EosAesCtx *ctx, const uint8_t *iv,
                          const uint8_t *in, uint8_t *out, size_t len) {
-    if (!ctx || !iv || !in || !out) return;
     uint8_t prev[16];
     memcpy(prev, iv, 16);
     for (size_t off = 0; off + 16 <= len; off += 16) {

@@ -69,7 +69,7 @@ int eos_coredump_save(const EosCoreDump *dump) {
         return 0;
     case EOS_DUMP_TARGET_FLASH:
         if (g_flash_addr == 0) return -1;
-        /* Flash write is platform-specific — store in RAM as fallback */
+        /* Flash write is platform-specific ΓÇö store in RAM as fallback */
         memcpy(&g_ram_dump, dump, sizeof(g_ram_dump));
         g_dump_valid = 1;
         return 0;
