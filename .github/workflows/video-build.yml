@@ -32,7 +32,7 @@ jobs:
         run: |
           sudo apt-get update
           sudo apt-get install -y ffmpeg libcairo2-dev libpango1.0-dev
-          pip install manim==0.18.1 gTTS mutagen
+          pip install manim==0.18.1 edge-tts mutagen
 
       - name: Generate narration audio (per-segment)
         run: |
@@ -73,3 +73,4 @@ jobs:
           fail_on_unmatched_files: false
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
