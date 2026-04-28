@@ -1,0 +1,89 @@
+name: Build Promo Video
+
+on:
+  push:
+    branches: [master, main]
+    paths:
+      - 'promo/**'
+  release:
+    types: [published]
+  workflow_dispatch:
+
+concurrency:
+  group: video-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: write
+
+jobs:
+  render-video:
+    name: Render Promo Video
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install Manim & dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y ffmpeg libcairo2-dev libpango1.0-dev
+          pip install manim==0.18.1
+
+      - name: Render promo video (1080p)
+        run: |
+          cd promo
+          manim render -qh --format mp4 promo_scene.py ProductPromo
+          echo "Video rendered"
+
+      - name: Render social media variants
+        run: |
+          cd promo
+          # Square (1080x1080) for Instagram/LinkedIn
+          manim render -qh --format mp4 \
+            --resolution 1080,1080 \
+            promo_scene.py ProductPromo \
+            -o EoS_square.mp4 || true
+          echo "Social variants rendered"
+
+      - name: List outputs
+        run: |
+          echo "=== Generated Videos ==="
+          find promo/media -name "*.mp4" -exec ls -lh {} \;
+
+      - name: Upload video artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: promo-videos
+          path: promo/media/videos/**/*.mp4
+          retention-days: 90
+
+      - name: Attach to release
+        if: github.event_name == 'release'
+        uses: softprops/action-gh-release@v2
+        with:
+          files: promo/media/videos/**/*.mp4
+          tag_name: ${{ github.event.release.tag_name }}
+          fail_on_unmatched_files: false
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+  summary:
+    name: Video Build Summary
+    runs-on: ubuntu-latest
+    needs: render-video
+    if: always()
+    steps:
+      - name: Report
+        run: |
+          echo "## Promo Video Build" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "| Detail | Value |" >> $GITHUB_STEP_SUMMARY
+          echo "|--------|-------|" >> $GITHUB_STEP_SUMMARY
+          echo "| Product | EoS |" >> $GITHUB_STEP_SUMMARY
+          echo "| Render | ${{ needs.render-video.result }} |" >> $GITHUB_STEP_SUMMARY
+          echo "| Trigger | ${{ github.event_name }} |" >> $GITHUB_STEP_SUMMARY
