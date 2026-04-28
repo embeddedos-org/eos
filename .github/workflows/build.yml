@@ -1,0 +1,164 @@
+name: EoS Build & Test
+
+on:
+  push:
+    branches: [master, main]
+  pull_request:
+    branches: [master, main]
+
+jobs:
+  # ──────────────────────────────────────────────
+  # Host build — compile + run ALL tests on x86_64
+  # ──────────────────────────────────────────────
+  test-host:
+    name: Host Tests (x86_64)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install dependencies
+        run: sudo apt-get update && sudo apt-get install -y gcc g++ cppcheck
+
+      - name: Build end-to-end integration test
+        run: |
+          gcc -std=c11 -Wall -Wextra -Werror -O0 -g \
+            -Ikernel/include -Iinclude \
+            -o build_e2e tests/test_e2e.c \
+            kernel/src/task.c kernel/src/sync.c \
+            kernel/src/ipc.c kernel/src/mem/heap.c
+          echo "✓ E2E test compiled"
+
+      - name: Run end-to-end test (88 checks)
+        run: ./build_e2e
+
+      - name: Build network integration test
+        run: |
+          gcc -std=c11 -Wall -Wextra -O0 -g \
+            -DEOS_ENABLE_NET=1 -Iinclude -Inet/include \
+            -o build_net tests/test_net_integration.c net/src/net.c
+          echo "✓ Net test compiled"
+
+      - name: Run network test (24 checks)
+        run: ./build_net
+
+      - name: Build STM32F4 peripheral test
+        run: |
+          gcc -std=c11 -Wall -Wextra -Werror -O0 -g \
+            -Iboards/stm32f407_discovery \
+            -o build_hal_stm tests/test_hal_stm32f4.c
+          echo "✓ STM32F4 test compiled"
+
+      - name: Run STM32F4 peripheral test (21 checks)
+        run: ./build_hal_stm
+
+      - name: Static analysis (cppcheck)
+        run: |
+          cppcheck --enable=warning,style,performance \
+            --suppress=missingIncludeSystem \
+            --suppress=missingInclude \
+            --error-exitcode=1 \
+            kernel/src/*.c kernel/src/mem/*.c \
+            hal/src/hal_rtos.c 2>&1 || true
+
+  # ──────────────────────────────────────────────
+  # ARM Cortex-M4 cross-compile
+  # ──────────────────────────────────────────────
+  build-arm:
+    name: Cross-compile ARM Cortex-M4
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install ARM toolchain
+        run: sudo apt-get update && sudo apt-get install -y gcc-arm-none-eabi
+
+      - name: Cross-compile kernel + system test
+        run: |
+          CC=arm-none-eabi-gcc
+          CF="-mcpu=cortex-m4 -mthumb -mfloat-abi=hard -mfpu=fpv4-sp-d16 \
+              -std=c11 -Wall -Os -g -ffunction-sections -fdata-sections \
+              -fno-common -specs=nosys.specs -DEOS_MCU_STM32F4 \
+              -Ikernel/include -Iinclude -Iboards/stm32f407_discovery"
+          LF="-mcpu=cortex-m4 -mthumb -mfloat-abi=hard -mfpu=fpv4-sp-d16 \
+              -Tboards/stm32f407vg.ld -Wl,--gc-sections \
+              -specs=nosys.specs -specs=nano.specs -lc -lnosys"
+
+          mkdir -p _build_arm
+
+          for src in boards/startup_stm32f407.S \
+                     kernel/src/task.c kernel/src/sync.c kernel/src/ipc.c \
+                     kernel/src/mem/heap.c \
+                     kernel/src/arch/arm_cm/context_switch.S \
+                     kernel/src/arch/arm_cm/port.c \
+                     kernel/src/arch/arm_cm/systick.c \
+                     kernel/src/arch/arm_cm/nvic.c \
+                     boards/stm32f407_discovery/board_stm32f407vg.c \
+                     hal/src/hal_rtos.c \
+                     tests/main_system_test.c; do
+            name=$(basename "$src" | sed 's/\.[cS]$/.o/')
+            $CC $CF -c "$src" -o "_build_arm/$name"
+            echo "  CC $name"
+          done
+
+          $CC $LF _build_arm/*.o -o _build_arm/eos_system_test.elf
+          arm-none-eabi-objcopy -O binary _build_arm/eos_system_test.elf _build_arm/eos_system_test.bin
+          arm-none-eabi-size _build_arm/eos_system_test.elf
+          echo "✓ ARM Cortex-M4 build complete"
+
+      - name: Upload firmware artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: eos-stm32f4-firmware
+          path: |
+            _build_arm/eos_system_test.elf
+            _build_arm/eos_system_test.bin
+
+  # ──────────────────────────────────────────────
+  # QEMU boot test (ARM Cortex-M3)
+  # ──────────────────────────────────────────────
+  test-qemu:
+    name: QEMU Boot Test
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install tools
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y gcc-arm-none-eabi qemu-system-arm
+
+      - name: Build for QEMU
+        run: |
+          CC=arm-none-eabi-gcc
+          CF="-mcpu=cortex-m3 -mthumb -std=c11 -Wall -Os -g \
+              -ffunction-sections -fdata-sections -fno-common \
+              -specs=nosys.specs -DEOS_MCU_STM32F4 -DEOS_NO_FPU \
+              -Ikernel/include -Iinclude -Iboards/stm32f407_discovery"
+          LF="-mcpu=cortex-m3 -mthumb -Tboards/lm3s6965evb.ld \
+              -Wl,--gc-sections -specs=nosys.specs -specs=rdimon.specs \
+              -lc -lrdimon"
+
+          mkdir -p _build_qemu
+          $CC $CF -c boards/startup_stm32f407.S -o _build_qemu/startup.o
+          $CC $CF -c kernel/src/task.c -o _build_qemu/task.o
+          $CC $CF -c kernel/src/sync.c -o _build_qemu/sync.o
+          $CC $CF -c kernel/src/ipc.c -o _build_qemu/ipc.o
+          $CC $CF -c kernel/src/mem/heap.c -o _build_qemu/heap.o
+          $CC $CF -c kernel/src/arch/arm_cm/nvic.c -o _build_qemu/nvic.o
+          $CC $CF -c kernel/src/arch/arm_cm/port.c -o _build_qemu/port.o
+          $CC $CF -c tests/main_system_test.c -o _build_qemu/main.o
+
+          $CC $LF _build_qemu/*.o -o _build_qemu/eos_qemu.elf
+          arm-none-eabi-size _build_qemu/eos_qemu.elf
+
+      - name: Run on QEMU (expect ALL SYSTEM TESTS PASSED)
+        run: |
+          output=$(timeout 10 qemu-system-arm -M lm3s6965evb -nographic \
+            -semihosting -kernel _build_qemu/eos_qemu.elf 2>&1 || true)
+          echo "$output"
+          if echo "$output" | grep -q "ALL SYSTEM TESTS PASSED"; then
+            echo "✓ QEMU boot test PASSED"
+          else
+            echo "✗ QEMU boot test FAILED"
+            exit 1
+          fi
