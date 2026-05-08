@@ -9,6 +9,9 @@ permissions:
   id-token: write
 
 jobs:
+  # ──────────────────────────────────────────────
+  # Validate (Linux native build + tests)
+  # ──────────────────────────────────────────────
   validate:
     name: Validate Release
     runs-on: ubuntu-latest
@@ -27,8 +30,11 @@ jobs:
       - name: Test
         run: ctest --test-dir build --output-on-failure
 
-  cross-compile:
-    name: Cross (${{ matrix.arch }})
+  # ──────────────────────────────────────────────
+  # Linux cross-compile shards (aarch64 / armhf / riscv64)
+  # ──────────────────────────────────────────────
+  linux-cross:
+    name: Linux (${{ matrix.arch }})
     needs: validate
     runs-on: ubuntu-latest
     strategy:
@@ -57,8 +63,10 @@ jobs:
         run: echo "version=${GITHUB_REF#refs/tags/v}" >> $GITHUB_OUTPUT
       - name: Build
         run: |
-          cmake -B build -DCMAKE_C_COMPILER=${{ matrix.cc }} \
-            -DCMAKE_SYSTEM_NAME=Linux -DCMAKE_BUILD_TYPE=Release
+          cmake -B build \
+            -DCMAKE_C_COMPILER=${{ matrix.cc }} \
+            -DCMAKE_SYSTEM_NAME=Linux \
+            -DCMAKE_BUILD_TYPE=Release
           cmake --build build --parallel
       - name: Package
         run: |
@@ -72,6 +80,169 @@ jobs:
           name: eos-${{ matrix.arch }}
           path: "*.tar.gz"
 
+  # ──────────────────────────────────────────────
+  # Linux native x86_64
+  # ──────────────────────────────────────────────
+  linux-native:
+    name: Linux (x86_64)
+    needs: validate
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+      - name: Install dependencies
+        run: sudo apt-get update && sudo apt-get install -y libsdl2-dev
+      - name: Extract version
+        id: version
+        run: echo "version=${GITHUB_REF#refs/tags/v}" >> $GITHUB_OUTPUT
+      - name: Build
+        run: |
+          cmake -B build -DCMAKE_BUILD_TYPE=Release
+          cmake --build build --parallel
+      - name: Package
+        run: |
+          mkdir -p staging/lib staging/include
+          find build -name "*.a" -exec cp {} staging/lib/ \;
+          cp -r kernel/include/* staging/include/ 2>/dev/null || true
+          cp -r hal/include/* staging/include/ 2>/dev/null || true
+          tar czf eos-${{ steps.version.outputs.version }}-linux-x86_64.tar.gz -C staging .
+      - uses: actions/upload-artifact@v4
+        with:
+          name: eos-linux-x86_64
+          path: "*.tar.gz"
+
+  # ──────────────────────────────────────────────
+  # macOS x64 + ARM64
+  # ──────────────────────────────────────────────
+  macos-build:
+    name: macOS (${{ matrix.arch }})
+    needs: validate
+    runs-on: ${{ matrix.runner }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - arch: x86_64
+            runner: macos-13
+            cmake_arch: x86_64
+          - arch: arm64
+            runner: macos-14
+            cmake_arch: arm64
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+      - name: Install dependencies
+        run: brew install sdl2
+      - name: Extract version
+        id: version
+        run: echo "version=${GITHUB_REF#refs/tags/v}" >> $GITHUB_OUTPUT
+      - name: Build
+        run: |
+          cmake -B build \
+            -DCMAKE_BUILD_TYPE=Release \
+            -DCMAKE_OSX_ARCHITECTURES=${{ matrix.cmake_arch }}
+          cmake --build build --parallel
+      - name: Package
+        run: |
+          mkdir -p staging/lib staging/include
+          find build -name "*.a" -exec cp {} staging/lib/ \;
+          cp -r kernel/include/* staging/include/ 2>/dev/null || true
+          cp -r hal/include/* staging/include/ 2>/dev/null || true
+          tar czf eos-${{ steps.version.outputs.version }}-macos-${{ matrix.arch }}.tar.gz -C staging .
+      - name: Optional codesign (.tar.gz contents)
+        if: env.APPLE_ID != ''
+        env:
+          APPLE_ID: ${{ secrets.APPLE_ID }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+          APPLE_APP_PASSWORD: ${{ secrets.APPLE_APP_PASSWORD }}
+          MACOS_CERT_P12: ${{ secrets.MACOS_CERT_P12 }}
+          MACOS_CERT_PASSWORD: ${{ secrets.MACOS_CERT_PASSWORD }}
+        run: |
+          # Set up keychain + import cert
+          echo "$MACOS_CERT_P12" | base64 -d > /tmp/cert.p12
+          security create-keychain -p "" build.keychain
+          security default-keychain -s build.keychain
+          security unlock-keychain -p "" build.keychain
+          security import /tmp/cert.p12 -k build.keychain -P "$MACOS_CERT_PASSWORD" -A
+          security set-key-partition-list -S apple-tool:,apple: -s -k "" build.keychain
+          IDENTITY=$(security find-identity -v -p codesigning build.keychain | head -1 | awk -F'"' '{print $2}')
+          for lib in staging/lib/*.a; do
+            codesign --options runtime --timestamp --sign "$IDENTITY" "$lib" || true
+          done
+          # Re-tar after signing
+          tar czf eos-${{ steps.version.outputs.version }}-macos-${{ matrix.arch }}.tar.gz -C staging .
+          # Notarize
+          xcrun notarytool submit eos-${{ steps.version.outputs.version }}-macos-${{ matrix.arch }}.tar.gz \
+            --apple-id "$APPLE_ID" --team-id "$APPLE_TEAM_ID" --password "$APPLE_APP_PASSWORD" --wait || true
+      - uses: actions/upload-artifact@v4
+        with:
+          name: eos-macos-${{ matrix.arch }}
+          path: "*.tar.gz"
+
+  # ──────────────────────────────────────────────
+  # Windows x64 + ARM64
+  # ──────────────────────────────────────────────
+  windows-build:
+    name: Windows (${{ matrix.arch }})
+    needs: validate
+    runs-on: windows-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - arch: x64
+            cmake_arch: x64
+          - arch: arm64
+            cmake_arch: ARM64
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+      - name: Extract version
+        id: version
+        shell: bash
+        run: echo "version=${GITHUB_REF#refs/tags/v}" >> $GITHUB_OUTPUT
+      - name: Configure
+        run: cmake -B build -A ${{ matrix.cmake_arch }} -DCMAKE_BUILD_TYPE=Release
+      - name: Build
+        run: cmake --build build --config Release --parallel
+      - name: Package zip + tar.gz
+        shell: bash
+        run: |
+          mkdir -p staging/lib staging/include
+          find build -name "*.lib" -exec cp {} staging/lib/ \; 2>/dev/null || true
+          find build -name "*.a" -exec cp {} staging/lib/ \; 2>/dev/null || true
+          cp -r kernel/include/* staging/include/ 2>/dev/null || true
+          cp -r hal/include/* staging/include/ 2>/dev/null || true
+          BASE="eos-${{ steps.version.outputs.version }}-windows-${{ matrix.arch }}"
+          tar czf "${BASE}.tar.gz" -C staging .
+          (cd staging && 7z a -tzip "../${BASE}.zip" .)
+      - name: Optional Authenticode signing
+        if: env.WINDOWS_CERT != ''
+        shell: pwsh
+        env:
+          WINDOWS_CERT: ${{ secrets.WINDOWS_CERT }}
+          WINDOWS_CERT_PASSWORD: ${{ secrets.WINDOWS_CERT_PASSWORD }}
+          WINDOWS_TIMESTAMP_URL: ${{ secrets.WINDOWS_TIMESTAMP_URL }}
+        run: |
+          $bytes = [Convert]::FromBase64String($env:WINDOWS_CERT)
+          [IO.File]::WriteAllBytes("cert.pfx", $bytes)
+          $TS = if ($env:WINDOWS_TIMESTAMP_URL) { $env:WINDOWS_TIMESTAMP_URL } else { "http://timestamp.digicert.com" }
+          Get-ChildItem staging/lib/*.lib -ErrorAction SilentlyContinue | ForEach-Object {
+            & signtool sign /f cert.pfx /p "$env:WINDOWS_CERT_PASSWORD" /tr $TS /td sha256 /fd sha256 $_.FullName
+          }
+      - uses: actions/upload-artifact@v4
+        with:
+          name: eos-windows-${{ matrix.arch }}
+          path: |
+            *.zip
+            *.tar.gz
+
+  # ──────────────────────────────────────────────
+  # Per-product builds (Linux x86_64)
+  # ──────────────────────────────────────────────
   product-builds:
     name: Product (${{ matrix.product }})
     needs: validate
@@ -82,14 +253,33 @@ jobs:
         product: [robot, gateway, medical, automotive, iot, aerospace]
     steps:
       - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+      - name: Install dependencies
+        run: sudo apt-get update && sudo apt-get install -y libsdl2-dev
+      - name: Extract version
+        id: version
+        run: echo "version=${GITHUB_REF#refs/tags/v}" >> $GITHUB_OUTPUT
       - name: Build ${{ matrix.product }}
         run: |
           cmake -B build -DEOS_PRODUCT=${{ matrix.product }} -DCMAKE_BUILD_TYPE=Release
           cmake --build build --parallel
+      - name: Package
+        run: |
+          mkdir -p staging
+          find build -name "*.a" -exec cp {} staging/ \;
+          tar czf eos-${{ steps.version.outputs.version }}-product-${{ matrix.product }}.tar.gz -C staging .
+      - uses: actions/upload-artifact@v4
+        with:
+          name: eos-product-${{ matrix.product }}
+          path: "*.tar.gz"
 
+  # ──────────────────────────────────────────────
+  # Aggregate, sign, attach to release
+  # ──────────────────────────────────────────────
   release:
     name: Create Release
-    needs: [validate, cross-compile, product-builds]
+    needs: [validate, linux-cross, linux-native, macos-build, windows-build, product-builds]
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -103,131 +293,109 @@ jobs:
           echo "tag=$TAG" >> $GITHUB_OUTPUT
           echo "version=${TAG#v}" >> $GITHUB_OUTPUT
 
-      - name: Build native (x86_64)
-        run: |
-          cmake -B build -DCMAKE_BUILD_TYPE=Release
-          cmake --build build --parallel
-          mkdir -p staging/lib staging/include
-          find build -name "*.a" -exec cp {} staging/lib/ \;
-          tar czf eos-${{ steps.version.outputs.version }}-linux-x86_64.tar.gz -C staging .
-
-      - name: Download cross-compile artifacts
+      - name: Download all build artifacts
         uses: actions/download-artifact@v4
         with:
           pattern: eos-*
           merge-multiple: true
 
       - name: Generate SHA-256 checksums
-        run: sha256sum *.tar.gz > SHA256SUMS.txt
+        run: sha256sum *.tar.gz *.zip 2>/dev/null > SHA256SUMS.txt || sha256sum *.tar.gz > SHA256SUMS.txt
 
-      - name: Generate SBOM (CycloneDX v1.5)
-        run: |
-          TIMESTAMP=$(date -u +%Y-%m-%dT%H:%M:%SZ)
-          UUID=$(cat /proc/sys/kernel/random/uuid 2>/dev/null || echo "00000000-0000-0000-0000-$(date +%s)")
-          cat > sbom.cdx.json << EOF
-          {
-            "bomFormat": "CycloneDX",
-            "specVersion": "1.5",
-            "serialNumber": "urn:uuid:${UUID}",
-            "version": 1,
-            "metadata": {
-              "timestamp": "${TIMESTAMP}",
-              "component": {
-                "type": "operating-system",
-                "bom-ref": "eos",
-                "name": "EoS",
-                "version": "${{ steps.version.outputs.version }}",
-                "description": "Embedded Operating System",
-                "supplier": { "name": "embeddedos-org" },
-                "licenses": [{ "license": { "id": "MIT" } }]
-              }
-            },
-            "components": []
-          }
-          EOF
+      - name: Generate CycloneDX SBOM
+        uses: anchore/sbom-action@v0
+        with:
+          path: .
+          format: cyclonedx-json
+          output-file: sbom.cdx.json
+          artifact-name: sbom.cdx.json
 
-      - name: Generate SBOM (SPDX v2.3)
-        run: |
-          TIMESTAMP=$(date -u +%Y-%m-%dT%H:%M:%SZ)
-          cat > sbom.spdx.json << EOF
-          {
-            "spdxVersion": "SPDX-2.3",
-            "dataLicense": "CC0-1.0",
-            "SPDXID": "SPDXRef-DOCUMENT",
-            "name": "EoS-${{ steps.version.outputs.version }}",
-            "documentNamespace": "https://github.com/embeddedos-org/eos/releases/tag/${{ steps.version.outputs.tag }}",
-            "creationInfo": {
-              "created": "${TIMESTAMP}",
-              "creators": ["Tool: github-actions", "Organization: embeddedos-org"]
-            },
-            "packages": [{
-              "SPDXID": "SPDXRef-EoS",
-              "name": "EoS",
-              "versionInfo": "${{ steps.version.outputs.version }}",
-              "downloadLocation": "https://github.com/embeddedos-org/eos/releases/tag/${{ steps.version.outputs.tag }}",
-              "filesAnalyzed": false,
-              "licenseConcluded": "MIT",
-              "licenseDeclared": "MIT",
-              "copyrightText": "Copyright (c) 2026 embeddedos-org"
-            }]
-          }
-          EOF
+      - name: Generate SPDX SBOM
+        uses: anchore/sbom-action@v0
+        with:
+          path: .
+          format: spdx-json
+          output-file: sbom.spdx.json
+          artifact-name: sbom.spdx.json
 
       - name: Install cosign
         uses: sigstore/cosign-installer@v3
 
-      - name: Sign artifacts
+      - name: Sign artifacts (cosign keyless)
         run: |
-          for f in *.tar.gz; do
-            cosign sign-blob --yes --bundle "${f}.sig.bundle" "$f" 2>/dev/null || true
+          for f in *.tar.gz *.zip; do
+            [ -f "$f" ] || continue
+            cosign sign-blob --yes --bundle "${f}.sig.bundle" "$f"
           done
 
-      - name: Generate build matrix
+      - name: Optional Linux GPG signing
+        if: env.GPG_KEY != ''
+        env:
+          GPG_KEY: ${{ secrets.GPG_KEY }}
+          GPG_PASSPHRASE: ${{ secrets.GPG_PASSPHRASE }}
+        run: |
+          echo "$GPG_KEY" | gpg --batch --import
+          for f in *.tar.gz *.zip; do
+            [ -f "$f" ] || continue
+            echo "$GPG_PASSPHRASE" | gpg --batch --yes --pinentry-mode loopback \
+              --passphrase-fd 0 --detach-sign --armor "$f"
+          done
+
+      - name: Generate build matrix summary
         run: |
           cat > BUILD_MATRIX.md << 'EOF'
           # EoS ${{ steps.version.outputs.tag }} — Build Matrix
 
           | Platform | Architecture | Status |
-          |----------|-------------|--------|
+          |----------|--------------|--------|
           | Linux | x86_64 | ✅ |
           | Linux | aarch64 | ✅ |
           | Linux | arm-hf | ✅ |
           | Linux | riscv64 | ✅ |
-          | Product: robot | x86_64 | ✅ |
-          | Product: gateway | x86_64 | ✅ |
-          | Product: medical | x86_64 | ✅ |
-          | Product: automotive | x86_64 | ✅ |
-          | Product: iot | x86_64 | ✅ |
-          | Product: aerospace | x86_64 | ✅ |
+          | macOS | x86_64 | ✅ |
+          | macOS | arm64 | ✅ |
+          | Windows | x64 | ✅ |
+          | Windows | arm64 | ✅ |
+          | Product | robot/gateway/medical/automotive/iot/aerospace | ✅ |
           EOF
 
-      - name: Check release does not already exist
-        run: |
-          if gh release view "${{ steps.version.outputs.tag }}" &>/dev/null; then
-            echo "::error::Release ${{ steps.version.outputs.tag }} already exists."
-            exit 1
-          fi
+      - name: Idempotent release create-or-update
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          TAG="${{ steps.version.outputs.tag }}"
+          if gh release view "$TAG" >/dev/null 2>&1; then
+            echo "Release $TAG already exists — will update artifacts."
+          else
+            gh release create "$TAG" --title "EoS $TAG" --generate-notes
+          fi
 
-      - name: Create Release
+      - name: Attach all artifacts to release
         uses: softprops/action-gh-release@v2
         with:
           tag_name: ${{ steps.version.outputs.tag }}
           name: "EoS ${{ steps.version.outputs.tag }}"
           generate_release_notes: true
+          fail_on_unmatched_files: false
           body: |
             ## EoS ${{ steps.version.outputs.tag }}
 
-            ### Integrity
+            Pre-built static libraries for Linux (x86_64, aarch64, armhf, riscv64),
+            macOS (x86_64, arm64), and Windows (x64, arm64), plus per-product
+            release builds.
+
+            ### Integrity & supply-chain
             - `SHA256SUMS.txt` — file checksums
-            - `sbom.cdx.json` — CycloneDX SBOM (v1.5)
-            - `sbom.spdx.json` — SPDX SBOM (v2.3)
-            - `*.sig.bundle` — Sigstore cosign signatures
+            - `sbom.cdx.json` — CycloneDX SBOM
+            - `sbom.spdx.json` — SPDX SBOM
+            - `*.sig.bundle` — Sigstore cosign keyless signatures
+            - `*.asc` — GPG detached signatures (when GPG_KEY secret is configured)
             - `BUILD_MATRIX.md` — build matrix results
           files: |
             *.tar.gz
+            *.zip
             *.sig.bundle
+            *.asc
             SHA256SUMS.txt
             sbom.cdx.json
             sbom.spdx.json

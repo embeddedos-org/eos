@@ -9,28 +9,62 @@ on:
   pull_request:
     branches: [master]
 
+permissions:
+  contents: read
+
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
 
 jobs:
   build:
-    name: Build (${{ matrix.os }})
+    name: Build (${{ matrix.os }} / ${{ matrix.compiler }})
     runs-on: ${{ matrix.os }}
-    continue-on-error: true
     strategy:
       fail-fast: false
       matrix:
-        os: [ubuntu-latest, windows-latest, macos-latest]
+        include:
+          - os: ubuntu-latest
+            compiler: gcc
+            cc: gcc
+            cxx: g++
+          - os: ubuntu-latest
+            compiler: clang
+            cc: clang
+            cxx: clang++
+          - os: macos-latest
+            compiler: clang
+            cc: clang
+            cxx: clang++
+          - os: windows-latest
+            compiler: msvc
 
     steps:
       - uses: actions/checkout@v4
+        with:
+          submodules: recursive
 
-      - name: Configure
-        run: cmake -B build -DEOS_BUILD_TESTS=ON
+      - name: Install SDL2 (Linux)
+        if: runner.os == 'Linux'
+        run: sudo apt-get update && sudo apt-get install -y libsdl2-dev ninja-build
+
+      - name: Install SDL2 (macOS)
+        if: runner.os == 'macOS'
+        run: brew install sdl2 ninja
+
+      - name: Configure (Unix)
+        if: runner.os != 'Windows'
+        env:
+          CC: ${{ matrix.cc }}
+          CXX: ${{ matrix.cxx }}
+        run: cmake -B build -DEOS_BUILD_TESTS=ON -DCMAKE_BUILD_TYPE=Release
+
+      - name: Configure (Windows / MSVC)
+        if: runner.os == 'Windows'
+        run: cmake -B build -DEOS_BUILD_TESTS=ON -DCMAKE_BUILD_TYPE=Release
 
       - name: Build
-        run: cmake --build build --config Release
+        run: cmake --build build --config Release --parallel
 
       - name: Test
         run: ctest --test-dir build --output-on-failure -C Release
@@ -38,14 +72,58 @@ jobs:
   build-products:
     name: Product (${{ matrix.product }})
     runs-on: ubuntu-latest
-    continue-on-error: true
     strategy:
       fail-fast: false
       matrix:
         product: [robot, gateway, medical, automotive, iot, aerospace]
     steps:
       - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+      - name: Install SDL2
+        run: sudo apt-get update && sudo apt-get install -y libsdl2-dev
       - name: Build ${{ matrix.product }}
         run: |
-          cmake -B build -DEOS_PRODUCT=${{ matrix.product }}
-          cmake --build build
+          cmake -B build -DEOS_PRODUCT=${{ matrix.product }} -DCMAKE_BUILD_TYPE=Release
+          cmake --build build --parallel
+
+  cross-compile:
+    name: Cross (${{ matrix.arch }})
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - arch: aarch64-linux
+            packages: gcc-aarch64-linux-gnu
+            cc: aarch64-linux-gnu-gcc
+          - arch: arm-linux-gnueabihf
+            packages: gcc-arm-linux-gnueabihf
+            cc: arm-linux-gnueabihf-gcc
+          - arch: riscv64-linux
+            packages: gcc-riscv64-linux-gnu
+            cc: riscv64-linux-gnu-gcc
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+      - name: Install cross toolchain
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y ${{ matrix.packages }}
+      - name: Configure
+        run: |
+          cmake -B build \
+            -DCMAKE_C_COMPILER=${{ matrix.cc }} \
+            -DCMAKE_SYSTEM_NAME=Linux \
+            -DCMAKE_BUILD_TYPE=Release
+      - name: Build
+        run: cmake --build build --parallel
+      - name: Verify static libraries
+        run: |
+          LIBS=$(find build -name "*.a" | wc -l)
+          echo "Found $LIBS static libraries"
+          if [ "$LIBS" -lt 1 ]; then
+            echo "ERROR: cross-compile produced no libraries"
+            exit 1
+          fi

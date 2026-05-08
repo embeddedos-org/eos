@@ -46,29 +46,48 @@ jobs:
           cd promo
           manim render -qh --format mp4 promo_scene.py ProductPromo
 
+      - name: Compute version-derived filename
+        id: vid
+        run: |
+          if [[ "$GITHUB_REF" == refs/tags/* ]]; then
+            VERSION="${GITHUB_REF#refs/tags/}"
+          else
+            VERSION="dev-latest"
+          fi
+          echo "version=$VERSION" >> $GITHUB_OUTPUT
+          echo "filename=EoS_${VERSION}_promo.mp4" >> $GITHUB_OUTPUT
+
       - name: Merge video + audio
         run: |
           cd promo
           VIDEO=$(find media/videos -name "ProductPromo.mp4" | head -1)
+          if [ -z "$VIDEO" ]; then
+            echo "::error::Manim render produced no MP4"
+            exit 1
+          fi
+          if [ ! -f narration.mp3 ]; then
+            echo "::error::narration.mp3 missing — generate_audio.py did not produce expected output"
+            exit 1
+          fi
           ffmpeg -y -i "$VIDEO" -i narration.mp3 \
             -c:v copy -c:a aac -b:a 192k \
             -map 0:v:0 -map 1:a:0 \
             -shortest \
-            EoS_v1.0_promo.mp4
-          ls -lh EoS_v1.0_promo.mp4
+            "${{ steps.vid.outputs.filename }}"
+          ls -lh "${{ steps.vid.outputs.filename }}"
 
       - name: Upload final video
         uses: actions/upload-artifact@v4
         with:
           name: EoS-promo-video
-          path: promo/EoS_v1.0_promo.mp4
+          path: promo/${{ steps.vid.outputs.filename }}
           retention-days: 90
 
       - name: Attach to release
         if: github.event_name == 'release'
         uses: softprops/action-gh-release@v2
         with:
-          files: promo/EoS_v1.0_promo.mp4
+          files: promo/${{ steps.vid.outputs.filename }}
           tag_name: ${{ github.event.release.tag_name }}
           fail_on_unmatched_files: false
         env:

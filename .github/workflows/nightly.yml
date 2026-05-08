@@ -5,6 +5,13 @@ on:
     - cron: "0 2 * * *"  # 2:00 AM UTC daily
   workflow_dispatch:       # Manual trigger
 
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: false
+
 jobs:
   native-build:
     name: Native (${{ matrix.os }})
