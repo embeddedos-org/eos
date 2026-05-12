@@ -80,7 +80,17 @@ int eos_ota_set_source(EosOtaUpdate *ota, const char *url,
     return 0;
 }
 
+static int is_url_safe(const char *url) {
+    if (!url) return 0;
+    if (strpbrk(url, ";|><$()`'")) return 0;
+    return 1;
+}
+
 int eos_ota_download(EosOtaUpdate *ota) {
+    if (!is_url_safe(ota->url)) {
+        ota->state = EOS_OTA_FAILED;
+        return -1;
+    }
     ota->state = EOS_OTA_DOWNLOADING;
     char cmd[2048];
 #ifdef _WIN32
@@ -114,6 +124,10 @@ int eos_ota_verify(EosOtaUpdate *ota) {
 }
 
 int eos_ota_install(EosOtaUpdate *ota, const char *target_path) {
+    if (target_path && strpbrk(target_path, ";|&><$()\"'")) {
+        ota->state = EOS_OTA_FAILED;
+        return -1;
+    }
     ota->state = EOS_OTA_INSTALLING;
     char cmd[2048];
 #ifdef _WIN32

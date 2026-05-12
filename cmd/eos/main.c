@@ -546,6 +546,12 @@ static int cmd_clean(const CliArgs *args) {
         return 0;
     }
 
+    /* Validate build_dir to prevent command injection */
+    if (strpbrk(build_dir, ";|&><$()\"'")) {
+        EOS_ERROR("Invalid build directory path: %s (contains special characters)", build_dir);
+        return 1;
+    }
+
     char cmd[1024];
 #ifdef _WIN32
     snprintf(cmd, sizeof(cmd), "if exist \"%s\" rmdir /s /q \"%s\"", build_dir, build_dir);

@@ -43,7 +43,16 @@ int eos_selinux_set_policy(EosSelinux *se, const char *policy_dir,
     return -1;
 }
 
+static int is_path_safe(const char *path) {
+    if (!path) return 1;
+    if (strpbrk(path, ";|&><$()\"'")) return 0;
+    return 1;
+}
+
 int eos_selinux_install_to_rootfs(const EosSelinux *se, const char *rootfs_dir) {
+    if (!is_path_safe(se->policy_dir) || !is_path_safe(se->policy_name)) {
+        return -1;
+    }
     char path[1024];
 
     /* Create /etc/selinux directory */
@@ -78,6 +87,9 @@ int eos_selinux_install_to_rootfs(const EosSelinux *se, const char *rootfs_dir) 
 
 int eos_selinux_label_rootfs(const EosSelinux *se, const char *rootfs_dir) {
     if (se->mode == EOS_SELINUX_DISABLED) return 0;
+    if (!is_path_safe(rootfs_dir) || !is_path_safe(se->file_contexts)) {
+        return -1;
+    }
 #ifndef _WIN32
     char cmd[2048];
     if (se->file_contexts[0]) {
