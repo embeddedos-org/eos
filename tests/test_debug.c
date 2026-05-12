@@ -10,6 +10,7 @@
 
 static void test_gdb_init(void) {
     EosGdbStub stub;
+    (void)stub;
     assert(eos_gdb_init(&stub, EOS_GDB_TRANSPORT_TCP) == 0);
     assert(stub.signal == 5);
     assert(stub.bp_count == 0);
@@ -59,6 +60,7 @@ static void test_coredump_capture(void) {
     assert(eos_coredump_capture(EOS_CRASH_HARDFAULT, &regs) == 0);
     assert(eos_coredump_exists());
     EosCoreDump dump;
+    (void)dump;
     assert(eos_coredump_load(&dump) == 0);
     assert(dump.magic == EOS_COREDUMP_MAGIC);
     assert(dump.reason == EOS_CRASH_HARDFAULT);

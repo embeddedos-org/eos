@@ -26,7 +26,7 @@ set(EBOOT_SOURCE_DIR  "" CACHE PATH "Explicit path to eBoot source tree")
 set(EBUILD_SOURCE_DIR "" CACHE PATH "Explicit path to ebuild source tree")
 
 set(EOS_EBOOT_GIT_REPO  "https://github.com/embeddedos-org/eBoot.git" CACHE STRING "eBoot git URL")
-set(EOS_EBOOT_GIT_TAG   "main" CACHE STRING "eBoot git tag/branch to fetch")
+set(EOS_EBOOT_GIT_TAG   "master" CACHE STRING "eBoot git tag/branch to fetch")
 set(EOS_EBUILD_GIT_REPO "https://github.com/embeddedos-org/ebuild.git" CACHE STRING "ebuild git URL")
 set(EOS_EBUILD_GIT_TAG  "main" CACHE STRING "ebuild git tag/branch to fetch")
 
