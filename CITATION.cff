@@ -1,0 +1,10 @@
+cff-version: 1.2.0
+message: "If you use this software, please cite it using the metadata below."
+type: software
+title: "eos"
+version: "3.0.0"
+date-released: "2026-05-13"
+authors:
+  - name: "EmbeddedOS Project Contributors"
+url: "https://github.com/embeddedos-org/eos"
+license: MIT
