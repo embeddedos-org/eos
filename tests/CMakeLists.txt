@@ -77,6 +77,11 @@ add_test(NAME test_debug COMMAND test_debug)
 
 # --- test_ui_gesture: UI gesture recognition ---
 add_executable(test_ui_gesture test_ui_gesture.c)
+target_compile_definitions(test_ui_gesture PRIVATE
+    EOS_ENABLE_UI=1
+    EOS_ENABLE_TOUCH=1
+    EOS_ENABLE_DISPLAY=1
+)
 target_include_directories(test_ui_gesture PRIVATE
     ${CMAKE_CURRENT_SOURCE_DIR}/../include
     ${CMAKE_CURRENT_SOURCE_DIR}/../hal/include

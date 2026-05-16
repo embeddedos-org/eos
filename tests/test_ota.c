@@ -25,7 +25,7 @@ static void test_ota_full_update(void) {
     eos_ota_source_t src; memset(&src, 0, sizeof(src));
     src.expected_size = sizeof(fw);
     memcpy(src.expected_sha256, hash, 32);
-    strcpy(src.version, "2.0");
+    snprintf(src.version, sizeof(src.version), "2.0");
     bool avail = false;
     assert(eos_ota_check_update(&src, &avail) == 0);
     assert(avail);
