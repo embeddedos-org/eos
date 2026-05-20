@@ -1,9 +1,75 @@
-# Dependabot disabled — dependency updates are managed manually.
-# To re-enable, set open-pull-requests-limit to a positive number.
+# Standard, org-uniform Dependabot configuration template.
+#
+# Each repo should drop this file at .github/dependabot.yml and uncomment the
+# ecosystem entries that apply. Keep weekly cadence so review backlogs stay
+# manageable. Auto-assigning all PRs to a single triage owner (@srpatcha)
+# prevents the "ten people CC'd, no one acts" failure mode.
+#
+# Reference template lives at embeddedos-org/.github/.github/dependabot-template.yml.
+
 version: 2
 updates:
-  - package-ecosystem: "github-actions"
-    directory: "/"
+  # GitHub Actions — every repo should keep this enabled.
+  - package-ecosystem: github-actions
+    directory: /
     schedule:
-      interval: "monthly"
-    open-pull-requests-limit: 0
+      interval: weekly
+      day: monday
+    open-pull-requests-limit: 5
+    assignees:
+      - srpatcha
+    labels:
+      - dependencies
+      - github-actions
+
+  # Python — uncomment in repos with pyproject.toml or requirements.txt.
+  # - package-ecosystem: pip
+  #   directory: /
+  #   schedule:
+  #     interval: weekly
+  #     day: monday
+  #   open-pull-requests-limit: 5
+  #   assignees:
+  #     - srpatcha
+  #   labels:
+  #     - dependencies
+  #     - python
+
+  # Node.js — uncomment in repos with package.json.
+  # - package-ecosystem: npm
+  #   directory: /
+  #   schedule:
+  #     interval: weekly
+  #     day: monday
+  #   open-pull-requests-limit: 5
+  #   assignees:
+  #     - srpatcha
+  #   labels:
+  #     - dependencies
+  #     - npm
+
+  # Go — uncomment in repos with go.mod.
+  # - package-ecosystem: gomod
+  #   directory: /
+  #   schedule:
+  #     interval: weekly
+  #     day: monday
+  #   open-pull-requests-limit: 5
+  #   assignees:
+  #     - srpatcha
+  #   labels:
+  #     - dependencies
+  #     - go
+
+  # Docker — uncomment in repos with Dockerfile.
+  # - package-ecosystem: docker
+  #   directory: /
+  #   schedule:
+  #     interval: weekly
+  #     day: monday
+  #   open-pull-requests-limit: 3
+  #   assignees:
+  #     - srpatcha
+  #   labels:
+  #     - dependencies
+  #     - docker

@@ -1,0 +1,72 @@
+name: sync-release-branch
+
+# When a vMAJOR.MINOR.PATCH (or rc) tag is pushed to master, force-push that
+# exact commit to the `release` branch so `release` is always a rolling
+# pointer to the latest released tag. This is the org-uniform release model:
+#
+#   master   = line of development, every PR lands here.
+#   release  = exact commit of the latest released vX.Y.Z tag, updated only
+#              by this workflow. Never push to release manually.
+#   tags     = immutable named snapshots created on master.
+#
+# Mirror of this file lives in embeddedos-org/.github/.github/workflows/sync-release-branch.yml.
+# Drift from that template should be considered a bug.
+
+on:
+  push:
+    tags:
+      - 'v[0-9]+.[0-9]+.[0-9]+'
+      - 'v[0-9]+.[0-9]+.[0-9]+-rc.[0-9]+'
+
+permissions:
+  contents: write
+
+concurrency:
+  group: sync-release-branch
+  cancel-in-progress: false
+
+jobs:
+  sync:
+    name: Force-push tag commit to release branch
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout tagged commit
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 1
+          ref: ${{ github.ref }}
+
+      - name: Compute target SHA
+        id: target
+        run: |
+          sha=$(git rev-parse HEAD)
+          echo "sha=$sha" >> "$GITHUB_OUTPUT"
+          echo "Force-pushing $sha (from tag ${GITHUB_REF#refs/tags/}) to refs/heads/release"
+
+      - name: Force-push to release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          # Try to update; if release doesn't exist, create it.
+          if gh api "repos/${GITHUB_REPOSITORY}/git/refs/heads/release" >/dev/null 2>&1; then
+            gh api -X PATCH "repos/${GITHUB_REPOSITORY}/git/refs/heads/release" \
+              -f sha="${{ steps.target.outputs.sha }}" -F force=true >/dev/null
+            echo "release fast-forwarded / force-updated"
+          else
+            gh api -X POST "repos/${GITHUB_REPOSITORY}/git/refs" \
+              -f ref=refs/heads/release -f sha="${{ steps.target.outputs.sha }}" >/dev/null
+            echo "release created"
+          fi
+
+      - name: Summary
+        run: |
+          {
+            echo "## release branch updated"
+            echo ""
+            echo "- tag:   \`${GITHUB_REF#refs/tags/}\`"
+            echo "- sha:   \`${{ steps.target.outputs.sha }}\`"
+            echo "- repo:  \`${GITHUB_REPOSITORY}\`"
+            echo ""
+            echo "release branch now points at the same commit as the tag."
+          } >> "$GITHUB_STEP_SUMMARY"
