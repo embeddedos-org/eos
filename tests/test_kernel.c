@@ -52,6 +52,7 @@ static void test_task_suspend_resume(void) {
 static void test_mutex(void) {
     eos_kernel_init();
     eos_mutex_handle_t m;
+    (void)m;
     assert(eos_mutex_create(&m) == EOS_KERN_OK);
     assert(eos_mutex_lock(m, 0) == EOS_KERN_OK);
     assert(eos_mutex_lock(m, 0) == EOS_KERN_OK);  /* recursive */
@@ -65,6 +66,7 @@ static void test_mutex(void) {
 static void test_semaphore(void) {
     eos_kernel_init();
     eos_sem_handle_t s;
+    (void)s;
     assert(eos_sem_create(&s, 3, 5) == EOS_KERN_OK);
     assert(eos_sem_get_count(s) == 3);
     assert(eos_sem_wait(s, 0) == EOS_KERN_OK);
@@ -83,6 +85,7 @@ static void test_semaphore(void) {
 static void test_queue(void) {
     eos_kernel_init();
     eos_queue_handle_t q;
+    (void)q;
     assert(eos_queue_create(&q, sizeof(int), 4) == EOS_KERN_OK);
     assert(eos_queue_is_empty(q));
     int val = 42;
@@ -103,6 +106,7 @@ static void test_queue(void) {
 static void test_queue_full(void) {
     eos_kernel_init();
     eos_queue_handle_t q;
+    (void)q;
     eos_queue_create(&q, sizeof(int), 2);
     int a = 1, b = 2, c = 3;
     assert(eos_queue_send(q, &a, 0) == EOS_KERN_OK);

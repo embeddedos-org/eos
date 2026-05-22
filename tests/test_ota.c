@@ -77,6 +77,7 @@ static void test_ota_rollback(void) {
 static void test_ota_status(void) {
     eos_ota_init();
     eos_ota_status_t st;
+    (void)st;
     assert(eos_ota_get_status(&st) == 0);
     assert(st.active_slot == EOS_OTA_SLOT_A);
     assert(eos_ota_get_status(NULL) == -1);

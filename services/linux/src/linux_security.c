@@ -62,12 +62,12 @@ int eos_selinux_install_to_rootfs(const EosSelinux *se, const char *rootfs_dir) 
 
     /* Copy policy files if available */
     if (se->policy_loaded && se->policy_dir[0]) {
-        char cmd[2048];
         snprintf(path, sizeof(path), "%s%setc%sselinux%s%s",
                  rootfs_dir, PATH_SEP, PATH_SEP, PATH_SEP,
                  se->policy_name[0] ? se->policy_name : "targeted");
         MKDIR(path);
 #ifndef _WIN32
+        char cmd[2048];
         snprintf(cmd, sizeof(cmd), "cp -r \"%s/\"* \"%s/\" 2>/dev/null || true",
                  se->policy_dir, path);
         system(cmd);
@@ -466,6 +466,7 @@ int eos_busybox_configure(EosBusybox *bb) {
         snprintf(bb->source_dir, sizeof(bb->source_dir),
                  ".eos/build/src/busybox-%s", bb->version);
     }
+#ifndef _WIN32
     char cmd[2048];
     int offset = snprintf(cmd, sizeof(cmd), "make -C \"%s\" %s",
                           bb->source_dir, bb->defconfig);
@@ -478,9 +479,14 @@ int eos_busybox_configure(EosBusybox *bb) {
                 " CONFIG_STATIC=y");
     }
     return system(cmd) == 0 ? 0 : -1;
+#else
+    (void)bb;
+    return -1;
+#endif
 }
 
 int eos_busybox_build(EosBusybox *bb) {
+#ifndef _WIN32
     char cmd[2048];
     int offset = snprintf(cmd, sizeof(cmd), "make -C \"%s\" -j4", bb->source_dir);
     if (bb->cross_compile[0]) {
@@ -488,9 +494,14 @@ int eos_busybox_build(EosBusybox *bb) {
                 " CROSS_COMPILE=%s", bb->cross_compile);
     }
     return system(cmd) == 0 ? 0 : -1;
+#else
+    (void)bb;
+    return -1;
+#endif
 }
 
 int eos_busybox_install_to_rootfs(const EosBusybox *bb, const char *rootfs_dir) {
+#ifndef _WIN32
     char cmd[2048];
     if (bb->source_dir[0]) {
         snprintf(cmd, sizeof(cmd),
@@ -498,6 +509,7 @@ int eos_busybox_install_to_rootfs(const EosBusybox *bb, const char *rootfs_dir) 
                  bb->source_dir, rootfs_dir);
         system(cmd);
     }
+#endif
 
     /* Create /init symlink for initramfs boot */
     char path[1024];

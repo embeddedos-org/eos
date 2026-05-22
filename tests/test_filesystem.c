@@ -10,6 +10,7 @@
 static void test_fs_init(void) {
     assert(eos_fs_init(NULL) == 0);
     eos_fs_stat_t st;
+    (void)st;
     assert(eos_fs_stat(&st) == 0);
     assert(st.free_bytes > 0);
     eos_fs_deinit();

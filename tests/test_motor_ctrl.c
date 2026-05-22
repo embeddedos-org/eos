@@ -133,6 +133,7 @@ static void test_motor_get_status(void) {
     cfg.control_rate_hz = 100;
     eos_motor_ctrl_configure(&cfg);
     eos_motor_ctrl_status_t status;
+    (void)status;
     assert(eos_motor_ctrl_get_status(0, &status) == 0);
     eos_motor_ctrl_deinit();
     PASS("motor get status");
