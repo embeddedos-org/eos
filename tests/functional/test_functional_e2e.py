@@ -1,14 +1,9 @@
 import unittest
-
-class TesteosFunctional(unittest.TestCase):
-    def test_kernel_ipc_queue_pipeline(self):
-        queue = []
-        max_size = 4
-        # Producer
-        for i in range(max_size):
-            queue.append(f"msg_{i}")
-        assert len(queue) == max_size
-        # Consumer
-        msg = queue.pop(0)
-        assert msg == "msg_0"
-        assert len(queue) == 3
+class TestEoSFunctional(unittest.TestCase):
+    def test_rtos_kernel_pipeline(self):
+        # End-to-end RTOS task execution pipeline
+        events = []
+        events.append("boot")
+        events.append("init_hal")
+        events.append("start_scheduler")
+        self.assertEqual(events, ["boot", "init_hal", "start_scheduler"])

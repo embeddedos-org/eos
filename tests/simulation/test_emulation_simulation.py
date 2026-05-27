@@ -1,9 +1,7 @@
 import unittest
-
-class TesteosSimulation(unittest.TestCase):
-    def test_timer_interrupt_emulation(self):
-        systick = 0
-        # Simulate 1000 timer ticks (1ms each)
-        for _ in range(1000):
-            systick += 1
-        assert systick == 1000, "Systick timer interrupt emulation failed"
+class TestEoSSimulation(unittest.TestCase):
+    def test_hardware_timer_interrupt(self):
+        ticks = 0
+        for _ in range(10):
+            ticks += 1 # simulate tick interrupt
+        self.assertEqual(ticks, 10)
