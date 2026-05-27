@@ -643,6 +643,81 @@
         }
       },
       "books": []
+    },
+    {
+      "id": "embeddedos-org",
+      "name": "EmbeddedOS Organization",
+      "repo": "embeddedos-org/embeddedos-org",
+      "stage": 9,
+      "version": "1.2.0",
+      "description": "GitHub organization profile and central coordination repository for all EmbeddedOS Foundation projects.",
+      "tagline": "The home of EmbeddedOS on GitHub.",
+      "category": "Organization",
+      "competitors": [],
+      "platforms": ["Web"],
+      "languages": ["Markdown"],
+      "dependencies": [],
+      "dependents": [],
+      "releases": {
+        "v1.2.0": {
+          "date": "2026-05-27",
+          "notes": "Updated organization profile with all 21 repositories, unified build chain manifest, and nonprofit grant status.",
+          "binaries": []
+        }
+      },
+      "books": [
+        { "title": "EmbeddedOS Foundation Overview", "type": "PDF", "url": "https://github.com/embeddedos-org/embeddedos-org/releases/download/v1.2.0/foundation-overview.pdf", "pages": 24, "description": "High-level overview of the EmbeddedOS Foundation, its mission, projects, and nonprofit structure." }
+      ]
+    },
+    {
+      "id": "embeddedos-org.github.io",
+      "name": "EmbeddedOS GitHub Pages",
+      "repo": "embeddedos-org/embeddedos-org.github.io",
+      "stage": 9,
+      "version": "1.2.0",
+      "description": "GitHub Pages site for the EmbeddedOS organization — developer documentation, API references, and project guides.",
+      "tagline": "Developer docs and guides for EmbeddedOS.",
+      "category": "Documentation",
+      "competitors": [],
+      "platforms": ["Web"],
+      "languages": ["HTML", "Markdown"],
+      "dependencies": [],
+      "dependents": [],
+      "releases": {
+        "v1.2.0": {
+          "date": "2026-05-27",
+          "notes": "Added unified build chain documentation, API reference for all 21 repos, and developer onboarding guide.",
+          "binaries": []
+        }
+      },
+      "books": [
+        { "title": "EmbeddedOS Developer Guide", "type": "PDF", "url": "https://embeddedos-org.github.io/developer-guide.pdf", "pages": 156, "description": "Complete developer onboarding guide: setting up the build chain, contributing to repos, and deploying apps." }
+      ]
+    },
+    {
+      "id": "www.embeddedos.org",
+      "name": "EmbeddedOS Website",
+      "repo": "embeddedos-org/www.embeddedos.org",
+      "stage": 9,
+      "version": "1.2.0",
+      "description": "Official website for EmbeddedOS Foundation — showcasing all 21 projects, nonprofit grants, donation portal, and volunteer signup.",
+      "tagline": "The official home of EmbeddedOS Foundation.",
+      "category": "Website",
+      "competitors": [],
+      "platforms": ["Web"],
+      "languages": ["TypeScript", "React"],
+      "dependencies": [],
+      "dependents": [],
+      "releases": {
+        "v1.2.0": {
+          "date": "2026-05-27",
+          "notes": "Full website launch: 10 pages, Stripe donation portal, GPS volunteer chapter matching, admin dashboard, and unified manifest hub.",
+          "binaries": [
+            { "platform": "Web App", "file": null, "url": "https://embeddedos.org", "size": null, "sha256": null }
+          ]
+        }
+      },
+      "books": []
     }
   ],
   "unifiedChangelog": {
