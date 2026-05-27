@@ -1,27 +1,157 @@
-name: Production CI/CD Pipeline
+name: CI — eos
 
 on:
   push:
-    branches: [ main ]
+    branches: [main, develop]
+    tags: ["v*"]
   pull_request:
-    branches: [ main ]
+    branches: [main]
+
+env:
+  BUILD_TYPE: Release
 
 jobs:
-  build-and-test:
-    runs-on: ubuntu-latest
+  # ── Unit & Integration Tests ──────────────────────────────────────────────
+  test:
+    name: Build & Test (Linux x86_64)
+    runs-on: ubuntu-22.04
     steps:
-    - uses: actions/checkout@v3
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
 
-    - name: Set up Python
-      uses: actions/setup-python@v4
-      with:
-        python-version: '3.11'
+      - name: Install dependencies
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y --no-install-recommends \
+            cmake ninja-build gcc-12 g++-12 \
+            gcc-arm-none-eabi binutils-arm-none-eabi \
+            lcov gcovr python3-pip
+          pip3 install pytest pytest-cov
 
-    - name: Install Dependencies
-      run: |
-        python -m pip install --upgrade pip
-        pip install pytest pytest-cov requests matplotlib numpy
+      - name: Configure (host)
+        run: |
+          cmake -B build/host -G Ninja \
+            -DCMAKE_BUILD_TYPE=$BUILD_TYPE \
+            -DCMAKE_C_COMPILER=gcc-12 \
+            -DCMAKE_CXX_COMPILER=g++-12 \
+            -DENABLE_COVERAGE=ON \
+            -DBUILD_TESTS=ON
 
-    - name: Run Domain-Specific Test Suite
-      run: |
-        python run_all_tests.py
+      - name: Build (host)
+        run: cmake --build build/host --parallel $(nproc)
+
+      - name: Run C unit tests
+        run: |
+          cd build/host
+          ctest --output-on-failure --parallel $(nproc)
+
+      - name: Run Python tests
+        run: |
+          python3 -m pytest tests/ -v --tb=short \
+            --cov=. --cov-report=xml --cov-report=term-missing
+        continue-on-error: false
+
+      - name: Upload coverage
+        uses: codecov/codecov-action@v4
+        with:
+          files: coverage.xml
+          flags: eos
+
+  # ── Cross-compile ARM Cortex-M4 ───────────────────────────────────────────
+  build-arm:
+    name: Cross-compile ARM Cortex-M4
+    runs-on: ubuntu-22.04
+    needs: test
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - name: Install ARM toolchain
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y gcc-arm-none-eabi binutils-arm-none-eabi cmake ninja-build
+
+      - name: Configure (ARM)
+        run: |
+          cmake -B build/arm -G Ninja \
+            -DCMAKE_BUILD_TYPE=$BUILD_TYPE \
+            -DCMAKE_TOOLCHAIN_FILE=cmake/arm-cortex-m4.cmake \
+            -DBUILD_TESTS=OFF
+
+      - name: Build (ARM)
+        run: cmake --build build/arm --parallel $(nproc)
+
+      - name: List artifacts
+        run: find build/arm -name "*.elf" -o -name "*.bin" -o -name "*.hex" | sort
+
+      - name: Upload ARM artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: eos-arm-cortex-m4
+          path: |
+            build/arm/**/*.elf
+            build/arm/**/*.bin
+            build/arm/**/*.hex
+          retention-days: 90
+
+  # ── Static Analysis ───────────────────────────────────────────────────────
+  static-analysis:
+    name: Static Analysis (cppcheck + clang-tidy)
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install tools
+        run: sudo apt-get install -y cppcheck clang-tidy
+      - name: cppcheck
+        run: |
+          cppcheck --enable=all --error-exitcode=1 \
+            --suppress=missingIncludeSystem \
+            --suppress=unusedFunction \
+            -I include/ src/ 2>&1 | tee cppcheck.log
+        continue-on-error: true
+      - name: Upload analysis report
+        uses: actions/upload-artifact@v4
+        with:
+          name: eos-static-analysis
+          path: cppcheck.log
+
+  # ── Release ───────────────────────────────────────────────────────────────
+  release:
+    name: Create GitHub Release
+    runs-on: ubuntu-22.04
+    needs: [test, build-arm]
+    if: startsWith(github.ref, 'refs/tags/v')
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - name: Install dependencies
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y cmake ninja-build gcc-arm-none-eabi
+
+      - name: Build release artifacts
+        run: |
+          cmake -B build/release -G Ninja \
+            -DCMAKE_BUILD_TYPE=Release \
+            -DBUILD_TESTS=OFF
+          cmake --build build/release --parallel $(nproc)
+
+      - name: Package artifacts
+        run: |
+          mkdir -p dist
+          find build/release -name "*.elf" -exec cp {} dist/ \;
+          find build/release -name "*.bin" -exec cp {} dist/ \;
+          tar czf eos-${{ github.ref_name }}-linux-x86_64.tar.gz -C dist .
+
+      - name: Create Release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: |
+            eos-${{ github.ref_name }}-linux-x86_64.tar.gz
+          generate_release_notes: true
+          draft: false
+          prerelease: false
