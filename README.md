@@ -23,7 +23,7 @@ We continuously benchmark EoS RTOS Kernel against the entire EmbeddedOS ecosyste
 
 ---
 
-## 🎬 Product Marketing Video
+## 🎬 Product Marketing Video (App Store Proof of Production)
 
 Experience EoS RTOS Kernel in action! Watch our high-fidelity product demonstration and marketing video:
 

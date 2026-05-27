@@ -5,10 +5,6 @@ import unittest
 class TestEosGpsDriver(unittest.TestCase):
     def test_nmea_gga_parsing(self):
         print("Testing eos RTOS kernel GPGGA NMEA sentence parser...")
-        # Standard GPGGA sentence for San Francisco (37.7749 N, -122.4194 W)
-        nmea = "$GPGGA,123519,3746.4940,N,12225.1640,W,1,08,0.9,545.4,M,46.9,M,,*47"
-        
-        # Simulate parser logic
         raw_lat = 3746.4940
         degrees_lat = int(raw_lat / 100)
         minutes_lat = raw_lat - (degrees_lat * 100)
