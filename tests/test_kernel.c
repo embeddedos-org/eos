@@ -116,6 +116,14 @@ static void test_queue_full(void) {
     printf("[PASS] queue full/peek\n");
 }
 
+/* Mock port functions for host-based simulation/testing */
+uint32_t eos_port_enter_critical(void) { return 0; }
+void eos_port_exit_critical(uint32_t state) { (void)state; }
+void eos_port_yield(void) {}
+void eos_port_start_scheduler(void) {}
+uint32_t *eos_port_init_stack(uint32_t *s, void (*e)(void*), void *a) { (void)e; (void)a; return s - 17; }
+void eos_port_start_first_task(void) {}
+
 int main(void) {
     printf("=== EoS Kernel Tests ===\n");
     test_kernel_init();
