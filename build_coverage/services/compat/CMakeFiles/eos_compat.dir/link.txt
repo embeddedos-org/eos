@@ -1,0 +1,2 @@
+/usr/bin/ar qc libeos_compat.a CMakeFiles/eos_compat.dir/src/os_adapter.c.o CMakeFiles/eos_compat.dir/src/os_adapter_eos.c.o
+/usr/bin/ranlib libeos_compat.a

@@ -1,0 +1,583 @@
+Start testing: May 27 08:44 UTC
+----------------------------------------------------------
+1/19 Testing: test_config
+1/19 Test: test_config
+Command: "/home/ubuntu/embeddedos/eos/build_coverage/tests/test_config"
+Directory: /home/ubuntu/embeddedos/eos/build_coverage/tests
+"test_config" start time: May 27 08:44 UTC
+Output:
+----------------------------------------------------------
+[31m[08:44:59 ERROR][0m Cannot open config: nonexistent.yaml
+=== EoS Config Tests ===
+
+test_config_init:
+  PASS: default backend is ninja
+  PASS: default build_dir
+  PASS: default cache_dir
+  PASS: default image format is raw
+  PASS: default init is busybox
+  PASS: no packages initially
+  PASS: no layers initially
+test_config_load:
+  PASS: config loads successfully
+  PASS: project name parsed
+  PASS: project version parsed
+  PASS: workspace backend parsed
+  PASS: toolchain target parsed
+  PASS: two layers parsed
+  PASS: first layer path
+  PASS: one package parsed
+  PASS: package name parsed
+  PASS: package version parsed
+  PASS: package build type parsed
+  PASS: kernel provider parsed
+  PASS: rootfs provider parsed
+test_config_missing_file:
+  PASS: returns IO error for missing file
+
+=== Results: 21/21 passed ===
+<end of output>
+Test time =   0.01 sec
+----------------------------------------------------------
+Test Passed.
+"test_config" end time: May 27 08:44 UTC
+"test_config" time elapsed: 00:00:00
+----------------------------------------------------------
+
+2/19 Testing: test_graph
+2/19 Test: test_graph
+Command: "/home/ubuntu/embeddedos/eos/build_coverage/tests/test_graph"
+Directory: /home/ubuntu/embeddedos/eos/build_coverage/tests
+"test_graph" start time: May 27 08:44 UTC
+Output:
+----------------------------------------------------------
+[31m[08:44:59 ERROR][0m Dependency cycle detected in build graph
+=== EoS Graph Tests ===
+
+test_graph_init:
+  PASS: empty graph has no nodes
+  PASS: empty graph has no edges
+  PASS: empty graph has no sorted order
+test_graph_add_nodes:
+  PASS: add zlib succeeds
+  PASS: first node id is 0
+  PASS: add busybox succeeds
+  PASS: second node id is 1
+  PASS: add kernel succeeds
+  PASS: graph has 3 nodes
+test_graph_find_node:
+  PASS: find alpha returns 0
+  PASS: find beta returns 1
+  PASS: find nonexistent returns -1
+test_topological_sort_linear:
+  PASS: topological sort succeeds
+  PASS: all 3 nodes sorted
+  PASS: A comes before B
+  PASS: B comes before C
+test_topological_sort_diamond:
+  PASS: diamond sort succeeds
+  PASS: A comes before D in diamond
+test_cycle_detection:
+  PASS: cycle detected correctly
+test_independent_nodes:
+  PASS: independent nodes sort succeeds
+  PASS: all 3 independent nodes sorted
+
+=== Results: 21/21 passed ===
+<end of output>
+Test time =   0.00 sec
+----------------------------------------------------------
+Test Passed.
+"test_graph" end time: May 27 08:44 UTC
+"test_graph" time elapsed: 00:00:00
+----------------------------------------------------------
+
+3/19 Testing: test_hal
+3/19 Test: test_hal
+Command: "/home/ubuntu/embeddedos/eos/build_coverage/tests/test_hal"
+Directory: /home/ubuntu/embeddedos/eos/build_coverage/tests
+"test_hal" start time: May 27 08:44 UTC
+Output:
+----------------------------------------------------------
+=== EoS: HAL Unit Tests ===
+
+  test_init_deinit                                   [PASS]
+  test_gpio_write_read                               [PASS]
+  test_gpio_toggle                                   [PASS]
+  test_tick_counter                                  [PASS]
+  test_no_backend                                    [PASS]
+
+5/5 tests passed
+<end of output>
+Test time =   0.00 sec
+----------------------------------------------------------
+Test Passed.
+"test_hal" end time: May 27 08:44 UTC
+"test_hal" time elapsed: 00:00:00
+----------------------------------------------------------
+
+4/19 Testing: test_kernel
+4/19 Test: test_kernel
+Command: "/home/ubuntu/embeddedos/eos/build_coverage/tests/test_kernel"
+Directory: /home/ubuntu/embeddedos/eos/build_coverage/tests
+"test_kernel" start time: May 27 08:44 UTC
+Output:
+----------------------------------------------------------
+=== EoS Kernel Tests ===
+[PASS] kernel init
+[PASS] task create
+[PASS] task create invalid
+[PASS] task delete
+[PASS] task suspend/resume
+[PASS] mutex
+[PASS] semaphore
+[PASS] queue
+[PASS] queue full/peek
+=== ALL KERNEL TESTS PASSED (9/9) ===
+<end of output>
+Test time =   0.00 sec
+----------------------------------------------------------
+Test Passed.
+"test_kernel" end time: May 27 08:44 UTC
+"test_kernel" time elapsed: 00:00:00
+----------------------------------------------------------
+
+5/19 Testing: test_multicore
+5/19 Test: test_multicore
+Command: "/home/ubuntu/embeddedos/eos/build_coverage/tests/test_multicore"
+Directory: /home/ubuntu/embeddedos/eos/build_coverage/tests
+"test_multicore" start time: May 27 08:44 UTC
+Output:
+----------------------------------------------------------
+=== EoS Multicore Tests ===
+[PASS] multicore init/deinit SMP
+[PASS] multicore init AMP
+[PASS] core count >= 1
+[PASS] core id == 0 (boot core)
+[PASS] core get info
+[PASS] core get info null
+[PASS] core get info invalid id
+[PASS] core start
+[PASS] core stop
+[PASS] spinlock basic
+[PASS] spinlock trylock
+[PASS] spinlock irqsave
+[PASS] ipi send
+[PASS] ipi broadcast
+[PASS] ipi register handler
+[PASS] shmem create/close
+[PASS] shmem open
+[PASS] shmem flush/invalidate
+[PASS] task affinity set/get
+[PASS] task migrate
+[PASS] atomic add
+[PASS] atomic sub
+[PASS] atomic CAS success
+[PASS] atomic CAS fail
+[PASS] atomic load/store
+[PASS] memory barriers (no crash)
+[PASS] rproc init
+[PASS] rproc start/stop
+
+=== ALL 28 MULTICORE TESTS PASSED ===
+<end of output>
+Test time =   0.00 sec
+----------------------------------------------------------
+Test Passed.
+"test_multicore" end time: May 27 08:44 UTC
+"test_multicore" time elapsed: 00:00:00
+----------------------------------------------------------
+
+6/19 Testing: test_drivers
+6/19 Test: test_drivers
+Command: "/home/ubuntu/embeddedos/eos/build_coverage/tests/test_drivers"
+Directory: /home/ubuntu/embeddedos/eos/build_coverage/tests
+"test_drivers" start time: May 27 08:44 UTC
+Output:
+----------------------------------------------------------
+=== EoS: Driver Framework Unit Tests ===
+
+  test_register                                      [PASS]
+  test_find_by_name                                  [PASS]
+  test_find_by_type                                  [PASS]
+  test_find_nonexistent                              [PASS]
+  test_init_all                                      [PASS]
+  test_open_close_lifecycle                          [PASS]
+  test_open_before_init_fails                        [PASS]
+  test_register_null                                 [PASS]
+
+8/8 tests passed
+<end of output>
+Test time =   0.00 sec
+----------------------------------------------------------
+Test Passed.
+"test_drivers" end time: May 27 08:44 UTC
+"test_drivers" time elapsed: 00:00:00
+----------------------------------------------------------
+
+7/19 Testing: test_crypto
+7/19 Test: test_crypto
+Command: "/home/ubuntu/embeddedos/eos/build_coverage/tests/test_crypto"
+Directory: /home/ubuntu/embeddedos/eos/build_coverage/tests
+"test_crypto" start time: May 27 08:44 UTC
+Output:
+----------------------------------------------------------
+=== EoS Crypto Tests ===
+[PASS] sha256 empty
+[PASS] sha256 abc
+[PASS] sha256 NIST 448-bit
+[PASS] sha256 incremental
+[PASS] sha256 null safety
+[PASS] crc32
+[PASS] crc32 incremental
+=== ALL CRYPTO TESTS PASSED (7/7) ===
+<end of output>
+Test time =   0.00 sec
+----------------------------------------------------------
+Test Passed.
+"test_crypto" end time: May 27 08:44 UTC
+"test_crypto" time elapsed: 00:00:00
+----------------------------------------------------------
+
+8/19 Testing: test_security
+8/19 Test: test_security
+Command: "/home/ubuntu/embeddedos/eos/build_coverage/tests/test_security"
+Directory: /home/ubuntu/embeddedos/eos/build_coverage/tests
+"test_security" start time: May 27 08:44 UTC
+Output:
+----------------------------------------------------------
+=== EoS: Security Services Unit Tests ===
+
+  test_secureboot_init                               [PASS]
+  test_keystore_add_find                             [PASS]
+  test_keystore_not_found                            [PASS]
+  test_keystore_multiple_keys                        [PASS]
+  test_acl_allow_deny                                [PASS]
+  test_acl_default_deny                              [PASS]
+  test_acl_wildcard                                  [PASS]
+  test_acl_last_match_wins                           [PASS]
+
+8/8 tests passed
+<end of output>
+Test time =   0.00 sec
+----------------------------------------------------------
+Test Passed.
+"test_security" end time: May 27 08:44 UTC
+"test_security" time elapsed: 00:00:00
+----------------------------------------------------------
+
+9/19 Testing: test_os_services
+9/19 Test: test_os_services
+Command: "/home/ubuntu/embeddedos/eos/build_coverage/tests/test_os_services"
+Directory: /home/ubuntu/embeddedos/eos/build_coverage/tests
+"test_os_services" start time: May 27 08:44 UTC
+Output:
+----------------------------------------------------------
+=== EoS: OS Services Unit Tests ===
+
+  test_watchdog_init                                 [PASS]
+  test_watchdog_start_kick                           [PASS]
+  test_watchdog_stop                                 [PASS]
+  test_watchdog_callback                             [PASS]
+  test_audit_init                                    [PASS]
+  test_audit_record                                  [PASS]
+  test_audit_multiple                                [PASS]
+  test_storage_set_get                               [PASS]
+  test_storage_overwrite                             [PASS]
+  test_storage_delete                                [PASS]
+  test_storage_not_found                             [PASS]
+  test_storage_string                                [PASS]
+
+12/12 tests passed
+<end of output>
+Test time =   0.00 sec
+----------------------------------------------------------
+Test Passed.
+"test_os_services" end time: May 27 08:44 UTC
+"test_os_services" time elapsed: 00:00:00
+----------------------------------------------------------
+
+10/19 Testing: test_ota
+10/19 Test: test_ota
+Command: "/home/ubuntu/embeddedos/eos/build_coverage/tests/test_ota"
+Directory: /home/ubuntu/embeddedos/eos/build_coverage/tests
+"test_ota" start time: May 27 08:44 UTC
+Output:
+----------------------------------------------------------
+=== EoS OTA Tests ===
+[PASS] ota init
+[PASS] ota full update
+[PASS] ota verify fail
+[PASS] ota rollback
+[PASS] ota status
+=== ALL OTA TESTS PASSED (5/5) ===
+<end of output>
+Test time =   0.00 sec
+----------------------------------------------------------
+Test Passed.
+"test_ota" end time: May 27 08:44 UTC
+"test_ota" time elapsed: 00:00:00
+----------------------------------------------------------
+
+11/19 Testing: test_sensor
+11/19 Test: test_sensor
+Command: "/home/ubuntu/embeddedos/eos/build_coverage/tests/test_sensor"
+Directory: /home/ubuntu/embeddedos/eos/build_coverage/tests
+"test_sensor" start time: May 27 08:44 UTC
+Output:
+----------------------------------------------------------
+=== EoS Sensor Tests ===
+[PASS] sensor init
+[PASS] sensor register
+[PASS] sensor read
+[PASS] sensor calibrate
+[PASS] sensor filter
+[PASS] sensor null
+=== ALL SENSOR TESTS PASSED (6/6) ===
+<end of output>
+Test time =   0.00 sec
+----------------------------------------------------------
+Test Passed.
+"test_sensor" end time: May 27 08:44 UTC
+"test_sensor" time elapsed: 00:00:00
+----------------------------------------------------------
+
+12/19 Testing: test_filesystem
+12/19 Test: test_filesystem
+Command: "/home/ubuntu/embeddedos/eos/build_coverage/tests/test_filesystem"
+Directory: /home/ubuntu/embeddedos/eos/build_coverage/tests
+"test_filesystem" start time: May 27 08:44 UTC
+Output:
+----------------------------------------------------------
+=== EoS Filesystem Tests ===
+[PASS] fs init
+[PASS] fs write/read
+[PASS] fs seek
+[PASS] fs truncate
+[PASS] fs dir
+[PASS] fs remove/rename
+[PASS] fs format
+=== ALL FS TESTS PASSED (7/7) ===
+<end of output>
+Test time =   0.00 sec
+----------------------------------------------------------
+Test Passed.
+"test_filesystem" end time: May 27 08:44 UTC
+"test_filesystem" time elapsed: 00:00:00
+----------------------------------------------------------
+
+13/19 Testing: test_service
+13/19 Test: test_service
+Command: "/home/ubuntu/embeddedos/eos/build_coverage/tests/test_service"
+Directory: /home/ubuntu/embeddedos/eos/build_coverage/tests
+"test_service" start time: May 27 08:44 UTC
+Output:
+----------------------------------------------------------
+=== EoS Service Manager Tests ===
+[PASS] service init
+[PASS] service register
+[PASS] service start/stop
+[PASS] service dependencies
+[PASS] service start_all/stop_all
+[PASS] service restart
+=== ALL SERVICE TESTS PASSED ===
+<end of output>
+Test time =   0.00 sec
+----------------------------------------------------------
+Test Passed.
+"test_service" end time: May 27 08:44 UTC
+"test_service" time elapsed: 00:00:00
+----------------------------------------------------------
+
+14/19 Testing: test_debug
+14/19 Test: test_debug
+Command: "/home/ubuntu/embeddedos/eos/build_coverage/tests/test_debug"
+Directory: /home/ubuntu/embeddedos/eos/build_coverage/tests
+"test_debug" start time: May 27 08:44 UTC
+Output:
+----------------------------------------------------------
+=== EoS Debug Tests ===
+[PASS] gdb init
+[PASS] gdb breakpoints
+[PASS] gdb start/stop
+[PASS] coredump init
+[PASS] coredump capture + validate
+[PASS] coredump clear
+[PASS] coredump CRC validation
+=== ALL DEBUG TESTS PASSED ===
+<end of output>
+Test time =   0.00 sec
+----------------------------------------------------------
+Test Passed.
+"test_debug" end time: May 27 08:44 UTC
+"test_debug" time elapsed: 00:00:00
+----------------------------------------------------------
+
+15/19 Testing: test_ui_gesture
+15/19 Test: test_ui_gesture
+Command: "/home/ubuntu/embeddedos/eos/build_coverage/tests/test_ui_gesture"
+Directory: /home/ubuntu/embeddedos/eos/build_coverage/tests
+"test_ui_gesture" start time: May 27 08:44 UTC
+Output:
+----------------------------------------------------------
+=== EoS: UI Gesture State Machine Unit Tests ===
+
+  test_on_gesture_registers_callback                      [PASS]
+  test_on_gesture_null_cb_rejected                        [PASS]
+  test_on_gesture_max_callbacks                           [PASS]
+  test_configure_gestures_null_rejected                   [PASS]
+  test_configure_gestures_applies                         [PASS]
+  test_tap_basic                                          [PASS]
+  test_tap_callback_mask_filters                          [PASS]
+  test_double_tap                                         [PASS]
+  test_double_tap_too_slow_becomes_two_taps               [PASS]
+  test_long_press                                         [PASS]
+  test_swipe_left                                         [PASS]
+  test_swipe_right                                        [PASS]
+  test_swipe_up                                           [PASS]
+  test_swipe_down                                         [PASS]
+  test_small_movement_is_tap_not_swipe                    [PASS]
+  test_pinch_out                                          [PASS]
+  test_pinch_in                                           [PASS]
+  test_pinch_below_threshold_no_event                     [PASS]
+  test_zero_count_noop                                    [PASS]
+  test_custom_swipe_threshold                             [PASS]
+  test_custom_long_press_threshold                        [PASS]
+  test_event_fields_swipe                                 [PASS]
+  test_callback_context_forwarded                         [PASS]
+  test_multiple_callbacks_selective_delivery              [PASS]
+  test_diagonal_dominant_axis                             [PASS]
+
+25/25 tests passed
+<end of output>
+Test time =   0.00 sec
+----------------------------------------------------------
+Test Passed.
+"test_ui_gesture" end time: May 27 08:44 UTC
+"test_ui_gesture" time elapsed: 00:00:00
+----------------------------------------------------------
+
+16/19 Testing: test_power
+16/19 Test: test_power
+Command: "/home/ubuntu/embeddedos/eos/build_coverage/tests/test_power"
+Directory: /home/ubuntu/embeddedos/eos/build_coverage/tests
+"test_power" start time: May 27 08:44 UTC
+Output:
+----------------------------------------------------------
+=== EoS Power Management Tests ===
+[PASS] power init/deinit
+[PASS] power init null
+[PASS] power default mode RUN
+[PASS] power enter sleep
+[PASS] power enter deep sleep
+[PASS] power set wake sources
+[PASS] power battery mv
+[PASS] power battery pct <= 100
+[PASS] power battery info
+[PASS] power battery info null
+[PASS] power periph enable
+[PASS] power periph disable
+[PASS] power periph invalid id
+[PASS] power cpu freq
+
+=== ALL 14 POWER TESTS PASSED ===
+<end of output>
+Test time =   0.00 sec
+----------------------------------------------------------
+Test Passed.
+"test_power" end time: May 27 08:44 UTC
+"test_power" time elapsed: 00:00:00
+----------------------------------------------------------
+
+17/19 Testing: test_net
+17/19 Test: test_net
+Command: "/home/ubuntu/embeddedos/eos/build_coverage/tests/test_net"
+Directory: /home/ubuntu/embeddedos/eos/build_coverage/tests
+"test_net" start time: May 27 08:44 UTC
+Output:
+----------------------------------------------------------
+=== EoS Networking Tests ===
+[PASS] net init/deinit
+[PASS] net socket TCP
+[PASS] net socket UDP
+[PASS] net bind
+[PASS] net listen
+[PASS] net close
+[PASS] net close invalid
+[PASS] net resolve (no crash)
+[PASS] net resolve null
+[PASS] net send (no crash)
+[PASS] net recv (no crash)
+[PASS] http get (no crash)
+[PASS] http post (no crash)
+[PASS] mqtt connect (no crash)
+[PASS] mdns init/deinit
+
+=== ALL 15 NET TESTS PASSED ===
+<end of output>
+Test time =   0.00 sec
+----------------------------------------------------------
+Test Passed.
+"test_net" end time: May 27 08:44 UTC
+"test_net" time elapsed: 00:00:00
+----------------------------------------------------------
+
+18/19 Testing: test_motor_ctrl
+18/19 Test: test_motor_ctrl
+Command: "/home/ubuntu/embeddedos/eos/build_coverage/tests/test_motor_ctrl"
+Directory: /home/ubuntu/embeddedos/eos/build_coverage/tests
+"test_motor_ctrl" start time: May 27 08:44 UTC
+Output:
+----------------------------------------------------------
+=== EoS Motor Control Tests ===
+[PASS] motor init/deinit
+[PASS] motor configure
+[PASS] motor configure null
+[PASS] motor set speed
+[PASS] motor set position
+[PASS] motor move relative
+[PASS] motor stop
+[PASS] motor emergency stop
+[PASS] motor reset position
+[PASS] motor get status
+[PASS] motor get status null
+[PASS] motor remove
+[PASS] motor update loop
+[PASS] motor set PID
+[PASS] motor trajectory
+
+=== ALL 15 MOTOR TESTS PASSED ===
+<end of output>
+Test time =   0.00 sec
+----------------------------------------------------------
+Test Passed.
+"test_motor_ctrl" end time: May 27 08:44 UTC
+"test_motor_ctrl" time elapsed: 00:00:00
+----------------------------------------------------------
+
+19/19 Testing: test_package
+19/19 Test: test_package
+Command: "/home/ubuntu/embeddedos/eos/build_coverage/tests/test_package"
+Directory: /home/ubuntu/embeddedos/eos/build_coverage/tests
+"test_package" start time: May 27 08:44 UTC
+Output:
+----------------------------------------------------------
+=== EoS Package Tests ===
+[PASS] package register
+[PASS] package find
+[PASS] package find not found
+[PASS] package find null set
+[PASS] package register multiple
+[PASS] package init all
+[PASS] package build type
+
+=== ALL 7 PACKAGE TESTS PASSED ===
+<end of output>
+Test time =   0.01 sec
+----------------------------------------------------------
+Test Passed.
+"test_package" end time: May 27 08:44 UTC
+"test_package" time elapsed: 00:00:00
+----------------------------------------------------------
+
+End testing: May 27 08:44 UTC

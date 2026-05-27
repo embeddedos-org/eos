@@ -1,0 +1,1 @@
+/usr/bin/cc -DEOS_ENABLE_MULTICORE=1 -DEOS_ENABLE_FILESYSTEM=1 -DEOS_ENABLE_SENSOR=1 --coverage -fprofile-arcs -ftest-coverage --coverage CMakeFiles/test_graph.dir/test_graph.c.o -o test_graph  ../core/libeos_core.a 

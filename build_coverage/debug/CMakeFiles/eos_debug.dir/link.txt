@@ -1,0 +1,2 @@
+/usr/bin/ar qc libeos_debug.a CMakeFiles/eos_debug.dir/src/gdb_stub.c.o CMakeFiles/eos_debug.dir/src/coredump.c.o
+/usr/bin/ranlib libeos_debug.a

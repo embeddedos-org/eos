@@ -1,0 +1,1 @@
+/usr/bin/cc -DEOS_ENABLE_MULTICORE=1 -DEOS_ENABLE_FILESYSTEM=1 -DEOS_ENABLE_SENSOR=1 --coverage -fprofile-arcs -ftest-coverage --coverage CMakeFiles/test_motor_ctrl.dir/test_motor_ctrl.c.o -o test_motor_ctrl  ../services/motor/libeos_motor_ctrl.a -lm ../libeos_hal.a 

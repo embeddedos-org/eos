@@ -1,0 +1,20 @@
+test_config 2 0.00302966
+test_graph 2 0.000915445
+test_hal 2 0.000843812
+test_kernel 2 0.00084857
+test_multicore 2 0.000889942
+test_drivers 2 0.000818716
+test_crypto 2 0.000924947
+test_security 2 0.00108805
+test_os_services 2 0.00109256
+test_ota 2 0.000854602
+test_sensor 2 0.000842926
+test_filesystem 2 0.000890546
+test_service 2 0.000857268
+test_debug 2 0.0009275
+test_ui_gesture 2 0.000843236
+test_power 2 0.000830489
+test_net 2 0.000850336
+test_motor_ctrl 2 0.000817136
+test_package 2 0.00278726
+---

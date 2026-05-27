@@ -1,0 +1,2 @@
+/usr/bin/ar qc libeos_filesystem.a CMakeFiles/eos_filesystem.dir/src/filesystem.c.o
+/usr/bin/ranlib libeos_filesystem.a
