@@ -1,0 +1,2 @@
+/usr/bin/ar qc libeos_rtos_security.a CMakeFiles/eos_rtos_security.dir/src/rtos_security.c.o
+/usr/bin/ranlib libeos_rtos_security.a

@@ -1,0 +1,2 @@
+/usr/bin/ar qc libeos_net.a CMakeFiles/eos_net.dir/net/src/net.c.o
+/usr/bin/ranlib libeos_net.a

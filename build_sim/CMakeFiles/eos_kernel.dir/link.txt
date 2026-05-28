@@ -1,0 +1,2 @@
+/usr/bin/ar qc libeos_kernel.a CMakeFiles/eos_kernel.dir/kernel/src/task.c.o CMakeFiles/eos_kernel.dir/kernel/src/sync.c.o CMakeFiles/eos_kernel.dir/kernel/src/ipc.c.o CMakeFiles/eos_kernel.dir/kernel/src/multicore.c.o
+/usr/bin/ranlib libeos_kernel.a

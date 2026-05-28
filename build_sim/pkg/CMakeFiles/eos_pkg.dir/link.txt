@@ -1,0 +1,2 @@
+/usr/bin/ar qc libeos_pkg.a CMakeFiles/eos_pkg.dir/src/package.c.o CMakeFiles/eos_pkg.dir/src/fetch.c.o
+/usr/bin/ranlib libeos_pkg.a
