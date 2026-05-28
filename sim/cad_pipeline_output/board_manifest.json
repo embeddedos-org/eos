@@ -1,0 +1,133 @@
+{
+  "board": "EoS Reference Board v1.0",
+  "revision": "1.0",
+  "cpu": {
+    "arch": "aarch64",
+    "core": "cortex-a57",
+    "freq_mhz": 1000
+  },
+  "memory_regions": [
+    {
+      "name": "FLASH_NOR",
+      "base": "0x0",
+      "size": "0x4000000",
+      "flags": "rx"
+    },
+    {
+      "name": "SRAM_BOOT",
+      "base": "0x20000000",
+      "size": "0x10000",
+      "flags": "rwx"
+    },
+    {
+      "name": "PERIPH_BASE",
+      "base": "0x8000000",
+      "size": "0x2000000",
+      "flags": "rw"
+    },
+    {
+      "name": "UART0_PL011",
+      "base": "0x9000000",
+      "size": "0x1000",
+      "flags": "rw"
+    },
+    {
+      "name": "WDT_SP805",
+      "base": "0x10000000",
+      "size": "0x1000",
+      "flags": "rw"
+    },
+    {
+      "name": "GIC_DIST",
+      "base": "0x8000000",
+      "size": "0x10000",
+      "flags": "rw"
+    },
+    {
+      "name": "GIC_CPU",
+      "base": "0x8010000",
+      "size": "0x10000",
+      "flags": "rw"
+    },
+    {
+      "name": "RAM_LPDDR4",
+      "base": "0x40000000",
+      "size": "0x20000000",
+      "flags": "rwx"
+    },
+    {
+      "name": "HEAP_REGION",
+      "base": "0x48000000",
+      "size": "0x2000000",
+      "flags": "rw"
+    },
+    {
+      "name": "OTA_SCRATCH",
+      "base": "0x50000000",
+      "size": "0x10000",
+      "flags": "rw"
+    },
+    {
+      "name": "FRAMEBUFFER",
+      "base": "0x3c000000",
+      "size": "0x800000",
+      "flags": "rw"
+    }
+  ],
+  "peripherals": [
+    {
+      "name": "unknown",
+      "compatible": "unknown",
+      "base": "0x0",
+      "irq": -1
+    },
+    {
+      "name": "unknown",
+      "compatible": "unknown",
+      "base": "0x0",
+      "irq": -1
+    },
+    {
+      "name": "unknown",
+      "compatible": "unknown",
+      "base": "0x0",
+      "irq": -1
+    },
+    {
+      "name": "unknown",
+      "compatible": "unknown",
+      "base": "0x0",
+      "irq": -1
+    },
+    {
+      "name": "unknown",
+      "compatible": "unknown",
+      "base": "0x0",
+      "irq": -1
+    },
+    {
+      "name": "unknown",
+      "compatible": "unknown",
+      "base": "0x0",
+      "irq": -1
+    },
+    {
+      "name": "unknown",
+      "compatible": "unknown",
+      "base": "0x0",
+      "irq": -1
+    },
+    {
+      "name": "unknown",
+      "compatible": "unknown",
+      "base": "0x0",
+      "irq": -1
+    }
+  ],
+  "generated_artifacts": [
+    "eos_generated.ld",
+    "eos_generated.dts",
+    "eos_recipe.yaml",
+    "eos_toolchain.cmake"
+  ]
+}

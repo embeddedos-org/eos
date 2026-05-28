@@ -1,0 +1,2 @@
+aarch64-linux-gnu-ar qc libeos_datacenter.a CMakeFiles/eos_datacenter.dir/src/datacenter.c.o
+aarch64-linux-gnu-ranlib libeos_datacenter.a

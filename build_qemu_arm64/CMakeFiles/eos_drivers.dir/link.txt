@@ -1,0 +1,2 @@
+aarch64-linux-gnu-ar qc libeos_drivers.a CMakeFiles/eos_drivers.dir/drivers/src/driver_framework.c.o
+aarch64-linux-gnu-ranlib libeos_drivers.a

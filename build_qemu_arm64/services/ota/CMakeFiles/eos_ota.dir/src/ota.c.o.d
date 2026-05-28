@@ -1,0 +1,32 @@
+services/ota/CMakeFiles/eos_ota.dir/src/ota.c.o: \
+ /home/ubuntu/embeddedos/eos/services/ota/src/ota.c \
+ /usr/aarch64-linux-gnu/include/stdc-predef.h \
+ /home/ubuntu/embeddedos/eos/services/ota/include/eos/ota.h \
+ /usr/lib/gcc-cross/aarch64-linux-gnu/11/include/stdint.h \
+ /usr/aarch64-linux-gnu/include/stdint.h \
+ /usr/aarch64-linux-gnu/include/bits/libc-header-start.h \
+ /usr/aarch64-linux-gnu/include/features.h \
+ /usr/aarch64-linux-gnu/include/features-time64.h \
+ /usr/aarch64-linux-gnu/include/bits/wordsize.h \
+ /usr/aarch64-linux-gnu/include/bits/timesize.h \
+ /usr/aarch64-linux-gnu/include/sys/cdefs.h \
+ /usr/aarch64-linux-gnu/include/bits/long-double.h \
+ /usr/aarch64-linux-gnu/include/gnu/stubs.h \
+ /usr/aarch64-linux-gnu/include/gnu/stubs-lp64.h \
+ /usr/aarch64-linux-gnu/include/bits/types.h \
+ /usr/aarch64-linux-gnu/include/bits/typesizes.h \
+ /usr/aarch64-linux-gnu/include/bits/time64.h \
+ /usr/aarch64-linux-gnu/include/bits/wchar.h \
+ /usr/aarch64-linux-gnu/include/bits/stdint-intn.h \
+ /usr/aarch64-linux-gnu/include/bits/stdint-uintn.h \
+ /usr/lib/gcc-cross/aarch64-linux-gnu/11/include/stddef.h \
+ /usr/lib/gcc-cross/aarch64-linux-gnu/11/include/stdbool.h \
+ /home/ubuntu/embeddedos/eos/include/eos/eos_config.h \
+ /home/ubuntu/embeddedos/eos/products/computer.h \
+ /home/ubuntu/embeddedos/eos/services/crypto/include/eos/crypto.h \
+ /usr/aarch64-linux-gnu/include/string.h \
+ /usr/aarch64-linux-gnu/include/bits/types/locale_t.h \
+ /usr/aarch64-linux-gnu/include/bits/types/__locale_t.h \
+ /usr/aarch64-linux-gnu/include/strings.h \
+ /usr/aarch64-linux-gnu/include/bits/strings_fortified.h \
+ /usr/aarch64-linux-gnu/include/bits/string_fortified.h

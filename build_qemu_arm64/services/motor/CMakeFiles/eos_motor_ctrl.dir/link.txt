@@ -1,0 +1,2 @@
+aarch64-linux-gnu-ar qc libeos_motor_ctrl.a CMakeFiles/eos_motor_ctrl.dir/src/motor_ctrl.c.o
+aarch64-linux-gnu-ranlib libeos_motor_ctrl.a

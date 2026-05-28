@@ -1,0 +1,78 @@
+# EoS ebuild Recipe — auto-generated from EoS Reference Board v1.0.kicad_pcb
+# DO NOT EDIT — regenerate with: ebuild cad_pipeline.py <board.kicad_pcb> <outdir>
+
+recipe:
+  name: eos-eos-reference-board-v1.0
+  version: 1.0
+  description: "EoS Reference Board v1.0 — EoS full-stack build"
+
+target:
+  arch: aarch64
+  cpu: cortex-a57
+  endian: little
+  fpu: neon-fp-armv8
+  freq_mhz: 1000
+  cross_compile: aarch64-linux-gnu-
+
+layers:
+  - name: ebuild
+    repo: ebuild
+    build: cmake
+
+  - name: eboot
+    repo: eBoot
+    build: cmake
+    depends: [ebuild]
+    cmake_args:
+      - -DBOARD=qemu_arm64
+      - -DCROSS_COMPILE=aarch64-linux-gnu-
+
+  - name: eos-kernel
+    repo: eos
+    build: cmake
+    depends: [eboot]
+    cmake_args:
+      - -DTARGET_ARCH=aarch64
+      - -DTARGET_CPU=cortex-a57
+      - -DCROSS_COMPILE=aarch64-linux-gnu-
+
+  - name: middleware
+    repos: [eAI, eNI, eosllm, eDB]
+    build: python
+    depends: [eos-kernel]
+
+  - name: apps
+    repos: [eVera, eBrowser, eIPC, eOffice, EoStudio, EoSim, eApps]
+    build: mixed
+    depends: [middleware]
+
+image:
+  linker_script: eos_generated.ld
+  device_tree: eos_generated.dts
+  entry: eos_kernel_entry
+  boot: _start
+  format: elf64
+  output: dist/eos-eos-reference-board-v1.0.elf
+
+memory_map:
+  FLASH_NOR: { base: 0x00000000, size: 0x04000000, flags: rx }
+  SRAM_BOOT: { base: 0x20000000, size: 0x00010000, flags: rwx }
+  PERIPH_BASE: { base: 0x08000000, size: 0x02000000, flags: rw }
+  UART0_PL011: { base: 0x09000000, size: 0x00001000, flags: rw }
+  WDT_SP805: { base: 0x10000000, size: 0x00001000, flags: rw }
+  GIC_DIST: { base: 0x08000000, size: 0x00010000, flags: rw }
+  GIC_CPU: { base: 0x08010000, size: 0x00010000, flags: rw }
+  RAM_LPDDR4: { base: 0x40000000, size: 0x20000000, flags: rwx }
+  HEAP_REGION: { base: 0x48000000, size: 0x02000000, flags: rw }
+  OTA_SCRATCH: { base: 0x50000000, size: 0x00010000, flags: rw }
+  FRAMEBUFFER: { base: 0x3c000000, size: 0x00800000, flags: rw }
+
+peripherals:
+  unknown: { compatible: "unknown", base: 0x00000000, irq: -1 }
+  unknown: { compatible: "unknown", base: 0x00000000, irq: -1 }
+  unknown: { compatible: "unknown", base: 0x00000000, irq: -1 }
+  unknown: { compatible: "unknown", base: 0x00000000, irq: -1 }
+  unknown: { compatible: "unknown", base: 0x00000000, irq: -1 }
+  unknown: { compatible: "unknown", base: 0x00000000, irq: -1 }
+  unknown: { compatible: "unknown", base: 0x00000000, irq: -1 }
+  unknown: { compatible: "unknown", base: 0x00000000, irq: -1 }

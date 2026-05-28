@@ -1,0 +1,2 @@
+aarch64-linux-gnu-ar qc libeos_ota.a CMakeFiles/eos_ota.dir/src/ota.c.o
+aarch64-linux-gnu-ranlib libeos_ota.a

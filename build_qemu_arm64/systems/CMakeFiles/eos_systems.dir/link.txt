@@ -1,0 +1,2 @@
+aarch64-linux-gnu-ar qc libeos_systems.a CMakeFiles/eos_systems.dir/src/system.c.o CMakeFiles/eos_systems.dir/src/rootfs.c.o CMakeFiles/eos_systems.dir/src/image.c.o CMakeFiles/eos_systems.dir/src/docs.c.o CMakeFiles/eos_systems.dir/src/firmware.c.o
+aarch64-linux-gnu-ranlib libeos_systems.a

@@ -1,0 +1,2 @@
+aarch64-linux-gnu-ar qc libeos_os_services.a CMakeFiles/eos_os_services.dir/src/os_services.c.o
+aarch64-linux-gnu-ranlib libeos_os_services.a

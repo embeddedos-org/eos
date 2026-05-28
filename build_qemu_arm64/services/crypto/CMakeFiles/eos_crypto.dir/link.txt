@@ -1,0 +1,2 @@
+aarch64-linux-gnu-ar qc libeos_crypto.a CMakeFiles/eos_crypto.dir/src/sha256.c.o CMakeFiles/eos_crypto.dir/src/crc.c.o CMakeFiles/eos_crypto.dir/src/aes.c.o CMakeFiles/eos_crypto.dir/src/rsa_ecc_sha512.c.o
+aarch64-linux-gnu-ranlib libeos_crypto.a

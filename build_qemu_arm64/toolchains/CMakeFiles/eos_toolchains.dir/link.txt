@@ -1,0 +1,2 @@
+aarch64-linux-gnu-ar qc libeos_toolchains.a CMakeFiles/eos_toolchains.dir/src/toolchain.c.o
+aarch64-linux-gnu-ranlib libeos_toolchains.a

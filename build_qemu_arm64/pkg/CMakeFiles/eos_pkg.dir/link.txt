@@ -1,0 +1,2 @@
+aarch64-linux-gnu-ar qc libeos_pkg.a CMakeFiles/eos_pkg.dir/src/package.c.o CMakeFiles/eos_pkg.dir/src/fetch.c.o
+aarch64-linux-gnu-ranlib libeos_pkg.a

@@ -1,0 +1,2 @@
+aarch64-linux-gnu-ar qc libeos_devicetree.a CMakeFiles/eos_devicetree.dir/devicetree.c.o
+aarch64-linux-gnu-ranlib libeos_devicetree.a

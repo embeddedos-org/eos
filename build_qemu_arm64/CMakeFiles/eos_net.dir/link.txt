@@ -1,0 +1,2 @@
+aarch64-linux-gnu-ar qc libeos_net.a CMakeFiles/eos_net.dir/net/src/net.c.o
+aarch64-linux-gnu-ranlib libeos_net.a

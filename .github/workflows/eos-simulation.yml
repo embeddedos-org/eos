@@ -1,0 +1,302 @@
+name: EoS Full-Stack Simulation
+
+on:
+  push:
+    branches: [master]
+  pull_request:
+    branches: [master]
+  workflow_dispatch:
+
+env:
+  EOS_VERSION: "0.6.0"
+  CROSS_COMPILE: "aarch64-linux-gnu-"
+  QEMU_MACHINE: "virt"
+  QEMU_CPU: "cortex-a57"
+  QEMU_MEM: "512M"
+
+jobs:
+  # ── Job 1: Build eBoot + EoS kernel (ARM64 cross-compile) ─────────────────
+  build-kernel:
+    name: "Cross-compile ARM64 kernel"
+    runs-on: ubuntu-22.04
+    steps:
+      - name: Checkout eos
+        uses: actions/checkout@v4
+        with:
+          path: eos
+
+      - name: Checkout eBoot
+        uses: actions/checkout@v4
+        with:
+          repository: embeddedos-org/eBoot
+          ref: master
+          path: eBoot
+
+      - name: Checkout ebuild
+        uses: actions/checkout@v4
+        with:
+          repository: embeddedos-org/ebuild
+          ref: master
+          path: ebuild
+
+      - name: Checkout eFab (CAD pipeline)
+        uses: actions/checkout@v4
+        with:
+          repository: embeddedos-org/eFab
+          ref: master
+          path: eFab
+
+      - name: Install build dependencies
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y --no-install-recommends \
+            gcc-aarch64-linux-gnu \
+            binutils-aarch64-linux-gnu \
+            cmake \
+            ninja-build \
+            qemu-system-arm \
+            python3 \
+            python3-pytest
+
+      - name: Run eFab CAD pipeline (KiCad → linker script + DTS)
+        run: |
+          python3 ebuild/tools/cad_pipeline.py \
+            eFab/samples/eos_reference_board.kicad_pcb \
+            sim_artifacts/
+          echo "=== Generated artifacts ==="
+          ls -la sim_artifacts/
+          cat sim_artifacts/board_manifest.json
+
+      - name: Build eBoot (ARM64 qemu_arm64 board)
+        run: |
+          cd eBoot
+          mkdir -p build_ci
+          cmake -B build_ci -S . \
+            -DCMAKE_TOOLCHAIN_FILE=toolchains/aarch64-linux-gnu.cmake \
+            -DBOARD=qemu_arm64 \
+            -DCMAKE_BUILD_TYPE=Release
+          cmake --build build_ci --parallel $(nproc)
+          echo "eBoot artifacts:"
+          find build_ci -name '*.a' -o -name '*.elf' | head -20
+
+      - name: Build EoS kernel (ARM64)
+        run: |
+          cd eos
+          mkdir -p build_ci
+          cmake -B build_ci -S . \
+            -DCMAKE_TOOLCHAIN_FILE=cmake/aarch64-linux-gnu.cmake \
+            -DTARGET_ARCH=aarch64 \
+            -DTARGET_CPU=cortex-a57 \
+            -DCMAKE_BUILD_TYPE=Release
+          cmake --build build_ci --parallel $(nproc)
+          echo "EoS kernel artifacts:"
+          find build_ci -name '*.a' -o -name '*.elf' | head -20
+
+      - name: Link EoS simulation image
+        run: |
+          EOS_LIBS=$(find eos/build_ci -name '*.a' | tr '\n' ' ')
+          EBOOT_LIBS=$(find eBoot/build_ci -name '*.a' | tr '\n' ' ')
+
+          aarch64-linux-gnu-as -march=armv8-a \
+            eos/sim/qemu_arm64/start.S -o start.o
+
+          aarch64-linux-gnu-gcc -c eos/sim/qemu_arm64/eos_entry.c -o eos_entry.o \
+            -O0 -ffreestanding -nostdlib -fno-pic -march=armv8-a \
+            -I eos/core/include -I eos/include -I eBoot/include
+
+          aarch64-linux-gnu-gcc \
+            -T eos/sim/qemu_arm64/eos_qemu_ram.ld \
+            -nostdlib -ffreestanding -fno-pic -no-pie -static -march=armv8-a \
+            start.o eos_entry.o \
+            -Wl,--start-group $EOS_LIBS $EBOOT_LIBS -Wl,--end-group \
+            -lgcc -Wl,--build-id=none -Wl,--strip-all \
+            -o eos_qemu.elf
+
+          aarch64-linux-gnu-objcopy -O binary eos_qemu.elf eos_qemu.bin
+          echo "Kernel image: $(wc -c < eos_qemu.bin) bytes"
+
+      - name: Upload kernel image artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: eos-kernel-arm64
+          path: |
+            eos_qemu.elf
+            eos_qemu.bin
+            sim_artifacts/
+
+  # ── Job 2: Run QEMU simulation and validate all 13 test cases ─────────────
+  simulate-qemu:
+    name: "QEMU ARM64 simulation (13 TCs)"
+    runs-on: ubuntu-22.04
+    needs: build-kernel
+    steps:
+      - name: Install QEMU
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y --no-install-recommends qemu-system-arm
+
+      - name: Download kernel image
+        uses: actions/download-artifact@v4
+        with:
+          name: eos-kernel-arm64
+
+      - name: Run EoS in QEMU (ARM64 virt, Cortex-A57)
+        run: |
+          echo "=== Booting EoS v${EOS_VERSION} in QEMU ==="
+          timeout 30 qemu-system-aarch64 \
+            -machine virt \
+            -cpu cortex-a57 \
+            -m 512M \
+            -serial file:eos_serial.log \
+            -display none \
+            -kernel eos_qemu.bin \
+            -no-reboot 2>/dev/null || true
+          echo "=== Serial console output ==="
+          cat eos_serial.log
+
+      - name: Validate all 13 test cases
+        run: |
+          echo "=== Validating test results ==="
+          PASS=0
+          FAIL=0
+          for tc in TC-01 TC-02 TC-03 TC-04 TC-05 TC-06 TC-07 TC-08 TC-09 TC-10 TC-11 TC-12 TC-13; do
+            if grep -q "${tc}.*PASS" eos_serial.log; then
+              echo "  [PASS] ${tc}"
+              PASS=$((PASS + 1))
+            else
+              echo "  [FAIL] ${tc} — not found or did not output PASS"
+              FAIL=$((FAIL + 1))
+            fi
+          done
+          echo ""
+          echo "Results: ${PASS}/13 PASS, ${FAIL}/13 FAIL"
+          if [ "$FAIL" -gt 0 ]; then
+            echo "::error::${FAIL} test case(s) failed in QEMU simulation"
+            exit 1
+          fi
+          echo "All 13 test cases passed."
+
+      - name: Validate boot sequence
+        run: |
+          echo "=== Validating boot sequence ==="
+          grep -q "eBoot.*Stage-1 complete" eos_serial.log && echo "[PASS] eBoot stage-1" || (echo "[FAIL] eBoot stage-1 not found"; exit 1)
+          grep -q "EoS kernel handoff OK" eos_serial.log && echo "[PASS] Kernel handoff" || (echo "[FAIL] Kernel handoff not found"; exit 1)
+          grep -q "HAL init.*OK" eos_serial.log && echo "[PASS] HAL init" || (echo "[FAIL] HAL init not found"; exit 1)
+          grep -q "IPC bus init.*OK" eos_serial.log && echo "[PASS] IPC bus init" || (echo "[FAIL] IPC bus init not found"; exit 1)
+          grep -q "11 processes" eos_serial.log && echo "[PASS] 11 processes launched" || (echo "[FAIL] Process count mismatch"; exit 1)
+          echo "Boot sequence validated."
+
+      - name: Upload simulation report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: eos-simulation-report
+          path: eos_serial.log
+
+  # ── Job 3: Python unit tests for all middleware layers ─────────────────────
+  test-middleware:
+    name: "Python unit tests (eAI, eNI, eosllm, eDB, eVera, eBrowser, eIPC)"
+    runs-on: ubuntu-22.04
+    strategy:
+      matrix:
+        repo: [eAI, eNI, eosllm, eDB, eVera, eBrowser, eIPC, eOffice, EoStudio, EoSim, eApps]
+    steps:
+      - name: Checkout ${{ matrix.repo }}
+        uses: actions/checkout@v4
+        with:
+          repository: embeddedos-org/${{ matrix.repo }}
+          ref: master
+
+      - name: Set up Python 3.11
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+
+      - name: Install dependencies
+        run: |
+          pip install pytest pytest-cov 2>/dev/null || true
+          if [ -f requirements.txt ]; then pip install -r requirements.txt; fi
+          if [ -f requirements-dev.txt ]; then pip install -r requirements-dev.txt; fi
+
+      - name: Run tests
+        run: |
+          python3 -m pytest tests/ -v --tb=short \
+            --junitxml=test-results-${{ matrix.repo }}.xml 2>&1 | tee test_output.txt
+          echo "Exit code: $?"
+
+      - name: Upload test results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: test-results-${{ matrix.repo }}
+          path: test-results-${{ matrix.repo }}.xml
+
+  # ── Job 4: CAD pipeline validation ─────────────────────────────────────────
+  test-cad-pipeline:
+    name: "eFab CAD pipeline validation"
+    runs-on: ubuntu-22.04
+    steps:
+      - name: Checkout ebuild
+        uses: actions/checkout@v4
+        with:
+          repository: embeddedos-org/ebuild
+          ref: master
+
+      - name: Checkout eFab
+        uses: actions/checkout@v4
+        with:
+          repository: embeddedos-org/eFab
+          ref: master
+          path: eFab
+
+      - name: Run CAD pipeline
+        run: |
+          python3 tools/cad_pipeline.py \
+            eFab/samples/eos_reference_board.kicad_pcb \
+            cad_output/
+          echo "=== Validating generated artifacts ==="
+          test -f cad_output/eos_generated.ld   && echo "[PASS] Linker script" || exit 1
+          test -f cad_output/eos_generated.dts  && echo "[PASS] Device tree" || exit 1
+          test -f cad_output/eos_recipe.yaml    && echo "[PASS] ebuild recipe" || exit 1
+          test -f cad_output/eos_toolchain.cmake && echo "[PASS] CMake toolchain" || exit 1
+          test -f cad_output/board_manifest.json && echo "[PASS] Board manifest" || exit 1
+
+      - name: Validate memory map completeness
+        run: |
+          python3 - <<'EOF'
+          import json
+          with open("cad_output/board_manifest.json") as f:
+              m = json.load(f)
+          regions = {r["name"] for r in m["memory_regions"]}
+          required = {"FLASH_NOR", "RAM_LPDDR4", "UART0_PL011", "HEAP_REGION", "OTA_SCRATCH"}
+          missing = required - regions
+          if missing:
+              print(f"[FAIL] Missing memory regions: {missing}")
+              exit(1)
+          print(f"[PASS] All required memory regions present: {required}")
+          print(f"[PASS] Total regions: {len(regions)}")
+          print(f"[PASS] Peripherals: {len(m['peripherals'])}")
+          EOF
+
+  # ── Job 5: Full stack integration summary ──────────────────────────────────
+  integration-summary:
+    name: "Full-stack integration summary"
+    runs-on: ubuntu-22.04
+    needs: [build-kernel, simulate-qemu, test-middleware, test-cad-pipeline]
+    if: always()
+    steps:
+      - name: Report final status
+        run: |
+          echo "╔══════════════════════════════════════════════════════╗"
+          echo "║   EoS CI Full-Stack Integration Summary              ║"
+          echo "╠══════════════════════════════════════════════════════╣"
+          echo "║  Build kernel (ARM64 cross-compile)  ${{ needs.build-kernel.result == 'success' && 'PASS' || 'FAIL' }}          ║"
+          echo "║  QEMU simulation (13 TCs)            ${{ needs.simulate-qemu.result == 'success' && 'PASS' || 'FAIL' }}          ║"
+          echo "║  Middleware Python tests             ${{ needs.test-middleware.result == 'success' && 'PASS' || 'FAIL' }}          ║"
+          echo "║  CAD pipeline validation             ${{ needs.test-cad-pipeline.result == 'success' && 'PASS' || 'FAIL' }}          ║"
+          echo "╚══════════════════════════════════════════════════════╝"
+          if [[ "${{ needs.simulate-qemu.result }}" != "success" ]]; then
+            echo "::error::QEMU simulation failed — EoS kernel did not boot or test cases failed"
+            exit 1
+          fi

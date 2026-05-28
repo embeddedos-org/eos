@@ -1,0 +1,2 @@
+aarch64-linux-gnu-ar qc libeos_hal.a CMakeFiles/eos_hal.dir/hal/src/hal_common.c.o CMakeFiles/eos_hal.dir/hal/src/hal_extended_stubs.c.o CMakeFiles/eos_hal.dir/hal/src/hal_rtos.c.o
+aarch64-linux-gnu-ranlib libeos_hal.a
