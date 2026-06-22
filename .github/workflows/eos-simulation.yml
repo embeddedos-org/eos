@@ -21,26 +21,26 @@ jobs:
     runs-on: ubuntu-22.04
     steps:
       - name: Checkout eos
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
         with:
           path: eos
 
       - name: Checkout eBoot
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
         with:
           repository: embeddedos-org/eBoot
           ref: master
           path: eBoot
 
       - name: Checkout ebuild
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
         with:
           repository: embeddedos-org/ebuild
           ref: master
           path: ebuild
 
       - name: Checkout eFab (CAD pipeline)
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
         with:
           repository: embeddedos-org/eFab
           ref: master
@@ -202,7 +202,7 @@ jobs:
         repo: [eAI, eNI, eosllm, eDB, eVera, eBrowser, eIPC, eOffice, EoStudio, EoSim, eApps]
     steps:
       - name: Checkout ${{ matrix.repo }}
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
         with:
           repository: embeddedos-org/${{ matrix.repo }}
           ref: master
@@ -238,13 +238,13 @@ jobs:
     runs-on: ubuntu-22.04
     steps:
       - name: Checkout ebuild
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
         with:
           repository: embeddedos-org/ebuild
           ref: master
 
       - name: Checkout eFab
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
         with:
           repository: embeddedos-org/eFab
           ref: master

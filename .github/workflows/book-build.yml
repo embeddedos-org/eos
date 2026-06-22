@@ -35,7 +35,7 @@ jobs:
       lines: ${{ steps.check.outputs.lines }}
       has_book: ${{ steps.check.outputs.has_book }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       - name: Check book source
         id: check
@@ -82,7 +82,7 @@ jobs:
       pdf_name: ${{ steps.meta.outputs.pdf_name }}
       pdf_size: ${{ steps.verify.outputs.pdf_size }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       - name: Install pandoc & LaTeX
         run: |
