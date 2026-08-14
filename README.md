@@ -1,59 +1,85 @@
-# EoS RTOS Kernel
+# EoS — Embedded OS Framework
 
-[![Production Ready](https://img.shields.io/badge/Status-Production%20Ready-success?style=for-the-badge)](https://github.com/embeddedos-org/eos)
-[![Build Status](https://img.shields.io/badge/Build-Passing-success?style=for-the-badge)](https://github.com/embeddedos-org/eos/actions)
-[![Test Coverage](https://img.shields.io/badge/Coverage-100%25-success?style=for-the-badge)](https://github.com/embeddedos-org/eos)
-[![GPS API](https://img.shields.io/badge/GPS%20API-Integrated-blue?style=for-the-badge)](https://github.com/embeddedos-org/eos)
+[![CI](https://github.com/embeddedos-org/eos/actions/workflows/ci.yml/badge.svg)](https://github.com/embeddedos-org/eos/actions/workflows/ci.yml)
+[![CodeQL](https://github.com/embeddedos-org/eos/actions/workflows/codeql.yml/badge.svg)](https://github.com/embeddedos-org/eos/actions/workflows/codeql.yml)
+[![Scorecard](https://github.com/embeddedos-org/eos/actions/workflows/scorecard.yml/badge.svg)](https://github.com/embeddedos-org/eos/actions/workflows/scorecard.yml)
+[![Release](https://github.com/embeddedos-org/eos/actions/workflows/release.yml/badge.svg)](https://github.com/embeddedos-org/eos/actions/workflows/release.yml)
+[![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 
-World's Most Capable Embedded RTOS. Engineered to meet the highest standards of production readiness, performance, and security.
+EoS is a multi-platform embedded OS framework written in pure C11. A single
+source tree provides a lightweight RTOS kernel, a hardware abstraction layer
+(HAL) with host (Linux) and bare-metal backends, a driver framework, and
+networking, power-management, and runtime-service layers. It targets Linux hosts
+and bare-metal MCUs through a HAL split, and carries descriptors for 83 boards
+and 40+ product profiles selected at configure time.
 
----
+EoS is the OS core of the **EmbeddedOS** ([embeddedos-org](https://github.com/embeddedos-org))
+ecosystem, alongside [eBoot](https://github.com/embeddedos-org/eBoot) (secure
+bootloader), [eAI](https://github.com/embeddedos-org/eAI) (on-device AI), and
+[eNI](https://github.com/embeddedos-org/eNI) (neural interface). Project version
+0.5.0.
 
-## 🚀 World-Class Simulation & Analytics
+## What's inside
 
-### Real-Time Emulation Dashboard
-Below is the real-time simulation dashboard generated from our production test suite. It displays comprehensive latency profiles, coverage heatmaps, and scheduling performance.
+| Path | Contents |
+|------|----------|
+| `kernel/` | Tasks, sync primitives, IPC, multicore — builds `eos_kernel` |
+| `hal/` | Hardware abstraction layer; platform split (`hal_linux.c` / `hal_rtos.c`) — builds `eos_hal` |
+| `drivers/` | Driver framework and the `devicetree/` parser — builds `eos_drivers` |
+| `net/` | Networking abstraction — builds `eos_net` |
+| `power/` | Power-management abstraction — builds `eos_power` |
+| `core/` | OS config, logging, layer plumbing |
+| `services/` | Runtime services: `crypto`, `security`, `os`, `linux`, `linux_ipc`, `gps`, `motor`, `ota`, `filesystem`, `sensor`, `ui`, `init`, and more |
+| `systems/` | Rootfs, image, and firmware assembly |
+| `boards/` | 83 board descriptor files (`boards/*.yaml`) plus linker scripts |
+| `products/` | ~40 product-profile headers selected by `EOS_PRODUCT` |
+| `layers/` | `ai`, `bsp`, `core`, `distro`, `product`, `rtos` layer definitions |
+| `toolchains/`, `cmake/` | Cross-compile toolchain and helper CMake files |
+| `backends/`, `sim/`, `pkg/`, `debug/` | Backend abstraction, simulation, packaging, and debug (GDB stub, core dump) |
+| `examples/` | 13 example apps (`blink-gpio`, `ble-sensor`, `multitask-rtos`, `secure-ota`, …) |
+| `tests/` | C unit tests plus `functional/`, `fuzz/`, `performance/`, `simulation/` |
 
-![Emulation Dashboard](docs/screenshots/eos_simulation.png)
+## Build
 
-### Unified Organization Health Matrix
-We continuously benchmark EoS RTOS Kernel against the entire EmbeddedOS ecosystem to ensure flawless interoperability.
+Requires CMake ≥ 3.16 and a C11 compiler (GCC/Clang; MSVC on Windows). C only —
+the project declares `LANGUAGES C`.
 
-![Overall Dashboard](docs/screenshots/overall_dashboard.png)
-
----
-
-## 🎬 Product Marketing Video (App Store Proof of Production)
-
-Experience EoS RTOS Kernel in action! Watch our high-fidelity product demonstration and marketing video:
-
-> 🎥 **[Watch the EoS RTOS Kernel Product Video](docs/videos/eos_marketing.mp4)**
-
----
-
-## 🛠️ Production-Grade Architecture
-
-- **Domain**: C • ARM • RISC-V • x86
-- **GPS Integration**: Production-grade geolocation and time synchronization APIs integrated.
-- **Benchmarks**: Outperforms leading industry standards including **Zephyr RTOS, FreeRTOS, Linux**.
-
----
-
-## 🧪 Comprehensive Test Suite
-
-This repository features **100% test coverage** across four critical categories:
-1. **Unit Tests**: Full functional coverage of core components.
-2. **Functional E2E Tests**: End-to-end integration and boundary input robustness.
-3. **Performance Benchmarks**: Nanosecond-precision latency profiling.
-4. **Hardware Simulation**: High-fidelity peripheral and register emulation.
-
-To run the entire suite locally:
 ```bash
+cmake -B build/host -DCMAKE_BUILD_TYPE=Release
+cmake --build build/host --parallel
+```
+
+### Build options
+
+| Option | Default | Meaning |
+|--------|---------|---------|
+| `EOS_BUILD_TESTS` | `OFF` | Enable `ctest` and build `tests/` |
+| `EOS_PLATFORM` | `linux` | Target platform: `linux` \| `rtos` (selects the HAL backend) |
+| `EOS_PRODUCT` | *(empty)* | One of ~40 product profiles; empty = full build |
+
+`EOS_PLATFORM` resolves to the host HAL when set to `linux` or when not
+cross-compiling.
+
+## Test
+
+```bash
+# C unit tests
+cmake -B build/host -DEOS_BUILD_TESTS=ON
+cmake --build build/host --parallel
+ctest --test-dir build/host --output-on-failure
+
+# Python suites (unit/functional/performance/simulation, via pytest)
 python run_all_tests.py
 ```
 
----
+## Getting started
 
-## 📜 License & Compliance
+- [`GETTING_STARTED.md`](GETTING_STARTED.md) — from host build to flashing an nRF52 or STM32
+- [`examples/`](examples/) — runnable example applications
+- [`AGENTS.md`](AGENTS.md) — repo orientation map (targets, options, file map, gotchas)
+- [`DEPLOYMENT.md`](DEPLOYMENT.md) — deployment notes
+- [`docs/`](docs/) — full documentation set (`mkdocs.yml`); API docs via `Doxyfile`
 
-Licensed under the MIT License. Aligned with ISO/IEC 25000 software quality standards.
+## License
+
+Licensed under the [MIT License](LICENSE).
