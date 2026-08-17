@@ -5,10 +5,20 @@ on:
     types: [opened]
 
 permissions:
+  issues: write
   pull-requests: write
 
 jobs:
   assign:
+    # Skip the cases where assignment can never succeed, rather than failing:
+    #   * Fork PRs get a read-only GITHUB_TOKEN, so addAssignees returns 403
+    #     'Resource not accessible by integration' regardless of the
+    #     permissions granted below.
+    #   * Bot accounts such as dependabot[bot] are not assignable and return
+    #     403 Forbidden.
+    if: >-
+      github.event.pull_request.head.repo.full_name == github.repository
+      && github.event.pull_request.user.type != 'Bot'
     runs-on: ubuntu-latest
     steps:
       - name: Assign PR to author
