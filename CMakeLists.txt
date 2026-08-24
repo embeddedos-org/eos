@@ -63,6 +63,7 @@ add_library(eos_kernel STATIC
     kernel/src/sync.c
     kernel/src/ipc.c
     kernel/src/multicore.c
+    kernel/src/mem/heap.c
 )
 
 target_include_directories(eos_kernel PUBLIC
