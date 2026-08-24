@@ -33,7 +33,9 @@ static queue_t g_q[EOS_MAX_QUEUES];
 int eos_queue_create(eos_queue_handle_t *out, size_t item_size, uint32_t capacity)
 {
     if (!out || item_size == 0 || capacity == 0) return EOS_KERN_INVALID;
-    if (item_size * capacity > sizeof(g_q[0]._storage)) return EOS_KERN_NO_MEMORY;
+    /* Compare via division so item_size * capacity cannot wrap size_t
+     * (e.g. item_size=0x10000000, capacity=16 on 32-bit targets). */
+    if (capacity > sizeof(g_q[0]._storage) / item_size) return EOS_KERN_NO_MEMORY;
 
     uint32_t crit = eos_port_enter_critical();
     for (int i = 0; i < EOS_MAX_QUEUES; i++) {

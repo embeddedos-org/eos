@@ -60,6 +60,15 @@ static void test_mutex(void) {
     assert(eos_mutex_unlock(m) == EOS_KERN_OK);
     assert(eos_mutex_delete(m) == EOS_KERN_OK);
     assert(eos_mutex_create(NULL) == EOS_KERN_INVALID);
+
+    assert(eos_mutex_create(&m) == EOS_KERN_OK);
+    for (int i = 0; i < 255; i++)
+        assert(eos_mutex_lock(m, 0) == EOS_KERN_OK);
+    assert(eos_mutex_lock(m, 0) == EOS_KERN_FULL);
+    for (int i = 0; i < 255; i++)
+        assert(eos_mutex_unlock(m) == EOS_KERN_OK);
+    assert(eos_mutex_unlock(m) == EOS_KERN_INVALID);
+    assert(eos_mutex_delete(m) == EOS_KERN_OK);
     printf("[PASS] mutex\n");
 }
 
@@ -79,6 +88,8 @@ static void test_semaphore(void) {
     assert(eos_sem_delete(s) == EOS_KERN_OK);
     assert(eos_sem_create(NULL, 1, 5) == EOS_KERN_INVALID);
     assert(eos_sem_create(&s, 0, 0) == EOS_KERN_INVALID);
+    assert(eos_sem_create(&s, 10, 5) == EOS_KERN_INVALID);
+    assert(eos_sem_create(&s, 1, 0x80000000u) == EOS_KERN_INVALID);
     printf("[PASS] semaphore\n");
 }
 
@@ -100,6 +111,10 @@ static void test_queue(void) {
     assert(eos_queue_delete(q) == EOS_KERN_OK);
     assert(eos_queue_create(NULL, 4, 4) == EOS_KERN_INVALID);
     assert(eos_queue_create(&q, 0, 4) == EOS_KERN_INVALID);
+    assert(eos_queue_create(&q, 64, 16) == EOS_KERN_OK);
+    assert(eos_queue_delete(q) == EOS_KERN_OK);
+    assert(eos_queue_create(&q, 64, 17) == EOS_KERN_NO_MEMORY);
+    assert(eos_queue_create(&q, (size_t)0x10000000u, 16u) == EOS_KERN_NO_MEMORY);
     printf("[PASS] queue\n");
 }
 
