@@ -34,6 +34,23 @@ add_executable(test_crypto test_crypto.c)
 target_link_libraries(test_crypto PRIVATE eos_crypto)
 add_test(NAME test_crypto COMMAND test_crypto)
 
+# --- test_crypto_aes / _ecc / _rsa / _sha512: were sitting in tests/ unused ---
+add_executable(test_crypto_aes test_crypto_aes.c)
+target_link_libraries(test_crypto_aes PRIVATE eos_crypto)
+add_test(NAME test_crypto_aes COMMAND test_crypto_aes)
+
+add_executable(test_crypto_ecc test_crypto_ecc.c)
+target_link_libraries(test_crypto_ecc PRIVATE eos_crypto)
+add_test(NAME test_crypto_ecc COMMAND test_crypto_ecc)
+
+add_executable(test_crypto_rsa test_crypto_rsa.c)
+target_link_libraries(test_crypto_rsa PRIVATE eos_crypto)
+add_test(NAME test_crypto_rsa COMMAND test_crypto_rsa)
+
+add_executable(test_crypto_sha512 test_crypto_sha512.c)
+target_link_libraries(test_crypto_sha512 PRIVATE eos_crypto)
+add_test(NAME test_crypto_sha512 COMMAND test_crypto_sha512)
+
 # --- test_security: Keystore, ACL ---
 add_executable(test_security test_security.c)
 target_link_libraries(test_security PRIVATE eos_security eos_crypto)

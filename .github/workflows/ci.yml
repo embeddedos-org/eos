@@ -35,8 +35,8 @@ jobs:
             -DCMAKE_BUILD_TYPE=$BUILD_TYPE \
             -DCMAKE_C_COMPILER=gcc-12 \
             -DCMAKE_CXX_COMPILER=g++-12 \
-            -DENABLE_COVERAGE=ON \
-            -DBUILD_TESTS=ON
+            -DEOS_BUILD_TESTS=ON \
+            -DEOS_PRODUCT=vbox_test
 
       - name: Build (host)
         run: cmake --build build/host --parallel $(nproc)
