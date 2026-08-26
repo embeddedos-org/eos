@@ -53,12 +53,6 @@ jobs:
             --cov=. --cov-report=xml --cov-report=term-missing
         continue-on-error: false
 
-      - name: Upload coverage
-        uses: codecov/codecov-action@v4
-        with:
-          files: coverage.xml
-          flags: eos
-
   # ── Cross-compile ARM Cortex-M4 ───────────────────────────────────────────
   build-arm:
     name: Cross-compile ARM Cortex-M4
