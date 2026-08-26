@@ -153,7 +153,7 @@ void eos_task_wake_check(uint32_t current_tick)
     for (int i = 0; i < EOS_MAX_TASKS; i++) {
         eos_task_t *t = &g_tasks[i];
         if (t->state == EOS_TASK_BLOCKED && t->wake_tick > 0 &&
-            current_tick >= t->wake_tick) {
+            (int32_t)(current_tick - t->wake_tick) >= 0) {
             t->state = EOS_TASK_READY;
             t->wake_tick = 0;
         }
@@ -341,6 +341,7 @@ void eos_task_delay_ms(uint32_t ms)
     if (g_current >= 0) {
         uint32_t crit = eos_port_enter_critical();
         g_tasks[g_current].wake_tick = g_tick + ms;
+        if (g_tasks[g_current].wake_tick == 0) g_tasks[g_current].wake_tick = 1;
         g_tasks[g_current].state = EOS_TASK_BLOCKED;
         eos_port_exit_critical(crit);
         eos_port_yield();
@@ -429,7 +430,7 @@ void eos_swtimer_tick(uint32_t current_tick)
     for (int i = 0; i < EOS_MAX_TIMERS; i++) {
         swtimer_t *t = &g_timers[i];
         if (!t->in_use || !t->active) continue;
-        if (current_tick >= t->next_tick) {
+        if ((int32_t)(current_tick - t->next_tick) >= 0) {
             t->callback((eos_swtimer_handle_t)i, t->ctx);
             if (t->auto_reload) {
                 t->next_tick = current_tick + t->period_ticks;
@@ -469,6 +470,7 @@ void eos_task_block_with_timeout(eos_task_handle_t h, uint32_t timeout_ms)
         g_tasks[h].wake_tick = 0;  /* Never auto-wake */
     } else {
         g_tasks[h].wake_tick = g_tick + timeout_ms;
+        if (g_tasks[h].wake_tick == 0) g_tasks[h].wake_tick = 1;
     }
 }
 
