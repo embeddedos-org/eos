@@ -111,8 +111,12 @@ All extended peripherals are conditionally compiled behind `EOS_ENABLE_*` flags.
 | Function | Description |
 |----------|-------------|
 | `eos_mutex_create(eos_mutex_handle_t *out)` | Create a mutex. |
-| `eos_mutex_lock(handle, timeout_ms)` | Lock with timeout. Use `EOS_WAIT_FOREVER`. Recursive; returns `EOS_KERN_FULL` if the nest count would wrap (`uint8_t` max). |
+| `eos_mutex_lock(handle, timeout_ms)` | Lock with timeout. Use `EOS_WAIT_FOREVER`. Recursive; returns `EOS_KERN_FULL` if the nest count would wrap (`uint8_t` max), or `EOS_KERN_NO_MEMORY` if the wait queue is full (8 waiters). |
 | `eos_mutex_unlock(handle)` | Unlock. |
+
+Mutexes apply priority inheritance, including transitively along a chain of
+blocked tasks, so priority inversion is bounded. See
+[ch06-kernel.md](book/part2-kernel-hal/ch06-kernel.md#priority-inheritance).
 
 ### Semaphore
 

@@ -80,6 +80,7 @@ typedef struct {
     const char *name;
     eos_task_state_t state;
     uint8_t priority;
+    uint8_t base_priority;
     uint32_t stack_size;
     eos_task_func_t entry;
     void *arg;
