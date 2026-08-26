@@ -108,6 +108,44 @@ eos_task_state_t  eos_task_get_state(eos_task_handle_t handle);
 const char       *eos_task_get_name(eos_task_handle_t handle);
 
 /* ============================================================
+ * Task Runtime Statistics
+ * ============================================================ */
+
+/**
+ * @brief Per-task runtime statistics snapshot.
+ *
+ * Populated by eos_task_get_stats() / eos_task_get_all_stats().
+ * Useful for debugging stack usage and CPU utilization on
+ * resource-constrained targets.
+ */
+typedef struct {
+    uint8_t          id;          /**< Task slot index */
+    const char      *name;       /**< Task name (may be NULL) */
+    uint8_t          priority;   /**< Current priority (0 = highest) */
+    eos_task_state_t state;      /**< Current task state */
+    uint32_t         run_count;  /**< Number of times the task was scheduled */
+    uint32_t         stack_used; /**< Estimated stack bytes consumed */
+    uint32_t         stack_size; /**< Total stack allocation in bytes */
+} eos_task_stats_t;
+
+/**
+ * @brief Get runtime statistics for a single task.
+ * @param handle  Task handle (slot index).
+ * @param out     Pointer to stats structure to fill.
+ * @return EOS_KERN_OK on success.
+ */
+int eos_task_get_stats(eos_task_handle_t handle, eos_task_stats_t *out);
+
+/**
+ * @brief Get runtime statistics for all active tasks.
+ * @param out         Array to fill with stats entries.
+ * @param max_entries Maximum number of entries in @p out.
+ * @param count       Output: actual number of entries written.
+ * @return EOS_KERN_OK on success.
+ */
+int eos_task_get_all_stats(eos_task_stats_t *out, int max_entries, int *count);
+
+/* ============================================================
  * Mutex
  * ============================================================ */
 

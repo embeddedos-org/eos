@@ -16,6 +16,28 @@
 #include "eos/mem.h"
 #include <string.h>
 
+/* ============================================================
+ * Overflow-Safe Tick Comparison
+ * ============================================================ */
+
+/**
+ * @brief Check whether a tick deadline has expired (overflow-safe).
+ *
+ * Uses unsigned subtraction so that the comparison works correctly
+ * even when the 32-bit tick counter wraps past UINT32_MAX.  This is
+ * the standard technique used by FreeRTOS, Zephyr, and the Linux
+ * kernel (time_after macro).  Valid for deadline distances up to
+ * INT32_MAX ticks (~24.8 days at 1 kHz).
+ *
+ * @param current  The current tick value.
+ * @param deadline The target tick at which the event should fire.
+ * @return true if the deadline has passed.
+ */
+static inline bool tick_expired(uint32_t current, uint32_t deadline)
+{
+    return (int32_t)(current - deadline) >= 0;
+}
+
 /* Stack canary value — placed at bottom of each task's stack */
 #define EOS_STACK_CANARY    0xDEADBEEFU
 
@@ -153,7 +175,7 @@ void eos_task_wake_check(uint32_t current_tick)
     for (int i = 0; i < EOS_MAX_TASKS; i++) {
         eos_task_t *t = &g_tasks[i];
         if (t->state == EOS_TASK_BLOCKED && t->wake_tick > 0 &&
-            current_tick >= t->wake_tick) {
+            tick_expired(current_tick, t->wake_tick)) {
             t->state = EOS_TASK_READY;
             t->wake_tick = 0;
         }
@@ -429,7 +451,7 @@ void eos_swtimer_tick(uint32_t current_tick)
     for (int i = 0; i < EOS_MAX_TIMERS; i++) {
         swtimer_t *t = &g_timers[i];
         if (!t->in_use || !t->active) continue;
-        if (current_tick >= t->next_tick) {
+        if (tick_expired(current_tick, t->next_tick)) {
             t->callback((eos_swtimer_handle_t)i, t->ctx);
             if (t->auto_reload) {
                 t->next_tick = current_tick + t->period_ticks;
@@ -477,4 +499,56 @@ void eos_task_unblock(eos_task_handle_t h)
     if (h >= EOS_MAX_TASKS) return;
     g_tasks[h].state = EOS_TASK_READY;
     g_tasks[h].wake_tick = 0;
+}
+
+/* ============================================================
+ * Runtime Statistics API
+ * ============================================================ */
+
+int eos_task_get_stats(eos_task_handle_t h, eos_task_stats_t *out)
+{
+    if (h >= EOS_MAX_TASKS || !out) return EOS_KERN_INVALID;
+    if (g_tasks[h].entry == NULL && h != 0) return EOS_KERN_INVALID;
+
+    out->id        = g_tasks[h].id;
+    out->name      = g_tasks[h].name;
+    out->priority  = g_tasks[h].priority;
+    out->state     = g_tasks[h].state;
+    out->run_count = g_tasks[h].run_count;
+    out->stack_size = g_tasks[h].stack_size;
+
+    /* Estimate stack usage: scan from base upward for canary/zero words */
+    if (g_tasks[h].stack_base && g_tasks[h].stack_size > 0) {
+        uint32_t total_words = g_tasks[h].stack_size / sizeof(uint32_t);
+        uint32_t unused_words = 0;
+        /* Skip word 0 (canary), count zero-filled words from bottom up */
+        for (uint32_t w = 1; w < total_words; w++) {
+            if (g_tasks[h].stack_base[w] == 0) {
+                unused_words++;
+            } else {
+                break;
+            }
+        }
+        uint32_t used_bytes = (total_words - 1 - unused_words) * sizeof(uint32_t);
+        out->stack_used = used_bytes;
+    } else {
+        out->stack_used = 0;
+    }
+
+    return EOS_KERN_OK;
+}
+
+int eos_task_get_all_stats(eos_task_stats_t *out, int max_entries, int *count)
+{
+    if (!out || max_entries <= 0 || !count) return EOS_KERN_INVALID;
+
+    int n = 0;
+    for (int i = 0; i < EOS_MAX_TASKS && n < max_entries; i++) {
+        if (g_tasks[i].entry != NULL || i == 0) {
+            eos_task_get_stats((eos_task_handle_t)i, &out[n]);
+            n++;
+        }
+    }
+    *count = n;
+    return EOS_KERN_OK;
 }
