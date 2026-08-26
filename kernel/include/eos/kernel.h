@@ -165,6 +165,7 @@ int eos_swtimer_delete(eos_swtimer_handle_t handle);
  * ============================================================ */
 
 void eos_kernel_tick(void);
+uint32_t eos_tick_get(void);
 
 #ifdef __cplusplus
 }
