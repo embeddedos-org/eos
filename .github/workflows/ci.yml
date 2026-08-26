@@ -2,10 +2,10 @@ name: CI — eos
 
 on:
   push:
-    branches: [main, develop]
+    branches: [master, main, develop]
     tags: ["v*"]
   pull_request:
-    branches: [main]
+    branches: [master, main]
 
 env:
   BUILD_TYPE: Release
@@ -79,7 +79,7 @@ jobs:
           cmake -B build/arm -G Ninja \
             -DCMAKE_BUILD_TYPE=$BUILD_TYPE \
             -DCMAKE_TOOLCHAIN_FILE=cmake/arm-cortex-m4.cmake \
-            -DBUILD_TESTS=OFF
+            -DEOS_BUILD_TESTS=OFF
 
       - name: Build (ARM)
         run: cmake --build build/arm --parallel $(nproc)
@@ -138,7 +138,7 @@ jobs:
         run: |
           cmake -B build/release -G Ninja \
             -DCMAKE_BUILD_TYPE=Release \
-            -DBUILD_TESTS=OFF
+            -DEOS_BUILD_TESTS=OFF
           cmake --build build/release --parallel $(nproc)
 
       - name: Package artifacts
