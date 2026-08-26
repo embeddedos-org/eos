@@ -9,8 +9,15 @@ static int passed = 0;
 
 static int dummy_init(void) { return 0; }
 
+/* EosPackageSet is EOS_MAX_PACKAGES * sizeof(EosPackage) = ~3.8 MB, which
+ * overflows the 1 MB default thread stack on Windows and on any other
+ * small-stack host, crashing these tests before main() gets to run them.
+ * Every set below is therefore static, matching how cmd/eos/main.c declares
+ * the same type. Each test memsets its set on entry, so nothing carries
+ * over between tests. */
+
 static void test_package_register(void) {
-    EosPackageSet set;
+    static EosPackageSet set;
     memset(&set, 0, sizeof(set));
     EosPackage pkg;
     memset(&pkg, 0, sizeof(pkg));
@@ -24,7 +31,7 @@ static void test_package_register(void) {
 }
 
 static void test_package_find(void) {
-    EosPackageSet set;
+    static EosPackageSet set;
     memset(&set, 0, sizeof(set));
     EosPackage pkg;
     memset(&pkg, 0, sizeof(pkg));
@@ -39,7 +46,7 @@ static void test_package_find(void) {
 }
 
 static void test_package_find_not_found(void) {
-    EosPackageSet set;
+    static EosPackageSet set;
     memset(&set, 0, sizeof(set));
     const EosPackage *found = eos_package_find(&set, "nonexistent");
     assert(found == NULL);
@@ -53,7 +60,7 @@ static void test_package_find_null(void) {
 }
 
 static void test_package_register_multiple(void) {
-    EosPackageSet set;
+    static EosPackageSet set;
     memset(&set, 0, sizeof(set));
     EosPackage p1, p2, p3;
     memset(&p1, 0, sizeof(p1));
@@ -76,7 +83,7 @@ static void test_package_register_multiple(void) {
 }
 
 static void test_package_init_all(void) {
-    EosPackageSet set;
+    static EosPackageSet set;
     memset(&set, 0, sizeof(set));
     EosPackage pkg;
     memset(&pkg, 0, sizeof(pkg));
@@ -90,7 +97,7 @@ static void test_package_init_all(void) {
 }
 
 static void test_package_build_type(void) {
-    EosPackageSet set;
+    static EosPackageSet set;
     memset(&set, 0, sizeof(set));
     EosPackage pkg;
     memset(&pkg, 0, sizeof(pkg));
