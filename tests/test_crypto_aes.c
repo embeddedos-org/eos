@@ -163,6 +163,109 @@ TEST(test_aes_different_keys_produce_different_ciphertext) {
     ASSERT(memcmp(out1, out2, 16) != 0);
 }
 
+/* A context whose key size was rejected must be inert, not half-built: every
+ * routine leaves the caller's buffer exactly as it found it. Encrypting under
+ * a schedule that was never expanded would emit blocks derived from whatever
+ * the context happened to contain. */
+static void assert_context_refuses(const EosAesCtx *ctx) {
+    const uint8_t in[16] = "sixteen bytes.!";
+    const uint8_t iv[16] = {0};
+    uint8_t out[16];
+    int i;
+
+    memset(out, 0x5A, sizeof(out));
+    eos_aes_encrypt_block(ctx, in, out);
+    for (i = 0; i < 16; i++) ASSERT(out[i] == 0x5A);
+
+    memset(out, 0x5A, sizeof(out));
+    eos_aes_decrypt_block(ctx, in, out);
+    for (i = 0; i < 16; i++) ASSERT(out[i] == 0x5A);
+
+    memset(out, 0x5A, sizeof(out));
+    eos_aes_cbc_encrypt(ctx, iv, in, out, 16);
+    for (i = 0; i < 16; i++) ASSERT(out[i] == 0x5A);
+
+    memset(out, 0x5A, sizeof(out));
+    eos_aes_cbc_decrypt(ctx, iv, in, out, 16);
+    for (i = 0; i < 16; i++) ASSERT(out[i] == 0x5A);
+}
+
+/* 512/32 = 16 round-key words per round over 23 rounds = 92 words, written
+ * into a 60-word rk[]. ASan reported a stack-buffer-overflow WRITE at rk[60]. */
+TEST(test_aes_rejects_oversized_key_bits) {
+    EosAesCtx ctx;
+    uint8_t key[64];
+
+    memset(key, 0xA5, sizeof(key));
+    eos_aes_init(&ctx, key, 512);
+    ASSERT(ctx.nr == 0);
+    assert_context_refuses(&ctx);
+}
+
+/* nk == 0 made the expansion loop read ctx->rk[-1] and then evaluate i % 0. */
+TEST(test_aes_rejects_zero_key_bits) {
+    EosAesCtx ctx;
+    uint8_t key[16];
+
+    memset(key, 0xA5, sizeof(key));
+    eos_aes_init(&ctx, key, 0);
+    ASSERT(ctx.nr == 0);
+    assert_context_refuses(&ctx);
+}
+
+/* nk == 2 drove rcon[i/nk] past the end of the 11-entry rcon[] table. */
+TEST(test_aes_rejects_short_key_bits) {
+    EosAesCtx ctx;
+    uint8_t key[16];
+
+    memset(key, 0xA5, sizeof(key));
+    eos_aes_init(&ctx, key, 64);
+    ASSERT(ctx.nr == 0);
+    assert_context_refuses(&ctx);
+}
+
+TEST(test_aes_rejects_negative_key_bits) {
+    EosAesCtx ctx;
+    uint8_t key[16];
+
+    memset(key, 0xA5, sizeof(key));
+    eos_aes_init(&ctx, key, -128);
+    ASSERT(ctx.nr == 0);
+    assert_context_refuses(&ctx);
+}
+
+TEST(test_aes_rejects_null_key) {
+    EosAesCtx ctx;
+
+    eos_aes_init(&ctx, NULL, 128);
+    ASSERT(ctx.nr == 0);
+    assert_context_refuses(&ctx);
+}
+
+/* The three standard sizes must still be accepted, 192 included: it has no
+ * NIST vector in this suite, so it is covered structurally here. */
+TEST(test_aes_accepts_standard_key_sizes) {
+    EosAesCtx ctx;
+    uint8_t key[32];
+    const uint8_t plain[16] = "192-bit key test";
+    uint8_t cipher[16], recovered[16];
+
+    memset(key, 0x5C, sizeof(key));
+
+    eos_aes_init(&ctx, key, 128);
+    ASSERT(ctx.nr == 10);
+
+    eos_aes_init(&ctx, key, 256);
+    ASSERT(ctx.nr == 14);
+
+    eos_aes_init(&ctx, key, 192);
+    ASSERT(ctx.nr == 12);
+    eos_aes_encrypt_block(&ctx, plain, cipher);
+    ASSERT(memcmp(cipher, plain, 16) != 0);
+    eos_aes_decrypt_block(&ctx, cipher, recovered);
+    ASSERT(memcmp(recovered, plain, 16) == 0);
+}
+
 int main(void) {
     printf("=== EoS: AES Encryption Unit Tests ===\n\n");
     run_test_aes128_ecb_encrypt();
@@ -175,7 +278,13 @@ int main(void) {
     run_test_aes256_cbc_roundtrip();
     run_test_aes_null_safety();
     run_test_aes_different_keys_produce_different_ciphertext();
-    tests_run = 10;
+    run_test_aes_rejects_oversized_key_bits();
+    run_test_aes_rejects_zero_key_bits();
+    run_test_aes_rejects_short_key_bits();
+    run_test_aes_rejects_negative_key_bits();
+    run_test_aes_rejects_null_key();
+    run_test_aes_accepts_standard_key_sizes();
+    tests_run = 16;
     printf("\n%d/%d tests passed\n", tests_passed, tests_run);
     return (tests_passed == tests_run) ? 0 : 1;
 }
