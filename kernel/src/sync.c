@@ -40,6 +40,33 @@ typedef struct {
 static mtx_t g_mtx[EOS_MAX_MUTEXES];
 static sem_t g_sem[EOS_MAX_SEMAPHORES];
 
+static void mtx_remove_waiter(mtx_t *m, uint8_t task)
+{
+    for (int i = 0; i < m->waiter_count; i++) {
+        if (m->waiters[i] == task) {
+            for (int j = i; j < m->waiter_count - 1; j++)
+                m->waiters[j] = m->waiters[j + 1];
+            m->waiter_count--;
+            break;
+        }
+    }
+}
+
+/* Recompute inherited priority from remaining waiters, or restore original. */
+static void mtx_recompute_owner_priority(mtx_t *m)
+{
+    if (m->owner == 0xFF)
+        return;
+
+    uint8_t prio = m->original_prio;
+    for (int i = 0; i < m->waiter_count; i++) {
+        uint8_t wp = eos_task_get_priority_internal(m->waiters[i]);
+        if (wp < prio)
+            prio = wp;
+    }
+    eos_task_set_priority_internal(m->owner, prio);
+}
+
 int eos_mutex_create(eos_mutex_handle_t *out)
 {
     if (!out) return EOS_KERN_INVALID;
@@ -92,6 +119,13 @@ int eos_mutex_lock(eos_mutex_handle_t h, uint32_t timeout_ms)
         return EOS_KERN_TIMEOUT;
     }
 
+    /* Waiter table full: fail without boosting, or the owner would stay
+     * elevated even though this caller is never queued. */
+    if (g_mtx[h].waiter_count >= MTX_MAX_WAITERS) {
+        eos_port_exit_critical(crit);
+        return EOS_KERN_NO_MEMORY;
+    }
+
     /* Priority inheritance: boost owner to caller's priority if higher */
     uint8_t caller_prio = eos_task_get_priority_internal(caller);
     uint8_t owner_prio = eos_task_get_priority_internal(g_mtx[h].owner);
@@ -99,10 +133,7 @@ int eos_mutex_lock(eos_mutex_handle_t h, uint32_t timeout_ms)
         eos_task_set_priority_internal(g_mtx[h].owner, caller_prio);
     }
 
-    /* Add caller to wait queue */
-    if (g_mtx[h].waiter_count < MTX_MAX_WAITERS) {
-        g_mtx[h].waiters[g_mtx[h].waiter_count++] = caller;
-    }
+    g_mtx[h].waiters[g_mtx[h].waiter_count++] = caller;
 
     /* Block the calling task */
     eos_task_block_with_timeout(caller, timeout_ms);
@@ -116,15 +147,10 @@ int eos_mutex_lock(eos_mutex_handle_t h, uint32_t timeout_ms)
         return EOS_KERN_OK;
     }
 
-    /* Timeout — remove from wait queue */
-    for (int i = 0; i < g_mtx[h].waiter_count; i++) {
-        if (g_mtx[h].waiters[i] == caller) {
-            for (int j = i; j < g_mtx[h].waiter_count - 1; j++)
-                g_mtx[h].waiters[j] = g_mtx[h].waiters[j + 1];
-            g_mtx[h].waiter_count--;
-            break;
-        }
-    }
+    /* Timeout — drop from the wait queue and drop the inheritance boost
+     * if this waiter was the reason the owner was running elevated. */
+    mtx_remove_waiter(&g_mtx[h], caller);
+    mtx_recompute_owner_priority(&g_mtx[h]);
     eos_port_exit_critical(crit);
     return EOS_KERN_TIMEOUT;
 }

@@ -478,3 +478,9 @@ void eos_task_unblock(eos_task_handle_t h)
     g_tasks[h].state = EOS_TASK_READY;
     g_tasks[h].wake_tick = 0;
 }
+
+void eos_task_set_current_internal(eos_task_handle_t h)
+{
+    if (h >= EOS_MAX_TASKS) return;
+    g_current = (int)h;
+}

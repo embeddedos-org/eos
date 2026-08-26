@@ -6,6 +6,7 @@
 #include <string.h>
 #include <assert.h>
 #include "eos/kernel.h"
+#include "eos/kernel_internal.h"
 
 static int g_task_ran = 0;
 static void test_entry(void *arg) { g_task_ran = 1; (void)arg; }
@@ -138,10 +139,47 @@ static void test_queue_full(void) {
 /* Mock port functions for host-based simulation/testing */
 uint32_t eos_port_enter_critical(void) { return 0; }
 void eos_port_exit_critical(uint32_t state) { (void)state; }
-void eos_port_yield(void) {}
+
+/* Captures owner priority at yield so tests can observe PI boost mid-lock. */
+static int g_yield_owner = -1;
+static uint8_t g_yield_prio = 255;
+void eos_port_yield(void)
+{
+    if (g_yield_owner >= 0)
+        g_yield_prio = eos_task_get_priority_internal((eos_task_handle_t)g_yield_owner);
+}
 void eos_port_start_scheduler(void) {}
 uint32_t *eos_port_init_stack(uint32_t *s, void (*e)(void*), void *a) { (void)e; (void)a; return s - 17; }
 void eos_port_start_first_task(void) {}
+
+static void test_mutex_pi_timeout_restores_priority(void) {
+    eos_kernel_init();
+    eos_mutex_handle_t m;
+    assert(eos_mutex_create(&m) == EOS_KERN_OK);
+
+    int low = eos_task_create("low", test_entry, NULL, 10, 512);
+    int high = eos_task_create("high", test_entry, NULL, 1, 512);
+    assert(low >= 0 && high >= 0);
+
+    eos_task_set_current_internal((eos_task_handle_t)low);
+    assert(eos_mutex_lock(m, EOS_NO_WAIT) == EOS_KERN_OK);
+    assert(eos_task_get_priority_internal((eos_task_handle_t)low) == 10);
+
+    g_yield_owner = low;
+    g_yield_prio = 255;
+    eos_task_set_current_internal((eos_task_handle_t)high);
+    assert(eos_mutex_lock(m, 10) == EOS_KERN_TIMEOUT);
+
+    /* During the wait, the owner must have been boosted to the waiter's prio. */
+    assert(g_yield_prio == 1);
+    /* After timeout, the boost must not stick — that starves other work. */
+    assert(eos_task_get_priority_internal((eos_task_handle_t)low) == 10);
+
+    eos_task_set_current_internal((eos_task_handle_t)low);
+    assert(eos_mutex_unlock(m) == EOS_KERN_OK);
+    g_yield_owner = -1;
+    printf("[PASS] mutex PI timeout restores owner priority\n");
+}
 
 int main(void) {
     printf("=== EoS Kernel Tests ===\n");
@@ -151,9 +189,10 @@ int main(void) {
     test_task_delete();
     test_task_suspend_resume();
     test_mutex();
+    test_mutex_pi_timeout_restores_priority();
     test_semaphore();
     test_queue();
     test_queue_full();
-    printf("=== ALL KERNEL TESTS PASSED (9/9) ===\n");
+    printf("=== ALL KERNEL TESTS PASSED (10/10) ===\n");
     return 0;
 }
