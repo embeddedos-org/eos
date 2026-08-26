@@ -10,7 +10,7 @@ static int passed = 0;
 static int dummy_init(void) { return 0; }
 
 static void test_package_register(void) {
-    EosPackageSet set;
+    static EosPackageSet set;
     memset(&set, 0, sizeof(set));
     EosPackage pkg;
     memset(&pkg, 0, sizeof(pkg));
@@ -24,7 +24,7 @@ static void test_package_register(void) {
 }
 
 static void test_package_find(void) {
-    EosPackageSet set;
+    static EosPackageSet set;
     memset(&set, 0, sizeof(set));
     EosPackage pkg;
     memset(&pkg, 0, sizeof(pkg));
@@ -39,7 +39,7 @@ static void test_package_find(void) {
 }
 
 static void test_package_find_not_found(void) {
-    EosPackageSet set;
+    static EosPackageSet set;
     memset(&set, 0, sizeof(set));
     const EosPackage *found = eos_package_find(&set, "nonexistent");
     assert(found == NULL);
@@ -53,7 +53,7 @@ static void test_package_find_null(void) {
 }
 
 static void test_package_register_multiple(void) {
-    EosPackageSet set;
+    static EosPackageSet set;
     memset(&set, 0, sizeof(set));
     EosPackage p1, p2, p3;
     memset(&p1, 0, sizeof(p1));
@@ -76,7 +76,7 @@ static void test_package_register_multiple(void) {
 }
 
 static void test_package_init_all(void) {
-    EosPackageSet set;
+    static EosPackageSet set;
     memset(&set, 0, sizeof(set));
     EosPackage pkg;
     memset(&pkg, 0, sizeof(pkg));
@@ -90,7 +90,7 @@ static void test_package_init_all(void) {
 }
 
 static void test_package_build_type(void) {
-    EosPackageSet set;
+    static EosPackageSet set;
     memset(&set, 0, sizeof(set));
     EosPackage pkg;
     memset(&pkg, 0, sizeof(pkg));
