@@ -34,8 +34,10 @@ static void test_task_create_invalid(void) {
 static void test_task_delete(void) {
     eos_kernel_init();
     int h = eos_task_create("del", test_entry, NULL, 5, 1024);
+    assert(strcmp(eos_task_get_name((eos_task_handle_t)h), "del") == 0);
     assert(eos_task_delete((eos_task_handle_t)h) == EOS_KERN_OK);
     assert(eos_task_get_state((eos_task_handle_t)h) == EOS_TASK_DELETED);
+    assert(strcmp(eos_task_get_name((eos_task_handle_t)h), "invalid") == 0);
     printf("[PASS] task delete\n");
 }
 

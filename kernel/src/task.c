@@ -360,7 +360,9 @@ eos_task_state_t eos_task_get_state(eos_task_handle_t h)
 
 const char *eos_task_get_name(eos_task_handle_t h)
 {
-    if (h >= EOS_MAX_TASKS || !g_tasks[h].name) return "invalid";
+    if (h >= EOS_MAX_TASKS || g_tasks[h].state == EOS_TASK_DELETED || !g_tasks[h].name) {
+        return "invalid";
+    }
     return g_tasks[h].name;
 }
 
