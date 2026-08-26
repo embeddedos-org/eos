@@ -41,7 +41,7 @@ void eos_power_deinit(void)
 
 int eos_power_enter_mode(eos_power_mode_t mode)
 {
-    if (!power_initialized) return -1;
+    if (!power_initialized || mode < EOS_POWER_RUN || mode > EOS_POWER_SHUTDOWN) return -1;
     current_mode = mode;
     return 0;
 }
