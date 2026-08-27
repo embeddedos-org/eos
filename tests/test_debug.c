@@ -75,11 +75,15 @@ static int mock_read(void *ctx, uint8_t *buf, int len) {
     return n;
 }
 
+/* Honours the EosGdbIO.write contract: the return value must be the number of
+ * bytes actually written. Silently truncating while reporting success would
+ * let tx_has() miss a reply the stub really did send, hiding a failure. */
 static int mock_write(void *ctx, const uint8_t *buf, int len) {
     (void)ctx;
-    for (int i = 0; i < len && gdb_tx_len < GDB_TX_CAP - 1; i++) {
-        gdb_tx[gdb_tx_len++] = (char)buf[i];
-    }
+    assert(len >= 0);
+    assert(gdb_tx_len + (size_t)len < GDB_TX_CAP);
+    memcpy(gdb_tx + gdb_tx_len, buf, (size_t)len);
+    gdb_tx_len += (size_t)len;
     gdb_tx[gdb_tx_len] = '\0';
     return len;
 }
@@ -96,6 +100,8 @@ static void gdb_reset(void) {
 static void gdb_push(const char *body) {
     uint8_t sum = 0;
     size_t n = strlen(body);
+    /* '$' + body + '#' + two checksum digits */
+    assert(gdb_rx_len + n + 4 <= GDB_RX_CAP);
     gdb_rx[gdb_rx_len++] = '$';
     for (size_t i = 0; i < n; i++) {
         sum = (uint8_t)(sum + (uint8_t)body[i]);
