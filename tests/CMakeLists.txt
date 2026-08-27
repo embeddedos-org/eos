@@ -19,6 +19,11 @@ add_executable(test_kernel test_kernel.c)
 target_link_libraries(test_kernel PRIVATE eos_kernel)
 add_test(NAME test_kernel COMMAND test_kernel)
 
+# --- test_heap: Kernel allocator and overflow handling ---
+add_executable(test_heap test_heap.c)
+target_link_libraries(test_heap PRIVATE eos_kernel)
+add_test(NAME test_heap COMMAND test_heap)
+
 # --- test_multicore: Multicore framework ---
 add_executable(test_multicore test_multicore.c)
 target_link_libraries(test_multicore PRIVATE eos_kernel)

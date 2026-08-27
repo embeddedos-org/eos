@@ -1,5 +1,12 @@
 # Changelog
 
+## [Unreleased]
+
+### Fixed
+- **`eos_queue_create`:** Size check now uses division so `item_size * capacity` cannot wrap `size_t` on 32-bit targets and overflow the 1024-byte queue store.
+- **`eos_sem_create`:** Reject `initial > max` and `max` values that do not fit in `int32_t`, so the counting-semaphore invariant cannot be created already broken.
+- **`eos_mutex_lock`:** Recursive lock returns `EOS_KERN_FULL` at `uint8_t` saturation instead of wrapping `rec_count` to 0 and leaving the mutex stuck.
+
 ## [3.0.1] - 2026-05-16
 
 ### Production Release — Unified EmbeddedOS-org v3.0.1

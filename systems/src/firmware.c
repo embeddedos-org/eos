@@ -27,7 +27,7 @@ static EosBuildType provider_to_build_type(EosRtosProvider p) {
     }
 }
 
-void eos_firmware_init(EosFirmware *fw, const EosRtosConfig *rtos_cfg,
+EosResult eos_firmware_init(EosFirmware *fw, const EosRtosConfig *rtos_cfg,
                        const EosConfig *cfg) {
     memset(fw, 0, sizeof(*fw));
 
@@ -41,9 +41,16 @@ void eos_firmware_init(EosFirmware *fw, const EosRtosConfig *rtos_cfg,
     if (rtos_cfg->output[0]) {
         strncpy(fw->output, rtos_cfg->output, EOS_MAX_PATH - 1);
     } else {
-        snprintf(fw->output, EOS_MAX_PATH, "%s/firmware.%s",
-                 cfg->workspace.build_dir,
-                 eos_firmware_format_str(fw->format));
+        /* build_dir may itself be EOS_MAX_PATH long, so appending a filename
+         * can truncate. A truncated firmware output path means writing the
+         * image somewhere other than intended, or over another target's. */
+        int n = snprintf(fw->output, EOS_MAX_PATH, "%s/firmware.%s",
+                         cfg->workspace.build_dir,
+                         eos_firmware_format_str(fw->format));
+        if (n < 0 || n >= EOS_MAX_PATH) {
+            EOS_ERROR("Firmware output path exceeds %d bytes", EOS_MAX_PATH);
+            return EOS_ERR_OVERFLOW;
+        }
     }
 
     /* Set toolchain target for RTOS */
@@ -53,11 +60,24 @@ void eos_firmware_init(EosFirmware *fw, const EosRtosConfig *rtos_cfg,
         strncpy(fw->toolchain_target, cfg->toolchain.target, EOS_MAX_NAME - 1);
     }
 
-    snprintf(fw->build_dir, EOS_MAX_PATH, "%s/firmware/%s",
-             cfg->workspace.build_dir,
-             fw->core[0] ? fw->core : eos_rtos_provider_str(fw->provider));
+    int n = snprintf(fw->build_dir, EOS_MAX_PATH, "%s/firmware/%s",
+                     cfg->workspace.build_dir,
+                     fw->core[0] ? fw->core : eos_rtos_provider_str(fw->provider));
+    if (n < 0 || n >= EOS_MAX_PATH) {
+        EOS_ERROR("Firmware build path exceeds %d bytes", EOS_MAX_PATH);
+        return EOS_ERR_OVERFLOW;
+    }
+
     snprintf(fw->src_dir, EOS_MAX_PATH, "%s", fw->entry);
-    snprintf(fw->install_dir, EOS_MAX_PATH, "%s/firmware/output", cfg->workspace.build_dir);
+
+    n = snprintf(fw->install_dir, EOS_MAX_PATH, "%s/firmware/output",
+                 cfg->workspace.build_dir);
+    if (n < 0 || n >= EOS_MAX_PATH) {
+        EOS_ERROR("Firmware install path exceeds %d bytes", EOS_MAX_PATH);
+        return EOS_ERR_OVERFLOW;
+    }
+
+    return EOS_OK;
 }
 
 EosResult eos_firmware_build(EosFirmware *fw) {
@@ -211,18 +231,23 @@ void eos_firmware_dump(const EosFirmware *fw) {
         printf("  Toolchain: %s\n", fw->toolchain_target);
 }
 
-void eos_hybrid_init(EosHybridSystem *hybrid, const EosConfig *cfg) {
+EosResult eos_hybrid_init(EosHybridSystem *hybrid, const EosConfig *cfg) {
     memset(hybrid, 0, sizeof(*hybrid));
     hybrid->kind = cfg->system.kind;
 
     /* Initialize Linux side */
-    eos_system_init(&hybrid->linux_sys, cfg);
+    EosResult sys_rc = eos_system_init(&hybrid->linux_sys, cfg);
+    if (sys_rc != EOS_OK) return sys_rc;
 
     /* Initialize all RTOS firmware targets */
     hybrid->firmware_count = cfg->system.rtos_count;
     for (int i = 0; i < cfg->system.rtos_count && i < EOS_MAX_RTOS; i++) {
-        eos_firmware_init(&hybrid->firmware[i], &cfg->system.rtos[i], cfg);
+        EosResult fw_rc = eos_firmware_init(&hybrid->firmware[i],
+                                            &cfg->system.rtos[i], cfg);
+        if (fw_rc != EOS_OK) return fw_rc;
     }
+
+    return EOS_OK;
 }
 
 EosResult eos_hybrid_build(EosHybridSystem *hybrid) {
@@ -247,6 +272,8 @@ EosResult eos_hybrid_build(EosHybridSystem *hybrid) {
     }
 
     EOS_INFO("=== Hybrid Build Complete ===");
+    return EOS_OK;
+
     return EOS_OK;
 }
 

@@ -11,6 +11,7 @@
 #include "eos/kernel_internal.h"
 #include "eos/arch.h"
 #include <string.h>
+#include <stdint.h>
 
 /* ============================================================
  * Mutex — with priority inheritance and timeout blocking
@@ -76,6 +77,10 @@ int eos_mutex_lock(eos_mutex_handle_t h, uint32_t timeout_ms)
 
     /* Recursive lock by owner */
     if (g_mtx[h].owner == caller) {
+        if (g_mtx[h].rec_count == UINT8_MAX) {
+            eos_port_exit_critical(crit);
+            return EOS_KERN_FULL;
+        }
         g_mtx[h].rec_count++;
         eos_port_exit_critical(crit);
         return EOS_KERN_OK;
@@ -185,7 +190,8 @@ int eos_mutex_delete(eos_mutex_handle_t h)
 
 int eos_sem_create(eos_sem_handle_t *out, uint32_t initial, uint32_t max)
 {
-    if (!out || max == 0) return EOS_KERN_INVALID;
+    if (!out || max == 0 || initial > max) return EOS_KERN_INVALID;
+    if (max > (uint32_t)INT32_MAX) return EOS_KERN_INVALID;
     uint32_t crit = eos_port_enter_critical();
     for (int i = 0; i < EOS_MAX_SEMAPHORES; i++) {
         if (!g_sem[i].in_use) {

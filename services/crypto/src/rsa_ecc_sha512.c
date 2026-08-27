@@ -4,6 +4,40 @@
 
 #include "eos/crypto.h"
 #include <string.h>
+
+/* ── Stub crypto: fail closed ───────────────────────────────────────────────
+ *
+ * The RSA and ECC sign/verify routines below are placeholders. They do not
+ * implement PKCS#1, PSS or ECDSA; eos_rsa_verify_sha256() only checks that the
+ * last 32 bytes of the signature equal the hash, and eos_ecc_verify() accepts
+ * any 64-byte signature outright. Neither reads the key material.
+ *
+ * That made forging trivial and it was reachable from a real security path:
+ * services/security/src/security.c called eos_rsa_verify_sha256() from
+ * eos_secureboot_verify_image(). Writing a 256-byte file whose last 32 bytes
+ * are the image's own SHA-256 — no private key involved — was enough to make
+ * secure boot report VERIFIED for an arbitrary image.
+ *
+ * So these now refuse to run unless a build explicitly opts in by defining
+ * EOS_ALLOW_STUB_CRYPTO, which the crypto unit tests do. Anything else gets a
+ * hard failure instead of a forged pass. Remove the guard only when the
+ * functions actually verify signatures — do not hand-roll the arithmetic, link
+ * a reviewed implementation.
+ */
+#ifdef EOS_ALLOW_STUB_CRYPTO
+#define EOS_STUB_CRYPTO_REFUSE(_what) ((void)0)
+#else
+/* stderr rather than EOS_ERROR: the crypto library deliberately does not
+ * depend on core's logging layer. */
+#define EOS_STUB_CRYPTO_REFUSE(_what)                                        \
+    do {                                                                     \
+        fprintf(stderr,                                                      \
+                "eos-crypto: %s is an unimplemented stub and refuses to "    \
+                "run; build with EOS_ALLOW_STUB_CRYPTO only for tests\n",    \
+                _what);                                                      \
+        return -1;                                                           \
+    } while (0)
+#endif
 #include <stdio.h>
 
 /*
@@ -32,6 +66,7 @@ int eos_rsa_sign_sha256(const EosRsaKey *key, const uint8_t hash[32],
 
 int eos_rsa_verify_sha256(const EosRsaKey *key, const uint8_t hash[32],
                           const uint8_t *sig, size_t sig_len) {
+    EOS_STUB_CRYPTO_REFUSE("eos_rsa_verify_sha256");
     if (!key) return -1;
     size_t len = (size_t)(key->key_bits / 8);
     if (len == 0) len = 256;
@@ -56,6 +91,10 @@ int eos_ecc_sign(const EosEccKey *key, const uint8_t *hash, size_t hash_len,
 
 int eos_ecc_verify(const EosEccKey *key, const uint8_t *hash, size_t hash_len,
                    const uint8_t *sig, size_t sig_len) {
+    /* Marked used before the guard: without the opt-in this function returns
+     * immediately and every parameter is otherwise unread. */
+    (void)key; (void)hash; (void)hash_len; (void)sig; (void)sig_len;
+    EOS_STUB_CRYPTO_REFUSE("eos_ecc_verify");
     if (!key || sig_len < 64) return -1;
     (void)hash;
     (void)hash_len;

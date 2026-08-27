@@ -111,14 +111,14 @@ All extended peripherals are conditionally compiled behind `EOS_ENABLE_*` flags.
 | Function | Description |
 |----------|-------------|
 | `eos_mutex_create(eos_mutex_handle_t *out)` | Create a mutex. |
-| `eos_mutex_lock(handle, timeout_ms)` | Lock with timeout. Use `EOS_WAIT_FOREVER`. |
+| `eos_mutex_lock(handle, timeout_ms)` | Lock with timeout. Use `EOS_WAIT_FOREVER`. Recursive; returns `EOS_KERN_FULL` if the nest count would wrap (`uint8_t` max). |
 | `eos_mutex_unlock(handle)` | Unlock. |
 
 ### Semaphore
 
 | Function | Description |
 |----------|-------------|
-| `eos_sem_create(out, initial, max)` | Create counting semaphore. |
+| `eos_sem_create(out, initial, max)` | Create counting semaphore. Returns `EOS_KERN_INVALID` if `max == 0`, `initial > max`, or `max` does not fit in `int32_t`. |
 | `eos_sem_wait(handle, timeout_ms)` | Wait (decrement). |
 | `eos_sem_post(handle)` | Signal (increment). |
 
@@ -126,7 +126,7 @@ All extended peripherals are conditionally compiled behind `EOS_ENABLE_*` flags.
 
 | Function | Description |
 |----------|-------------|
-| `eos_queue_create(out, item_size, capacity)` | Create queue. |
+| `eos_queue_create(out, item_size, capacity)` | Create queue. Returns `EOS_KERN_NO_MEMORY` if `item_size * capacity` exceeds the 1024-byte backing store (checked without overflowing `size_t`). |
 | `eos_queue_send(handle, item, timeout_ms)` | Send item to queue. |
 | `eos_queue_receive(handle, item, timeout_ms)` | Receive item from queue. |
 | `eos_queue_count(handle)` | Get current queue depth. |

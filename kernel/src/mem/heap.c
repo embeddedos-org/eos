@@ -63,8 +63,14 @@ void *eos_malloc(size_t size)
 {
     if (size == 0 || !free_list) return NULL;
 
+    /* Both alignment and header addition must be representable.  Without
+     * these guards, a request close to SIZE_MAX wraps to a small value and
+     * can return an undersized allocation to the caller. */
+    if (size > SIZE_MAX - 7) return NULL;
+
     /* Align allocation size to 8 bytes */
     size = ALIGN_UP(size, 8);
+    if (size > SIZE_MAX - HEADER_SIZE) return NULL;
     size_t total_needed = size + HEADER_SIZE;
 
     /* Best-fit search */

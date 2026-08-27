@@ -35,10 +35,40 @@ EosResult eos_package_set_from_config(EosPackageSet *set, const EosConfig *cfg) 
             pkg->option_count++;
         }
 
-        snprintf(pkg->src_dir, EOS_MAX_PATH, "%s/src/%s-%s",
-                 cfg->workspace.build_dir, pkg->name, pkg->version);
-        snprintf(pkg->build_dir, EOS_MAX_PATH, "%s/build/%s",
-                 cfg->workspace.build_dir, pkg->name);
+        /* Build the two derived paths through local copies of the name and
+         * version. Passing pkg->name straight in made snprintf's sources alias
+         * its own destination object — both live inside *set — which violates
+         * the restrict qualifier on argument 1 and is undefined behaviour:
+         *   warning: 'snprintf' arguments 5, 6 overlap destination object 'set'
+         *
+         * The return value is also checked now. EOS_MAX_PATH is 512 and
+         * EOS_MAX_NAME is 128, so build_dir + "/src/" + name + "-" + version
+         * reaches 647 bytes and snprintf would silently truncate:
+         *   warning: 'snprintf' output between 8 and 646 bytes into a
+         *            destination of size 512
+         * Two packages whose names differ only past the cut would then share a
+         * source or build directory and overwrite each other. Failing loudly is
+         * the only safe outcome. */
+        char name_copy[EOS_MAX_NAME];
+        char version_copy[EOS_MAX_NAME];
+        snprintf(name_copy, sizeof(name_copy), "%s", pkg->name);
+        snprintf(version_copy, sizeof(version_copy), "%s", pkg->version);
+
+        int n = snprintf(pkg->src_dir, EOS_MAX_PATH, "%s/src/%s-%s",
+                         cfg->workspace.build_dir, name_copy, version_copy);
+        if (n < 0 || n >= EOS_MAX_PATH) {
+            EOS_ERROR("Source path for package '%s' exceeds %d bytes",
+                      name_copy, EOS_MAX_PATH);
+            return EOS_ERR_OVERFLOW;
+        }
+
+        n = snprintf(pkg->build_dir, EOS_MAX_PATH, "%s/build/%s",
+                     cfg->workspace.build_dir, name_copy);
+        if (n < 0 || n >= EOS_MAX_PATH) {
+            EOS_ERROR("Build path for package '%s' exceeds %d bytes",
+                      name_copy, EOS_MAX_PATH);
+            return EOS_ERR_OVERFLOW;
+        }
 
         pkg->resolved = 0;
         set->count++;

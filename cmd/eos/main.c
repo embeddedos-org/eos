@@ -267,7 +267,10 @@ static int cmd_info(const CliArgs *args) {
     case EOS_SYSTEM_LINUX:
         if (cfg.system.kernel.provider[0] || cfg.system.rootfs.provider[0]) {
             static EosSystem sys;
-            eos_system_init(&sys, &cfg);
+            if (eos_system_init(&sys, &cfg) != EOS_OK) {
+                fprintf(stderr, "error: system paths exceed the maximum length\n");
+                return 1;
+            }
             printf("\n");
             eos_system_dump(&sys);
         }
@@ -275,14 +278,20 @@ static int cmd_info(const CliArgs *args) {
     case EOS_SYSTEM_RTOS:
         for (int i = 0; i < cfg.system.rtos_count; i++) {
             static EosFirmware fw;
-            eos_firmware_init(&fw, &cfg.system.rtos[i], &cfg);
+            if (eos_firmware_init(&fw, &cfg.system.rtos[i], &cfg) != EOS_OK) {
+                fprintf(stderr, "error: firmware paths exceed the maximum length\n");
+                return 1;
+            }
             printf("\n");
             eos_firmware_dump(&fw);
         }
         break;
     case EOS_SYSTEM_HYBRID: {
         static EosHybridSystem hybrid;
-        eos_hybrid_init(&hybrid, &cfg);
+        if (eos_hybrid_init(&hybrid, &cfg) != EOS_OK) {
+            fprintf(stderr, "error: system paths exceed the maximum length\n");
+            return 1;
+        }
         printf("\n");
         eos_hybrid_dump(&hybrid);
         break;
@@ -368,7 +377,10 @@ static int cmd_system(const CliArgs *args) {
 
     /* Build system image */
     static EosSystem sys;
-    eos_system_init(&sys, &cfg);
+    if (eos_system_init(&sys, &cfg) != EOS_OK) {
+        fprintf(stderr, "error: system paths exceed the maximum length\n");
+        return 1;
+    }
     sys.dry_run = args->dry_run;
     sys.verbose = args->verbose;
 
@@ -484,7 +496,10 @@ static int cmd_hybrid(const CliArgs *args) {
 
     /* Build hybrid system */
     static EosHybridSystem hybrid;
-    eos_hybrid_init(&hybrid, &cfg);
+    if (eos_hybrid_init(&hybrid, &cfg) != EOS_OK) {
+            fprintf(stderr, "error: system paths exceed the maximum length\n");
+            return 1;
+        }
     hybrid.dry_run = args->dry_run;
     hybrid.verbose = args->verbose;
 

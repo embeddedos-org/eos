@@ -44,7 +44,9 @@ jobs:
       - name: Run C unit tests
         run: |
           cd build/host
-          ctest --output-on-failure --parallel $(nproc)
+          # --no-tests=error: ctest exits 0 when it finds no tests at all, which
+          # is how this job stayed green while building none of them.
+          ctest --output-on-failure --no-tests=error --parallel $(nproc)
 
       - name: Run Python tests
         run: |

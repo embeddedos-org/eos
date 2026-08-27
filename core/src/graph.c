@@ -8,11 +8,15 @@
 #include <stdio.h>
 
 void eos_graph_init(EosGraph *g) {
+    if (!g) return;
     memset(g, 0, sizeof(*g));
 }
 
 EosResult eos_graph_add_node(EosGraph *g, const char *name, EosNodeType type,
                                  EosBuildType build_type, int *out_id) {
+    if (!g || !name || name[0] == '\0' || strlen(name) >= EOS_MAX_NAME) {
+        return EOS_ERR_INVALID;
+    }
     if (g->node_count >= EOS_MAX_NODES) {
         EOS_ERROR("Graph node overflow (max %d)", EOS_MAX_NODES);
         return EOS_ERR_OVERFLOW;
@@ -34,6 +38,7 @@ EosResult eos_graph_add_node(EosGraph *g, const char *name, EosNodeType type,
 }
 
 EosResult eos_graph_add_edge(EosGraph *g, int from, int to) {
+    if (!g) return EOS_ERR_INVALID;
     if (from < 0 || from >= g->node_count || to < 0 || to >= g->node_count) {
         return EOS_ERR_INVALID;
     }
@@ -51,6 +56,7 @@ EosResult eos_graph_add_edge(EosGraph *g, int from, int to) {
 }
 
 int eos_graph_find_node(const EosGraph *g, const char *name) {
+    if (!g || !name) return -1;
     for (int i = 0; i < g->node_count; i++) {
         if (strcmp(g->nodes[i].name, name) == 0) return i;
     }
@@ -59,6 +65,7 @@ int eos_graph_find_node(const EosGraph *g, const char *name) {
 
 /* Kahn's algorithm for topological sort with cycle detection */
 EosResult eos_graph_topological_sort(EosGraph *g) {
+    if (!g) return EOS_ERR_INVALID;
     int in_degree[EOS_MAX_NODES] = {0};
 
     for (int i = 0; i < g->edge_count; i++) {
@@ -101,6 +108,7 @@ EosResult eos_graph_topological_sort(EosGraph *g) {
 }
 
 void eos_graph_dump(const EosGraph *g) {
+    if (!g) return;
     printf("Build Graph: %d nodes, %d edges\n", g->node_count, g->edge_count);
     for (int i = 0; i < g->node_count; i++) {
         printf("  [%d] %s (%s)\n", i, g->nodes[i].name,

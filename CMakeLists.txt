@@ -30,6 +30,34 @@ else()
     message(STATUS "  Product: all (no product selected — full build)")
 endif()
 
+# ====================================================================
+# Test feature flags
+# ====================================================================
+# Module sources are wrapped in #if EOS_ENABLE_<MODULE>, and
+# include/eos/eos_config.h defaults every one of those to 0 unless a product
+# profile sets it. Without a product, those translation units compile to
+# nothing and the unit tests that exercise them fail to link.
+#
+# A test defining the flag for itself is not enough — the flag has to reach
+# the *library* translation unit too, so it is set here, before any
+# add_library() call, rather than in tests/CMakeLists.txt.
+#
+# This list is exactly the set the suite in tests/ covers. It does not turn on
+# every EOS_ENABLE_* flag: the others have no test and enabling them would
+# build code this gate cannot verify.
+if(EOS_BUILD_TESTS AND NOT EOS_PRODUCT)
+    add_compile_definitions(
+        EOS_ENABLE_MULTICORE=1
+        EOS_ENABLE_NET=1
+        EOS_ENABLE_POWER=1
+        EOS_ENABLE_OTA=1
+        EOS_ENABLE_SENSOR=1
+        EOS_ENABLE_FILESYSTEM=1
+        EOS_ENABLE_MOTOR_CTRL=1
+    )
+    message(STATUS "  Test features: multicore net power ota sensor filesystem motor_ctrl")
+endif()
+
 # Global include for eos_config.h and product profiles
 include_directories(
     ${CMAKE_CURRENT_SOURCE_DIR}/include
@@ -63,6 +91,7 @@ add_library(eos_kernel STATIC
     kernel/src/sync.c
     kernel/src/ipc.c
     kernel/src/multicore.c
+    kernel/src/mem/heap.c
 )
 
 target_include_directories(eos_kernel PUBLIC

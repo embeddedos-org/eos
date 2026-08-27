@@ -11,13 +11,19 @@ Status is one of: `todo`, `in-progress`, `blocked`, `review`, `done`.
 
 | ID | Task | Owner | Mode | Status | Depends on |
 |----|------|-------|------|--------|------------|
-| —  | No active tasks. | — | — | — | — |
+| T-005 | Remove 1430 committed CMake build artifacts (`build_coverage` 691, `build_qemu_arm64` 371, `build_sim` 368) and gitignore them | architect | build | todo | none |
+| T-006 | Decide the fate of `tests_backup/` (1 tracked file) | architect | build | todo | none |
+| T-007 | Add coverage instrumentation, or drop `-DENABLE_COVERAGE` and the codecov upload from `ci.yml` | backend | build | todo | none |
+| T-008 | Resolve `snprintf` truncation warnings in `systems/src/firmware.c` | backend | build | todo | none |
 
 ## Completed
 
 | ID | Task | Owner | Verified by | Evidence |
 |----|------|-------|-------------|----------|
-| —  | None yet. | — | — | — |
+| T-001 | Make `ci.yml` actually build the C tests | backend | reviewer | `CMakeLists.txt:18` declares `EOS_BUILD_TESTS`; `ci.yml` passed `-DBUILD_TESTS=ON`, a different variable. Reproduced CI's exact flags: configure reported `Tests: OFF`, build exit 0, `ctest` printed `No tests were found!!!` and **exited 0**. CI was green while running zero C tests. |
+| T-002 | Fail CI when no tests are found | backend | reviewer | Added `--no-tests=error`. Against the old broken config `ctest` now exits **8**; against the fixed config it exits **0**. Both verified. |
+| T-003 | Make the test build link | architect | reviewer | 7 of 19 targets failed to link (`test_power`, `test_multicore`, `test_net`, `test_ota`, `test_sensor`, `test_filesystem`, `test_motor_ctrl`) — module sources are wrapped in `#if EOS_ENABLE_<MODULE>` and `eos_config.h` defaults each to 0, so with no product profile they compiled to empty translation units. A test `#define`-ing the flag only affects its own TU. Flags now set before the first `add_library()`. Result: build exit 0, **19/19 tests passed**. |
+| T-004 | Replace unverifiable README claims | docs | reviewer | Static `Status-Production Ready`, `Build-Passing`, `Coverage-100%` badges replaced with real workflow badges. "100% test coverage" removed — there is no coverage instrumentation in `CMakeLists.txt`, so no figure can be produced. The Zephyr/FreeRTOS/Linux benchmark claim removed — no comparative benchmark exists in this tree. |
 
 ---
 

@@ -7,7 +7,22 @@
 #include <string.h>
 #include <stdio.h>
 
-void eos_system_init(EosSystem *sys, const EosConfig *cfg) {
+/* Compose a path and report truncation rather than letting it pass.
+ * EOS_MAX_PATH is 512 and workspace.build_dir may itself be that long, so
+ * appending "/kernel" or "/staging" can overflow. A truncated directory is not
+ * a cosmetic problem in a build system: two configurations can collapse onto
+ * the same path and overwrite each other's output. */
+static EosResult join_path(char *dst, const char *base, const char *suffix,
+                           const char *what) {
+    int n = snprintf(dst, EOS_MAX_PATH, "%s%s", base, suffix);
+    if (n < 0 || n >= EOS_MAX_PATH) {
+        EOS_ERROR("%s path exceeds %d bytes (base '%s')", what, EOS_MAX_PATH, base);
+        return EOS_ERR_OVERFLOW;
+    }
+    return EOS_OK;
+}
+
+EosResult eos_system_init(EosSystem *sys, const EosConfig *cfg) {
     memset(sys, 0, sizeof(*sys));
 
     strncpy(sys->kernel_provider, cfg->system.kernel.provider, EOS_MAX_NAME - 1);
@@ -17,19 +32,28 @@ void eos_system_init(EosSystem *sys, const EosConfig *cfg) {
     sys->init_system = cfg->system.rootfs.init;
     sys->image_format = cfg->system.image_format;
 
-    snprintf(sys->kernel_build_dir, EOS_MAX_PATH, "%s/kernel", cfg->workspace.build_dir);
-    snprintf(sys->rootfs_dir, EOS_MAX_PATH, "%s/rootfs", cfg->workspace.build_dir);
-    snprintf(sys->staging_dir, EOS_MAX_PATH, "%s/staging", cfg->workspace.build_dir);
-    snprintf(sys->install_dir, EOS_MAX_PATH, "%s/install", cfg->workspace.build_dir);
+    const char *bd = cfg->workspace.build_dir;
+    EosResult rc;
+    if ((rc = join_path(sys->kernel_build_dir, bd, "/kernel",  "Kernel build")) != EOS_OK) return rc;
+    if ((rc = join_path(sys->rootfs_dir,       bd, "/rootfs",  "Rootfs"))       != EOS_OK) return rc;
+    if ((rc = join_path(sys->staging_dir,      bd, "/staging", "Staging"))      != EOS_OK) return rc;
+    if ((rc = join_path(sys->install_dir,      bd, "/install", "Install"))      != EOS_OK) return rc;
 
     if (cfg->system.output[0]) {
         strncpy(sys->image_output, cfg->system.output, EOS_MAX_PATH - 1);
     } else {
-        snprintf(sys->image_output, EOS_MAX_PATH, "%s/%s.img",
-                 cfg->workspace.build_dir, cfg->project.name);
+        /* project.name is up to EOS_MAX_NAME, so this can overflow too. */
+        int n = snprintf(sys->image_output, EOS_MAX_PATH, "%s/%s.img",
+                         bd, cfg->project.name);
+        if (n < 0 || n >= EOS_MAX_PATH) {
+            EOS_ERROR("Image output path exceeds %d bytes (project '%s')",
+                      EOS_MAX_PATH, cfg->project.name);
+            return EOS_ERR_OVERFLOW;
+        }
     }
 
     sys->image_size_mb = 256;
+    return EOS_OK;
 }
 
 EosResult eos_system_build(EosSystem *sys) {

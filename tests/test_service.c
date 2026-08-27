@@ -83,11 +83,39 @@ static void test_svc_restart(void) {
     printf("[PASS] service restart\n");
 }
 
+/* svc_fail_start was defined but never used, so the failure path of
+ * eos_svc_start() had no coverage at all — GCC flagged the dead helper with
+ * -Wunused-function. EOS_SVC_FAILED exists in the state enum; nothing checked
+ * that the manager ever reaches it. */
+static void test_svc_start_failure(void) {
+    EosSvcManager mgr; eos_svc_init(&mgr);
+    EosSvcOps ops = { .start = svc_fail_start, .stop = svc_stop };
+    eos_svc_register(&mgr, "broken", &ops);
+    g_svc_started = 0;
+
+    /* A start callback returning -1 must be reported as failure... */
+    assert(eos_svc_start(&mgr, "broken") == -1);
+    /* ...and must leave the service marked FAILED, not RUNNING. */
+    assert(eos_svc_get_state(&mgr, "broken") == EOS_SVC_FAILED);
+    /* The failing callback never incremented the counter. */
+    assert(g_svc_started == 0);
+
+    /* A dependent service must not start behind a failed one. */
+    EosSvcOps good = { .start = svc_start, .stop = svc_stop };
+    eos_svc_register(&mgr, "needs-broken", &good);
+    eos_svc_add_dependency(&mgr, "needs-broken", "broken");
+    assert(eos_svc_start(&mgr, "needs-broken") == -1);
+    assert(g_svc_started == 0);
+
+    printf("[PASS] service start failure\n");
+}
+
 int main(void) {
     printf("=== EoS Service Manager Tests ===\n");
     test_svc_init();
     test_svc_register();
     test_svc_start_stop();
+    test_svc_start_failure();
     test_svc_dependencies();
     test_svc_start_all();
     test_svc_restart();

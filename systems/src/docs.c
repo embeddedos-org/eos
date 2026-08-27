@@ -99,6 +99,10 @@ static EosResult build_api_docs(const EosDocsConfig *docs_cfg,
 static EosResult build_user_docs(const EosDocsConfig *docs_cfg,
                                  const EosConfig *cfg,
                                  const char *output_dir, int dry_run) {
+    /* cfg is part of the shared builder signature but this variant reads
+     * everything it needs from docs_cfg. */
+    (void)cfg;
+
     char site_dir[EOS_MAX_PATH];
     snprintf(site_dir, sizeof(site_dir), "%s%ssite", output_dir, PATH_SEP);
 

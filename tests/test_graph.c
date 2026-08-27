@@ -160,6 +160,42 @@ static void test_independent_nodes(void) {
     ASSERT(g.sorted_count == 3, "all 3 independent nodes sorted");
 }
 
+static void test_invalid_inputs(void) {
+    printf("test_invalid_inputs:\n");
+    EosGraph g;
+    eos_graph_init(&g);
+
+    ASSERT(eos_graph_add_node(NULL, "node", EOS_NODE_PACKAGE,
+                              EOS_BUILD_CMAKE, NULL) == EOS_ERR_INVALID,
+           "NULL graph is rejected");
+    ASSERT(eos_graph_add_node(&g, NULL, EOS_NODE_PACKAGE,
+                              EOS_BUILD_CMAKE, NULL) == EOS_ERR_INVALID,
+           "NULL node name is rejected");
+    ASSERT(eos_graph_add_node(&g, "", EOS_NODE_PACKAGE,
+                              EOS_BUILD_CMAKE, NULL) == EOS_ERR_INVALID,
+           "empty node name is rejected");
+
+    char long_name[EOS_MAX_NAME + 1];
+    memset(long_name, 'x', sizeof(long_name));
+    long_name[sizeof(long_name) - 1] = '\0';
+    ASSERT(eos_graph_add_node(&g, long_name, EOS_NODE_PACKAGE,
+                              EOS_BUILD_CMAKE, NULL) == EOS_ERR_INVALID,
+           "overlong node name is rejected instead of truncated");
+    ASSERT(g.node_count == 0, "invalid nodes do not mutate the graph");
+
+    ASSERT(eos_graph_add_edge(NULL, 0, 0) == EOS_ERR_INVALID,
+           "NULL graph edge is rejected");
+    ASSERT(eos_graph_find_node(NULL, "node") == -1,
+           "find handles NULL graph");
+    ASSERT(eos_graph_find_node(&g, NULL) == -1,
+           "find handles NULL name");
+    ASSERT(eos_graph_topological_sort(NULL) == EOS_ERR_INVALID,
+           "sort handles NULL graph");
+
+    eos_graph_init(NULL);
+    eos_graph_dump(NULL);
+}
+
 int main(void) {
     eos_log_set_level(EOS_LOG_ERROR);
 
@@ -172,6 +208,7 @@ int main(void) {
     test_topological_sort_diamond();
     test_cycle_detection();
     test_independent_nodes();
+    test_invalid_inputs();
 
     printf("\n=== Results: %d/%d passed ===\n", tests_passed, tests_run);
     return (tests_passed == tests_run) ? 0 : 1;

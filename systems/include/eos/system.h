@@ -89,7 +89,7 @@ typedef struct {
 /* ---- Linux system functions ---- */
 
 /** @brief Initialize Linux system context from config. */
-void eos_system_init(EosSystem *sys, const EosConfig *cfg);
+EosResult eos_system_init(EosSystem *sys, const EosConfig *cfg);
 
 /** @brief Run the complete Linux build pipeline (kernel → rootfs → image). */
 EosResult eos_system_build(EosSystem *sys);
@@ -114,7 +114,7 @@ void eos_system_dump(const EosSystem *sys);
  * @param rtos_cfg RTOS configuration (provider, board, entry, output)
  * @param cfg      Global project config (workspace dirs, toolchain)
  */
-void eos_firmware_init(EosFirmware *fw, const EosRtosConfig *rtos_cfg,
+EosResult eos_firmware_init(EosFirmware *fw, const EosRtosConfig *rtos_cfg,
                        const EosConfig *cfg);
 
 /** @brief Run the firmware build pipeline (configure → build → output). */
@@ -129,7 +129,7 @@ void eos_firmware_dump(const EosFirmware *fw);
 /* ---- Hybrid system functions ---- */
 
 /** @brief Initialize hybrid context (Linux + RTOS) from config. */
-void eos_hybrid_init(EosHybridSystem *hybrid, const EosConfig *cfg);
+EosResult eos_hybrid_init(EosHybridSystem *hybrid, const EosConfig *cfg);
 
 /** @brief Build hybrid system: Linux first, then each RTOS firmware. */
 EosResult eos_hybrid_build(EosHybridSystem *hybrid);
