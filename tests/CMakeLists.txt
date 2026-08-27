@@ -1,4 +1,11 @@
 # EoS Unit Tests
+# --- test_board_configs: Board YAML schema shape ---
+add_executable(test_board_configs test_board_configs.c)
+add_test(NAME test_board_configs COMMAND test_board_configs boards)
+set_tests_properties(test_board_configs PROPERTIES
+    WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
+)
+
 # --- test_config: OS configuration ---
 add_executable(test_config test_config.c)
 target_link_libraries(test_config PRIVATE eos_core)
