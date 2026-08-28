@@ -165,6 +165,102 @@ static void test_lockfile_freshness(void) {
     ASSERT(!eos_lockfile_is_current(&lock, &cfg), "generated checksum change is stale");
 }
 
+static void test_package_after_dependencies(void) {
+    printf("test_package_after_dependencies:\n");
+
+    static EosConfig cfg;
+
+    FILE *fp = fopen("test_package_dependencies.yaml", "w");
+    if (!fp) {
+        printf("  SKIP: cannot create dependency test file\n");
+        return;
+    }
+
+    fprintf(fp, "packages:\n");
+    fprintf(fp, "  - name: application\n");
+    fprintf(fp, "    version: 1.0.0\n");
+    fprintf(fp, "    deps:\n");
+    fprintf(fp, "      - logging-library\n");
+    fprintf(fp, "  - name: network-library\n");
+    fprintf(fp, "    version: 2.0.0\n");
+
+    fclose(fp);
+
+    EosResult res = eos_config_load(
+        &cfg,
+        "test_package_dependencies.yaml"
+    );
+
+    ASSERT(res == EOS_OK,
+           "configuration with package dependencies loads");
+
+    ASSERT(cfg.package_count == 2,
+           "two separate packages are parsed");
+
+    ASSERT(strcmp(cfg.packages[0].name, "application") == 0,
+           "first package name is correct");
+
+    ASSERT(cfg.packages[0].dep_count == 1,
+           "first package has exactly one dependency");
+
+    ASSERT(strcmp(cfg.packages[0].deps[0], "logging-library") == 0,
+           "dependency value is correct");
+
+    ASSERT(strcmp(cfg.packages[1].name, "network-library") == 0,
+           "package following dependency list is parsed");
+
+    ASSERT(strcmp(cfg.packages[1].version, "2.0.0") == 0,
+           "second package version is parsed");
+
+    remove("test_package_dependencies.yaml");
+}
+
+static void test_dependencies_after_build(void) {
+    printf("test_dependencies_after_build:\n");
+
+    static EosConfig cfg;
+
+    FILE *fp = fopen("test_dependencies_after_build.yaml", "w");
+    if (!fp) {
+        printf("  SKIP: cannot create build dependency test file\n");
+        return;
+    }
+
+    fprintf(fp, "packages:\n");
+    fprintf(fp, "  - name: busybox\n");
+    fprintf(fp, "    version: 1.36.1\n");
+    fprintf(fp, "    build:\n");
+    fprintf(fp, "      type: kbuild\n");
+    fprintf(fp, "    deps:\n");
+    fprintf(fp, "      - zlib\n");
+    fclose(fp);
+
+    EosResult res = eos_config_load(
+        &cfg,
+        "test_dependencies_after_build.yaml"
+    );
+
+    ASSERT(res == EOS_OK,
+           "configuration with dependencies after build loads");
+
+    ASSERT(cfg.package_count == 1,
+           "one package is parsed");
+
+    ASSERT(strcmp(cfg.packages[0].name, "busybox") == 0,
+           "package name is correct");
+
+    ASSERT(cfg.packages[0].build_type == EOS_BUILD_KBUILD,
+           "build type before dependencies is parsed");
+
+    ASSERT(cfg.packages[0].dep_count == 1,
+           "package has one dependency");
+
+    ASSERT(strcmp(cfg.packages[0].deps[0], "zlib") == 0,
+           "dependency after build is parsed");
+
+    remove("test_dependencies_after_build.yaml");
+}
+
 int main(void) {
     eos_log_set_level(EOS_LOG_ERROR);
 
@@ -172,6 +268,8 @@ int main(void) {
 
     test_config_init();
     test_config_load();
+    test_package_after_dependencies();
+    test_dependencies_after_build();
     test_config_missing_file();
     test_lockfile_freshness();
 
