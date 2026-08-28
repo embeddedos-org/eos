@@ -166,6 +166,18 @@ int eos_swtimer_delete(eos_swtimer_handle_t handle);
 
 void eos_kernel_tick(void);
 
+/**
+ * @brief Current value of the free-running kernel tick counter.
+ *
+ * Defined in kernel/src/task.c. It had no declaration in any header, so every
+ * caller outside that translation unit relied on an implicit declaration —
+ * which -Werror rejects, and which C23 removes entirely.
+ *
+ * The counter wraps at UINT32_MAX. Compare deadlines with a signed difference,
+ * never with `now >= deadline`.
+ */
+uint32_t eos_tick_get(void);
+
 #ifdef __cplusplus
 }
 #endif

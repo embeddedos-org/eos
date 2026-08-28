@@ -60,11 +60,14 @@ static int test_acc(void){
 static int test_tick(void){
     printf("\n-- Tick --\n");
     uint8_t h=(uint8_t)gc;uint32_t t0=eos_tick_get();
-    for(int i=0;i<5;i++)eos_kernel_tick();T(eos_tick_get()==t0+5,"tick+5");
+    for(uint32_t i=0;i<5;i++){eos_kernel_tick();}
+    T(eos_tick_get()==t0+5,"tick+5");
     eos_task_block_with_timeout(h,10);uint32_t w=g_tasks[h].wake_tick;
-    for(int i=0;i<5;i++)eos_kernel_tick();eos_task_wake_check(eos_tick_get());
+    for(uint32_t i=0;i<5;i++){eos_kernel_tick();}
+    eos_task_wake_check(eos_tick_get());
     T(g_tasks[h].state==EOS_TASK_BLOCKED,"still blocked");
-    while(eos_tick_get()<w)eos_kernel_tick();eos_task_wake_check(eos_tick_get());
+    while(eos_tick_get()<w){eos_kernel_tick();}
+    eos_task_wake_check(eos_tick_get());
     T(g_tasks[h].state==EOS_TASK_READY,"woke");
     printf("  [PASS] tick: 3 checks\n");return 0;}
 static int test_mtx(void){

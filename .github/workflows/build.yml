@@ -85,7 +85,7 @@ jobs:
           CF="-mcpu=cortex-m4 -mthumb -mfloat-abi=hard -mfpu=fpv4-sp-d16 \
               -std=c11 -Wall -Os -g -ffunction-sections -fdata-sections \
               -fno-common -specs=nosys.specs -DEOS_MCU_STM32F4 \
-              -Ikernel/include -Iinclude -Iboards/stm32f407_discovery"
+              -Ikernel/include -Iinclude -Ihal/include -Iboards/stm32f407_discovery"
           LF="-mcpu=cortex-m4 -mthumb -mfloat-abi=hard -mfpu=fpv4-sp-d16 \
               -Tboards/stm32f407vg.ld -Wl,--gc-sections \
               -specs=nosys.specs -specs=nano.specs -lc -lnosys"
