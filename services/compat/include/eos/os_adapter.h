@@ -30,6 +30,19 @@ extern "C" {
 
 #ifndef EOS_MAX_OS_ADAPTERS
 #define EOS_MAX_OS_ADAPTERS  4
+
+/**
+ * @brief Block until the operation succeeds, with no timeout.
+ *
+ * Every `timeout_ms` parameter below accepts this. The value matches
+ * EOS_WAIT_FOREVER in kernel.h, but is defined separately so an adapter for a
+ * foreign OS can be built without including the EoS kernel headers at all —
+ * which is the entire point of this interface.
+ */
+#define EOS_OSA_WAIT_FOREVER 0xFFFFFFFFU
+
+/** @brief Return immediately if the operation would block. */
+#define EOS_OSA_NO_WAIT      0U
 #endif
 
 /* ============================================================

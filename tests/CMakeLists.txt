@@ -1,4 +1,9 @@
 # EoS Unit Tests
+# --- test_os_adapter: OS abstraction layer and its adapters ---
+add_executable(test_os_adapter test_os_adapter.c)
+target_link_libraries(test_os_adapter PRIVATE eos_compat)
+add_test(NAME test_os_adapter COMMAND test_os_adapter)
+
 # --- test_config: OS configuration ---
 add_executable(test_config test_config.c)
 target_link_libraries(test_config PRIVATE eos_core)
