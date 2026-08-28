@@ -7,6 +7,15 @@ on:
   pull_request:
     branches: [main]
 
+# Every other workflow in this repo declares a concurrency group; ci.yml,
+# the heaviest one, did not. Pushing twice to a PR left the earlier run
+# queued, and both competed for the same scarce windows/macos runners --
+# three superseded runs sat ahead of the current one for over an hour.
+# cancel-in-progress because a superseded commit's result is not wanted.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
 env:
   BUILD_TYPE: Release
 
