@@ -100,6 +100,62 @@ static void test_config_missing_file(void) {
     ASSERT(res == EOS_ERR_IO, "returns IO error for missing file");
 }
 
+static void test_config_package_overflow(void) {
+    printf("test_config_package_overflow:\n");
+
+    /* One more package than the array holds. Refusing the extra entry is not
+     * enough on its own: the parser used to leave pkg_idx pointing at
+     * packages[EOS_MAX_PACKAGES], so the "version:" line under the refused
+     * entry wrote 127 bytes past the end of the array. AddressSanitizer
+     * reported it as a stack-buffer-overflow at config.c:247.
+     *
+     * package_count and the accepted entries all look correct even when the
+     * overflow happens, so asserting on them proves nothing. The config is
+     * placed in a struct with a trailing canary instead: members of one
+     * struct are laid out in order, so anything written past `packages`
+     * lands in `canary` and is detectable without a sanitizer. */
+    struct {
+        EosConfig     cfg;
+        unsigned char canary[4096];
+    } probe;
+
+    memset(&probe.cfg, 0, sizeof probe.cfg);
+    memset(probe.canary, 0xA5, sizeof probe.canary);
+
+    const char *path = "test_pkg_overflow.yaml";
+    FILE *f = fopen(path, "w");
+    ASSERT(f != NULL, "can write the overflow fixture");
+    if (!f) return;
+    fprintf(f, "packages:\n");
+    for (int i = 0; i < EOS_MAX_PACKAGES + 1; i++) {
+        fprintf(f, "  - name: pkg%d\n", i);
+        fprintf(f, "    version: 1.0.0\n");
+        fprintf(f, "    source: https://example.invalid/pkg%d\n", i);
+    }
+    fclose(f);
+
+    eos_config_init(&probe.cfg);
+    memset(probe.canary, 0xA5, sizeof probe.canary);
+    EosResult res = eos_config_load(&probe.cfg, path);
+
+    size_t clobbered = 0;
+    for (size_t i = 0; i < sizeof probe.canary; i++) {
+        if (probe.canary[i] != 0xA5) clobbered++;
+    }
+
+    ASSERT(clobbered == 0, "parser wrote nothing past the packages array");
+    if (clobbered) {
+        printf("        %zu byte(s) past the array were overwritten\n", clobbered);
+    }
+    ASSERT(res == EOS_OK, "an over-long package list still parses");
+    ASSERT(probe.cfg.package_count == EOS_MAX_PACKAGES,
+           "package_count is clamped to EOS_MAX_PACKAGES");
+    ASSERT(strcmp(probe.cfg.packages[EOS_MAX_PACKAGES - 1].version, "1.0.0") == 0,
+           "the last accepted package kept its own version");
+
+    remove(path);
+}
+
 int main(void) {
     eos_log_set_level(EOS_LOG_ERROR);
 
@@ -108,6 +164,7 @@ int main(void) {
     test_config_init();
     test_config_load();
     test_config_missing_file();
+    test_config_package_overflow();
 
     printf("\n=== Results: %d/%d passed ===\n", tests_passed, tests_run);
     return (tests_passed == tests_run) ? 0 : 1;
