@@ -6,9 +6,15 @@
  * @file main.c
  * @brief EoS Example: Secure OTA — Firmware update with verification
  *
- * Demonstrates the OTA update flow: check for update, download,
- * verify SHA-256 signature, apply to inactive slot, and reboot.
- * Uses crypto services for integrity and watchdog for safety.
+ * Demonstrates the OTA update flow: check for update, download, check
+ * integrity, authenticate the image, apply to the inactive slot, and reboot.
+ *
+ * Integrity and authenticity are separate steps here, deliberately.
+ * eos_ota_verify() compares the download against the SHA-256 the update
+ * source declared, which catches a corrupted transfer but nothing else --
+ * that digest arrives with the update, so whoever can replace the image can
+ * replace the digest. Deciding whether the image is one this device should
+ * run is the authenticator's job, below.
  */
 
 #include <eos/hal.h>
@@ -22,6 +28,34 @@
 #define UPDATE_CHECK_INTERVAL_MS  30000
 #define FIRMWARE_URL              "https://fw.example.com/firmware/v2.0.0.bin"
 #define FIRMWARE_VERSION          "2.0.0"
+
+/* The vendor public key this device trusts. A real deployment provisions this
+ * at manufacture and stores it somewhere immutable. */
+static const uint8_t g_vendor_pubkey[32] = { 0 };
+
+/* Called by eos_ota_apply() with the digest the OTA service computed over the
+ * bytes it actually received. This is where a signature check belongs: verify
+ * `signature` over `digest` under g_vendor_pubkey and return 0 only then.
+ *
+ * services/crypto's verify routines are still stubs and refuse to run unless a
+ * build defines EOS_ALLOW_STUB_CRYPTO, so this returns -1 rather than pretend.
+ * Refusing to install is the correct behaviour for a device with no working
+ * verifier -- returning 0 here would install anything. */
+static int verify_vendor_signature(const uint8_t digest[32],
+                                   const uint8_t *signature,
+                                   size_t signature_len,
+                                   void *ctx)
+{
+    (void)digest; (void)ctx;
+
+    if (!signature || signature_len == 0) {
+        printf("[ota] Update carries no signature — refusing\n");
+        return -1;
+    }
+
+    printf("[ota] No signature verifier is linked into this build — refusing\n");
+    return -1;
+}
 
 static void progress_callback(uint8_t pct, void *ctx)
 {
@@ -70,22 +104,23 @@ static void ota_task(void *arg)
             continue;
         }
 
-        /* Step 4: Verify firmware integrity (SHA-256 + signature) */
-        printf("[ota] Verifying firmware integrity...\n");
+        /* Step 4: Integrity — did the download arrive intact? */
+        printf("[ota] Checking firmware integrity...\n");
         ret = eos_ota_verify();
         if (ret != 0) {
-            printf("[ota] Verification FAILED: %d — aborting\n", ret);
+            printf("[ota] Integrity check FAILED: %d — aborting\n", ret);
             eos_ota_abort();
             continue;
         }
-        printf("[ota] Verification passed\n");
+        printf("[ota] Integrity check passed\n");
 
-        /* Step 5: Apply update (mark inactive slot as next boot) */
-        printf("[ota] Applying update...\n");
+        /* Step 5: Authenticity — should this device run this image at all?
+         * apply() refuses outright if no authenticator is installed. */
+        printf("[ota] Authenticating and applying update...\n");
         ret = eos_ota_apply();
         if (ret != 0) {
-            printf("[ota] Apply failed: %d\n", ret);
-            eos_ota_rollback();
+            printf("[ota] Update rejected (unauthenticated or apply failed): %d\n", ret);
+            eos_ota_abort();
             continue;
         }
 
@@ -130,6 +165,10 @@ int main(void)
 
     /* Register progress callback */
     eos_ota_set_progress_callback(progress_callback, NULL);
+
+    /* Without this, eos_ota_apply() refuses: an image whose only credential is
+     * a digest it shipped with is not installable. */
+    eos_ota_set_authenticator(verify_vendor_signature, (void *)g_vendor_pubkey);
 
     /* Print current firmware info */
     eos_ota_status_t status;
