@@ -27,13 +27,12 @@ if(EOS_ENABLE_FUZZING)
         LINK_FLAGS "${FUZZ_FLAGS}"
     )
 
-    # These require the parser libraries to be linked
-    # add_executable(fuzz_devicetree fuzz_devicetree.c)
-    # target_link_libraries(fuzz_devicetree PRIVATE eos_devicetree)
-    # set_target_properties(fuzz_devicetree PROPERTIES
-    #     COMPILE_FLAGS "${FUZZ_FLAGS}"
-    #     LINK_FLAGS "${FUZZ_FLAGS}"
-    # )
+    add_executable(fuzz_devicetree fuzz_devicetree.c)
+    target_link_libraries(fuzz_devicetree PRIVATE eos_devicetree)
+    set_target_properties(fuzz_devicetree PROPERTIES
+        COMPILE_FLAGS "${FUZZ_FLAGS}"
+        LINK_FLAGS "${FUZZ_FLAGS}"
+    )
 
     # add_executable(fuzz_ota_header fuzz_ota_header.c)
     # target_link_libraries(fuzz_ota_header PRIVATE eos_ota)
@@ -42,5 +41,5 @@ if(EOS_ENABLE_FUZZING)
     #     LINK_FLAGS "${FUZZ_FLAGS}"
     # )
 
-    message(STATUS "  Fuzz targets: fuzz_sha256, fuzz_aes")
+    message(STATUS "  Fuzz targets: fuzz_sha256, fuzz_aes, fuzz_devicetree")
 endif()

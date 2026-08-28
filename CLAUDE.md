@@ -136,7 +136,10 @@ read differently is a defect in the rule, and it will recur until it is fixed.
 ## CMake
 
 ```bash
-cmake -S . -B build -DCMAKE_BUILD_TYPE=Debug
-cmake --build build -j
-ctest --test-dir build --output-on-failure
+cmake -B build/host -DCMAKE_BUILD_TYPE=Debug -DEOS_BUILD_TESTS=ON
+cmake --build build/host --parallel
+ctest --test-dir build/host --output-on-failure
 ```
+
+Tests are opt-in via `-DEOS_BUILD_TESTS=ON` (default `OFF`); omitting it will
+build cleanly but `ctest` will report "No tests were found."
