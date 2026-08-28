@@ -55,6 +55,7 @@ purpose: PSA Crypto provider (ADR-012)
 | Field | Meaning |
 |---|---|
 | `name` | Directory name. Must match. |
+| `kind` | `source`, `weights`, or `tool`. Model weights follow different rules — see below. |
 | `version` | Upstream release, or `none` for an untagged revision. |
 | `repository` | Clone URL. |
 | `revision` | **Full 40-character commit SHA.** A tag or branch name is not a pin. |
@@ -63,6 +64,8 @@ purpose: PSA Crypto provider (ADR-012)
 | `imported` | ISO date. |
 | `importer` | Who to ask. |
 | `purpose` | One line, naming the ADR that authorised it. |
+| `redistribution` | **Weights only.** `yes` if this project may ship the file; `no` if users must fetch it themselves. |
+| `acknowledged_by` | **Weights only,** and only for a restricted licence with `redistribution: yes`. A named human who has read the terms. |
 
 ## The rules
 
@@ -92,11 +95,29 @@ purpose: PSA Crypto provider (ADR-012)
    Tools invoked as separate processes — OpenOCD, `dtc`, QEMU — are unaffected. Record
    those with `linked: no`, where the allow-list does not apply.
 
-5. **A new dependency needs an ADR**, not a pull request description. The record names
+5. **Model weights are not source, and the source rules do not cover them.**
+
+   A weight file arrives under a bespoke agreement, not an SPDX identifier. Several of
+   the common ones — Llama Community, Gemma Terms, Mistral Research, anything `-NC-` —
+   restrict redistribution, commercial use, or use as training data for another model.
+   None of that is expressible as a licence id, and none of it can be checked
+   mechanically.
+
+   So weights carry two extra fields. `redistribution` says whether this project may
+   ship the file at all, as opposed to telling users to fetch it themselves — getting
+   that wrong is a licence breach, not a build failure. And a restricted licence
+   combined with `redistribution: yes` needs `acknowledged_by`: a named person who has
+   actually read the terms. The script cannot read them for you; it can only refuse to
+   let the claim be anonymous.
+
+   Weights appear in the SBOM as CycloneDX `machine-learning-model` components, so an
+   ML-BOM consumer can tell a shipped model from a linked library.
+
+6. **A new dependency needs an ADR**, not a pull request description. The record names
    what the dependency replaces and what it costs in flash and RAM. See ADR-012 for the
    shape.
 
-6. **Every import carries an upstream watch.** A CVE must reach this project as a task,
+7. **Every import carries an upstream watch.** A CVE must reach this project as a task,
    not as a customer report. `scripts/cve_check.sh` consumes the generated `sbom.json`.
 
 ## Adding a dependency

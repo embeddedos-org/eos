@@ -59,10 +59,20 @@ def purl(fields: dict[str, str]) -> str:
     return f"pkg:generic/{name}@{version or revision[:12] or 'unknown'}{tail}"
 
 
+# CycloneDX 1.5 carries model weights as their own component type, so an ML-BOM
+# consumer can tell a shipped model from a linked library.
+_TYPE_BY_KIND = {
+    "source": "library",
+    "tool": "application",
+    "weights": "machine-learning-model",
+}
+
+
 def component(fields: dict[str, str]) -> dict:
     licence = fields.get("license", "")
+    kind = fields.get("kind", "source").lower()
     entry = {
-        "type": "library",
+        "type": _TYPE_BY_KIND.get(kind, "library"),
         "bom-ref": purl(fields),
         "name": fields.get("name", "unknown"),
         "version": fields.get("version", "") or fields.get("revision", "")[:12],
@@ -78,11 +88,19 @@ def component(fields: dict[str, str]) -> dict:
     if externals:
         entry["externalReferences"] = externals
     if fields.get("revision"):
-        entry["properties"] = [
+        properties = [
             {"name": "eos:revision", "value": fields["revision"]},
             {"name": "eos:imported", "value": fields.get("imported", "")},
             {"name": "eos:linked", "value": fields.get("linked", "")},
+            {"name": "eos:kind", "value": kind},
         ]
+        if kind == "weights":
+            # Whether we may ship the file matters to anyone consuming this SBOM,
+            # and it is not derivable from the licence id alone.
+            properties.append(
+                {"name": "eos:redistribution", "value": fields.get("redistribution", "")}
+            )
+        entry["properties"] = properties
     return entry
 
 

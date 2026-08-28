@@ -9,6 +9,8 @@ Checks, per dependency:
   * revision is a full 40-character SHA, not a tag or branch
   * LICENSE exists and is not empty
   * the SPDX identifier is on the allow-list, when the code is linked
+  * model weights declare redistribution rights, since their licences are not
+    source licences and several forbid redistribution outright
   * the directory name matches the recorded name
   * NOTICE mentions it
 
@@ -31,6 +33,7 @@ NOTICE = PROJECT_ROOT / "NOTICE"
 
 REQUIRED_FIELDS = (
     "name",
+    "kind",
     "version",
     "repository",
     "revision",
@@ -62,6 +65,25 @@ COPYLEFT = {
     "MPL-2.0",
 }
 
+KINDS = {"source", "weights", "tool"}
+
+# Model weights are not source. Their licences are bespoke agreements, not SPDX
+# identifiers, and several restrict redistribution, commercial use, or use as
+# training data for other models. A weight file waved through the source
+# allow-list is a licence breach the SBOM would not show.
+WEIGHTS_OSI = {"Apache-2.0", "MIT", "CC-BY-4.0", "CC-BY-SA-4.0", "OpenRAIL-M"}
+
+# Permitted, but only with redistribution explicitly recorded and acknowledged.
+WEIGHTS_RESTRICTED = {
+    "Llama-3-Community",
+    "Llama-4-Community",
+    "Gemma-Terms",
+    "Qwen-License",
+    "DeepSeek-License",
+    "Mistral-Research",
+    "CC-BY-NC-4.0",
+}
+
 SHA_RE = re.compile(r"^[0-9a-f]{40}$")
 DATE_RE = re.compile(r"^\d{4}-\d{2}-\d{2}$")
 
@@ -78,6 +100,40 @@ def parse_upstream(path: Path) -> dict[str, str]:
         key, _, value = line.partition(":")
         fields[key.strip()] = value.strip()
     return fields
+
+
+def check_weights(name: str, fields: dict[str, str], licence: str) -> list[str]:
+    """Extra rules for model weights, which source licence rules do not cover."""
+    problems: list[str] = []
+
+    redistribution = fields.get("redistribution", "").lower()
+    if redistribution not in {"yes", "no"}:
+        problems.append(
+            f"{name}: weights must declare 'redistribution: yes|no' — whether this "
+            "project may ship the weight file itself, as opposed to telling users to "
+            "fetch it. Getting this wrong is a licence breach, not a build failure."
+        )
+
+    if not licence:
+        return problems
+
+    if licence in WEIGHTS_RESTRICTED:
+        if redistribution == "yes" and not fields.get("acknowledged_by"):
+            problems.append(
+                f"{name}: {licence} is a restricted model licence and this record "
+                "claims the right to redistribute. That needs a named human in "
+                "'acknowledged_by' who has read the terms — acceptable-use clauses, "
+                "naming requirements and downstream restrictions are not SPDX and "
+                "cannot be checked mechanically."
+            )
+    elif licence not in WEIGHTS_OSI:
+        problems.append(
+            f"{name}: {licence} is not a recognised model-weight licence. Add it to "
+            "WEIGHTS_OSI or WEIGHTS_RESTRICTED in this script, and say which in the ADR "
+            "that authorised the import."
+        )
+
+    return problems
 
 
 def check_dependency(directory: Path, notice_text: str) -> list[str]:
@@ -118,8 +174,17 @@ def check_dependency(directory: Path, notice_text: str) -> list[str]:
     if linked and linked not in {"yes", "no"}:
         problems.append(f"{name}: linked must be 'yes' or 'no', got '{fields['linked']}'")
 
+    kind = fields.get("kind", "").lower()
+    if kind and kind not in KINDS:
+        problems.append(
+            f"{name}: kind must be one of {', '.join(sorted(KINDS))}, got '{fields['kind']}'"
+        )
+
     licence = fields.get("license", "")
-    if licence and linked == "yes":
+
+    if kind == "weights":
+        problems.extend(check_weights(name, fields, licence))
+    elif licence and linked == "yes":
         if licence in COPYLEFT:
             problems.append(
                 f"{name}: {licence} is copyleft and this code is linked into a shipped "
