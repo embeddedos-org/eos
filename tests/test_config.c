@@ -5,6 +5,7 @@
 #include <stdio.h>
 #include <string.h>
 #include "eos/config.h"
+#include "eos/lockfile.h"
 #include "eos/log.h"
 
 static int tests_run = 0;
@@ -100,6 +101,70 @@ static void test_config_missing_file(void) {
     ASSERT(res == EOS_ERR_IO, "returns IO error for missing file");
 }
 
+static void test_lockfile_freshness(void) {
+    printf("test_lockfile_freshness:\n");
+    static EosConfig cfg;
+    static EosLockfile lock;
+
+    eos_config_init(&cfg);
+    snprintf(cfg.project.name, sizeof(cfg.project.name), "%s", "demo");
+    snprintf(cfg.project.version, sizeof(cfg.project.version), "%s", "1.0.0");
+    cfg.package_count = 2;
+
+    snprintf(cfg.packages[0].name, sizeof(cfg.packages[0].name), "%s", "alpha");
+    snprintf(cfg.packages[0].version, sizeof(cfg.packages[0].version), "%s", "1.2.3");
+    snprintf(cfg.packages[0].source, sizeof(cfg.packages[0].source), "%s", "https://example.com/alpha.tar.gz");
+    snprintf(cfg.packages[0].hash, sizeof(cfg.packages[0].hash), "%s", "explicit-checksum");
+    cfg.packages[0].build_type = EOS_BUILD_CMAKE;
+
+    snprintf(cfg.packages[1].name, sizeof(cfg.packages[1].name), "%s", "beta");
+    snprintf(cfg.packages[1].version, sizeof(cfg.packages[1].version), "%s", "4.5.6");
+    snprintf(cfg.packages[1].source, sizeof(cfg.packages[1].source), "%s", "https://example.com/beta.tar.gz");
+    cfg.packages[1].build_type = EOS_BUILD_MAKE;
+
+    ASSERT(eos_lockfile_generate(&lock, &cfg) == EOS_OK, "lockfile generates");
+    ASSERT(eos_lockfile_is_current(&lock, &cfg), "generated lockfile is current");
+
+    EosLockEntry tmp = lock.entries[0];
+    lock.entries[0] = lock.entries[1];
+    lock.entries[1] = tmp;
+    ASSERT(eos_lockfile_is_current(&lock, &cfg), "package order does not affect freshness");
+    tmp = lock.entries[0];
+    lock.entries[0] = lock.entries[1];
+    lock.entries[1] = tmp;
+
+    snprintf(cfg.project.version, sizeof(cfg.project.version), "%s", "2.0.0");
+    ASSERT(!eos_lockfile_is_current(&lock, &cfg), "project version change is stale");
+    snprintf(cfg.project.version, sizeof(cfg.project.version), "%s", "1.0.0");
+
+    snprintf(cfg.packages[0].name, sizeof(cfg.packages[0].name), "%s", "renamed-alpha");
+    ASSERT(!eos_lockfile_is_current(&lock, &cfg), "package name change is stale");
+    snprintf(cfg.packages[0].name, sizeof(cfg.packages[0].name), "%s", "alpha");
+
+    snprintf(cfg.packages[0].version, sizeof(cfg.packages[0].version), "%s", "1.2.4");
+    ASSERT(!eos_lockfile_is_current(&lock, &cfg), "requested version change is stale");
+    snprintf(cfg.packages[0].version, sizeof(cfg.packages[0].version), "%s", "1.2.3");
+
+    snprintf(cfg.packages[0].source, sizeof(cfg.packages[0].source), "%s", "https://example.com/alpha-v2.tar.gz");
+    ASSERT(!eos_lockfile_is_current(&lock, &cfg), "package source change is stale");
+    snprintf(cfg.packages[0].source, sizeof(cfg.packages[0].source), "%s", "https://example.com/alpha.tar.gz");
+
+    snprintf(cfg.packages[0].hash, sizeof(cfg.packages[0].hash), "%s", "new-checksum");
+    ASSERT(!eos_lockfile_is_current(&lock, &cfg), "explicit checksum change is stale");
+    snprintf(cfg.packages[0].hash, sizeof(cfg.packages[0].hash), "%s", "explicit-checksum");
+
+    cfg.packages[0].build_type = EOS_BUILD_MAKE;
+    ASSERT(!eos_lockfile_is_current(&lock, &cfg), "build type change is stale");
+    cfg.packages[0].build_type = EOS_BUILD_CMAKE;
+
+    snprintf(lock.entries[0].resolved_version, sizeof(lock.entries[0].resolved_version), "%s", "1.2.4");
+    ASSERT(!eos_lockfile_is_current(&lock, &cfg), "resolved version change is stale");
+    snprintf(lock.entries[0].resolved_version, sizeof(lock.entries[0].resolved_version), "%s", "1.2.3");
+
+    lock.entries[1].hash[0] ^= 1;
+    ASSERT(!eos_lockfile_is_current(&lock, &cfg), "generated checksum change is stale");
+}
+
 int main(void) {
     eos_log_set_level(EOS_LOG_ERROR);
 
@@ -108,6 +173,7 @@ int main(void) {
     test_config_init();
     test_config_load();
     test_config_missing_file();
+    test_lockfile_freshness();
 
     printf("\n=== Results: %d/%d passed ===\n", tests_passed, tests_run);
     return (tests_passed == tests_run) ? 0 : 1;

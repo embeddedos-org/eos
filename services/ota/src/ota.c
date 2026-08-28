@@ -4,6 +4,7 @@
 
 #include "eos/ota.h"
 #include "eos/crypto.h"
+#include <stdio.h>
 #include <string.h>
 
 #if EOS_ENABLE_OTA
@@ -16,10 +17,16 @@ static struct {
     uint32_t         bytes_written;
     uint32_t         total_size;
     uint8_t          expected_hash[32];
+    uint8_t          actual_hash[32];
+    const uint8_t   *signature;
+    size_t           signature_len;
     int              in_progress;
-    int              verified;
+    int              integrity_ok;   /* bytes received hash to expected_hash */
+    int              authenticated;  /* the authenticator accepted the image */
     eos_ota_progress_cb progress_cb;
     void            *progress_ctx;
+    eos_ota_authenticator_cb auth_cb;
+    void            *auth_ctx;
     uint8_t          slot_valid[2];
 } g_ota;
 
@@ -47,9 +54,13 @@ int eos_ota_begin(const eos_ota_source_t *source) {
     g_ota.update_slot = (g_ota.active_slot == EOS_OTA_SLOT_A) ? EOS_OTA_SLOT_B : EOS_OTA_SLOT_A;
     g_ota.total_size = source->expected_size;
     g_ota.bytes_written = 0;
-    g_ota.verified = 0;
+    g_ota.integrity_ok = 0;
+    g_ota.authenticated = 0;
     g_ota.in_progress = 1;
     memcpy(g_ota.expected_hash, source->expected_sha256, 32);
+    memset(g_ota.actual_hash, 0, sizeof(g_ota.actual_hash));
+    g_ota.signature = source->signature;
+    g_ota.signature_len = source->signature_len;
     eos_sha256_init(&g_ota.hash_ctx);
     return 0;
 }
@@ -75,23 +86,59 @@ int eos_ota_finish(void) {
 int eos_ota_abort(void) {
     g_ota.in_progress = 0;
     g_ota.bytes_written = 0;
-    g_ota.verified = 0;
+    g_ota.integrity_ok = 0;
+    g_ota.authenticated = 0;
     return 0;
 }
 
 int eos_ota_verify(void) {
     if (!g_ota.initialized || g_ota.bytes_written != g_ota.total_size) return -1;
-    uint8_t actual[32];
-    eos_sha256_final(&g_ota.hash_ctx, actual);
-    if (memcmp(actual, g_ota.expected_hash, 32) != 0) return -1;
-    g_ota.verified = 1;
-    g_ota.slot_valid[g_ota.update_slot] = 1;
+    if (g_ota.integrity_ok) return 0;  /* the hash context is single-use */
+
+    eos_sha256_final(&g_ota.hash_ctx, g_ota.actual_hash);
+    if (memcmp(g_ota.actual_hash, g_ota.expected_hash, 32) != 0) return -1;
+
+    /* Integrity only. The slot is not marked valid here: until apply() runs it
+     * holds a half-installed image, and marking it would make it a legal
+     * eos_ota_rollback() / eos_ota_set_active_slot() target. */
+    g_ota.integrity_ok = 1;
+    return 0;
+}
+
+int eos_ota_set_authenticator(eos_ota_authenticator_cb cb, void *ctx) {
+    if (!g_ota.initialized) return -1;
+    g_ota.auth_cb = cb;
+    g_ota.auth_ctx = ctx;
     return 0;
 }
 
 int eos_ota_apply(void) {
-    if (!g_ota.initialized || !g_ota.verified) return -1;
+    if (!g_ota.initialized || !g_ota.integrity_ok) return -1;
+
+    if (g_ota.auth_cb) {
+        /* The authenticator is given the digest this service computed, never
+         * the one the update declared. */
+        if (g_ota.auth_cb(g_ota.actual_hash, g_ota.signature,
+                          g_ota.signature_len, g_ota.auth_ctx) != 0) {
+            g_ota.authenticated = 0;
+            return -1;
+        }
+        g_ota.authenticated = 1;
+    } else {
+#ifdef EOS_ALLOW_UNSIGNED_OTA
+        g_ota.authenticated = 1;
+#else
+        fprintf(stderr,
+                "eos-ota: refusing to apply an update with no authenticator "
+                "installed; expected_sha256 travels with the update and proves "
+                "nothing about its origin. Call eos_ota_set_authenticator(), "
+                "or build with EOS_ALLOW_UNSIGNED_OTA.\n");
+        return -1;
+#endif
+    }
+
     g_ota.active_slot = g_ota.update_slot;
+    g_ota.slot_valid[g_ota.update_slot] = 1;
     return 0;
 }
 

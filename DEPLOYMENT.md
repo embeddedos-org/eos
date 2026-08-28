@@ -158,6 +158,14 @@ nrfjprog --reset
 esptool.py --chip esp32 write_flash 0x10000 build/eos.bin
 ```
 
+The HiLetGo ESP-WROOM-32 ESP-32S is represented by the
+`boards/hiletgo-esp-wroom-32.yaml` descriptor and reuses the existing ESP32
+(`ESP32-D0WDQ6`, LX6) target definition. EoS does not currently provide an
+Xtensa ESP32 cross-toolchain file or an ESP32 firmware build target, so this
+descriptor does not by itself produce a flashable image. Install and configure
+the Espressif ESP32 toolchain and validate the generated image and flash
+addresses for the specific module before programming hardware.
+
 ---
 
 ## Build eBoot Separately

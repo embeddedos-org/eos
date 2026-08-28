@@ -9,6 +9,20 @@
 #include <string.h>
 #include <ctype.h>
 
+static void package_hash(const EosPackageConfig *pc, char *hash) {
+    if (pc->hash[0]) {
+        strncpy(hash, pc->hash, EOS_HASH_LEN - 1);
+        hash[EOS_HASH_LEN - 1] = '\0';
+        return;
+    }
+
+    char input[2048];
+    snprintf(input, sizeof(input), "%s:%s:%s:%s",
+             pc->name, pc->version, pc->source,
+             eos_build_type_str(pc->build_type));
+    eos_cache_compute_hash(input, strlen(input), hash, EOS_HASH_LEN);
+}
+
 EosResult eos_lockfile_generate(EosLockfile *lock, const EosConfig *cfg) {
     memset(lock, 0, sizeof(*lock));
     strncpy(lock->project_name, cfg->project.name, EOS_MAX_NAME - 1);
@@ -22,17 +36,8 @@ EosResult eos_lockfile_generate(EosLockfile *lock, const EosConfig *cfg) {
         strncpy(entry->version, pc->version, EOS_MAX_NAME - 1);
         strncpy(entry->resolved_version, pc->version, EOS_MAX_NAME - 1);
         strncpy(entry->source, pc->source, EOS_MAX_URL - 1);
-        strncpy(entry->hash, pc->hash, EOS_HASH_LEN - 1);
         entry->build_type = pc->build_type;
-
-        /* If no hash provided, compute one from metadata */
-        if (!entry->hash[0]) {
-            char input[2048];
-            snprintf(input, sizeof(input), "%s:%s:%s:%s",
-                     entry->name, entry->version,
-                     entry->source, eos_build_type_str(entry->build_type));
-            eos_cache_compute_hash(input, strlen(input), entry->hash, EOS_HASH_LEN);
-        }
+        package_hash(pc, entry->hash);
 
         lock->count++;
     }
@@ -138,13 +143,26 @@ EosResult eos_lockfile_load(EosLockfile *lock, const char *path) {
 
 int eos_lockfile_is_current(const EosLockfile *lock, const EosConfig *cfg) {
     if (strcmp(lock->project_name, cfg->project.name) != 0) return 0;
+    if (strcmp(lock->project_version, cfg->project.version) != 0) return 0;
     if (lock->count != cfg->package_count) return 0;
 
+    int matched[EOS_MAX_PACKAGES] = {0};
     for (int i = 0; i < cfg->package_count; i++) {
+        const EosPackageConfig *pc = &cfg->packages[i];
+        char expected_hash[EOS_HASH_LEN] = {0};
+        package_hash(pc, expected_hash);
+
         int found = 0;
         for (int j = 0; j < lock->count; j++) {
-            if (strcmp(cfg->packages[i].name, lock->entries[j].name) == 0 &&
-                strcmp(cfg->packages[i].version, lock->entries[j].version) == 0) {
+            const EosLockEntry *entry = &lock->entries[j];
+            if (!matched[j] &&
+                strcmp(pc->name, entry->name) == 0 &&
+                strcmp(pc->version, entry->version) == 0 &&
+                strcmp(pc->version, entry->resolved_version) == 0 &&
+                strcmp(pc->source, entry->source) == 0 &&
+                strcmp(expected_hash, entry->hash) == 0 &&
+                pc->build_type == entry->build_type) {
+                matched[j] = 1;
                 found = 1;
                 break;
             }
