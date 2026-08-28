@@ -13,8 +13,16 @@ extern "C" {
 
 #define EOS_DT_MAX_NODES       128
 #define EOS_DT_MAX_PROPS       16
+#define EOS_DT_MAX_CHILDREN    16
 #define EOS_DT_NAME_MAX        64
 #define EOS_DT_PROP_MAX        256
+
+/* Deepest node nesting the parser will follow. A blob nested deeper than this
+ * is rejected rather than silently walking off the end of the node stack. */
+#define EOS_DT_MAX_DEPTH       32
+
+/* Size of the flattened device tree header, in bytes. */
+#define EOS_DT_HEADER_SIZE     40
 
 #define EOS_DT_MAGIC           0xD00DFEED
 #define EOS_DT_BEGIN_NODE      0x00000001
@@ -34,7 +42,7 @@ typedef struct eos_dt_node {
     EosDtProp             props[EOS_DT_MAX_PROPS];
     int                   prop_count;
     struct eos_dt_node   *parent;
-    struct eos_dt_node   *children[16];
+    struct eos_dt_node   *children[EOS_DT_MAX_CHILDREN];
     int                   child_count;
     uint32_t              phandle;
 } EosDtNode;

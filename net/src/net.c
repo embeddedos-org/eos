@@ -27,8 +27,14 @@ void eos_net_deinit(void)
 
 eos_socket_t eos_net_socket(eos_net_proto_t proto)
 {
-    (void)proto;
-    if (!net_initialized) return EOS_SOCKET_INVALID;
+    if (!net_initialized) {
+        return EOS_SOCKET_INVALID;
+    }
+
+    if (proto != EOS_NET_TCP && proto != EOS_NET_UDP) {
+        return EOS_SOCKET_INVALID;
+    }
+
     static int next_fd = 1;
     return (eos_socket_t)next_fd++;
 }

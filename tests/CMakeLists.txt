@@ -1,4 +1,11 @@
 # EoS Unit Tests
+# --- test_board_configs: Board YAML schema shape ---
+add_executable(test_board_configs test_board_configs.c)
+add_test(NAME test_board_configs COMMAND test_board_configs boards)
+set_tests_properties(test_board_configs PROPERTIES
+    WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
+)
+
 # --- test_config: OS configuration ---
 add_executable(test_config test_config.c)
 target_link_libraries(test_config PRIVATE eos_core)
@@ -141,3 +148,12 @@ target_include_directories(test_package PRIVATE
 )
 target_link_libraries(test_package PRIVATE eos_pkg eos_core)
 add_test(NAME test_package COMMAND test_package)
+
+# --- test_devicetree: Flattened device tree parser ---
+add_executable(test_devicetree test_devicetree.c)
+target_link_libraries(test_devicetree PRIVATE eos_devicetree)
+add_test(NAME test_devicetree COMMAND test_devicetree)
+
+# --- Fuzz targets ---
+# Opt-in (-DEOS_ENABLE_FUZZING=ON, Clang only); the subdirectory guards itself.
+add_subdirectory(fuzz)
