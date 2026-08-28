@@ -86,6 +86,7 @@ typedef struct {
     uint32_t *stack_base;
     uint32_t *stack_ptr;
     uint32_t wake_tick;
+    bool wake_armed;
     uint32_t run_count;
 } eos_task_t;
 

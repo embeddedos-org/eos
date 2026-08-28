@@ -152,10 +152,10 @@ void eos_task_wake_check(uint32_t current_tick)
 {
     for (int i = 0; i < EOS_MAX_TASKS; i++) {
         eos_task_t *t = &g_tasks[i];
-        if (t->state == EOS_TASK_BLOCKED && t->wake_tick > 0 &&
+        if (t->state == EOS_TASK_BLOCKED && t->wake_armed &&
             (int32_t)(current_tick - t->wake_tick) >= 0) {
             t->state = EOS_TASK_READY;
-            t->wake_tick = 0;
+            t->wake_armed = false;
         }
     }
 }
@@ -341,7 +341,7 @@ void eos_task_delay_ms(uint32_t ms)
     if (g_current >= 0) {
         uint32_t crit = eos_port_enter_critical();
         g_tasks[g_current].wake_tick = g_tick + ms;
-        if (g_tasks[g_current].wake_tick == 0) g_tasks[g_current].wake_tick = 1;
+        g_tasks[g_current].wake_armed = true;
         g_tasks[g_current].state = EOS_TASK_BLOCKED;
         eos_port_exit_critical(crit);
         eos_port_yield();
@@ -467,10 +467,10 @@ void eos_task_block_with_timeout(eos_task_handle_t h, uint32_t timeout_ms)
     if (h >= EOS_MAX_TASKS) return;
     g_tasks[h].state = EOS_TASK_BLOCKED;
     if (timeout_ms == EOS_WAIT_FOREVER) {
-        g_tasks[h].wake_tick = 0;  /* Never auto-wake */
+        g_tasks[h].wake_armed = false;  /* Never auto-wake */
     } else {
         g_tasks[h].wake_tick = g_tick + timeout_ms;
-        if (g_tasks[h].wake_tick == 0) g_tasks[h].wake_tick = 1;
+        g_tasks[h].wake_armed = true;
     }
 }
 
@@ -478,5 +478,5 @@ void eos_task_unblock(eos_task_handle_t h)
 {
     if (h >= EOS_MAX_TASKS) return;
     g_tasks[h].state = EOS_TASK_READY;
-    g_tasks[h].wake_tick = 0;
+    g_tasks[h].wake_armed = false;
 }

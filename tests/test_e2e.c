@@ -53,8 +53,8 @@ static int test_acc(void){
     eos_task_set_priority_internal(h,5);
     eos_task_block_with_timeout(h,100);T(g_tasks[h].state==EOS_TASK_BLOCKED,"blocked");
     T(g_tasks[h].wake_tick==g_tick+100,"wake=tick+100");
-    eos_task_unblock(h);T(g_tasks[h].state==EOS_TASK_READY,"unblocked");T(g_tasks[h].wake_tick==0,"wake=0");
-    eos_task_block_with_timeout(h,EOS_WAIT_FOREVER);T(g_tasks[h].wake_tick==0,"FOREVER=0");eos_task_unblock(h);
+    eos_task_unblock(h);T(g_tasks[h].state==EOS_TASK_READY,"unblocked");T(g_tasks[h].wake_armed==false,"wake=0");
+    eos_task_block_with_timeout(h,EOS_WAIT_FOREVER);T(g_tasks[h].wake_armed==false,"FOREVER=0");eos_task_unblock(h);
     T(eos_task_get_priority_internal(EOS_MAX_TASKS)==255,"OOB=255");
     printf("  [PASS] acc: 9 checks\n");return 0;}
 static int test_tick(void){

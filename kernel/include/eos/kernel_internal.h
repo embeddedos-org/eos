@@ -37,12 +37,12 @@ void eos_task_set_priority_internal(eos_task_handle_t h, uint8_t prio);
  * @brief Block a task with a timeout.
  *
  * Sets the task state to BLOCKED and wake_tick to g_tick + timeout_ms.
- * If timeout_ms is EOS_WAIT_FOREVER, wake_tick is set to 0 (never auto-wake).
+ * If timeout_ms is EOS_WAIT_FOREVER, wake_armed is set to false (never auto-wake).
  */
 void eos_task_block_with_timeout(eos_task_handle_t h, uint32_t timeout_ms);
 
 /**
- * @brief Unblock a task (set state to READY, clear wake_tick).
+ * @brief Unblock a task (set state to READY, clear wake_armed).
  */
 void eos_task_unblock(eos_task_handle_t h);
 
