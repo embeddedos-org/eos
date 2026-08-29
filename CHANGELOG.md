@@ -6,6 +6,13 @@
 - **`eos_queue_create`:** Size check now uses division so `item_size * capacity` cannot wrap `size_t` on 32-bit targets and overflow the 1024-byte queue store.
 - **`eos_sem_create`:** Reject `initial > max` and `max` values that do not fit in `int32_t`, so the counting-semaphore invariant cannot be created already broken.
 - **`eos_mutex_lock`:** Recursive lock returns `EOS_KERN_FULL` at `uint8_t` saturation instead of wrapping `rec_count` to 0 and leaving the mutex stuck.
+- **`eos_dt_parse`:** Bounds-check the flattened device tree blob before dereferencing it. A malformed DTB could previously read outside the buffer four different ways: `off_struct` past the end of the blob (the `size - off_struct` bound wrapped), a node name with no terminator (unbounded `strlen`), a property name offset outside the strings block, and nesting deeper than the 32-entry node stack. All are now rejected.
+- **`eos_dt_find_compatible`:** Search within `prop->len` instead of calling `strstr()` on a property value that is not guaranteed to be NUL-terminated.
+- **`eos_dt_get_irq`:** Reject a negative index, and one large enough that `index * 4` overflows, before it is used as an offset.
+
+### Added
+- `tests/test_devicetree.c` — device tree parser suite: happy path, malformed-blob rejection, a sweep over every truncation of a valid blob, and a single-byte corruption sweep.
+- `tests/fuzz/` is now wired into the build. The directory was never added by any `add_subdirectory`, so no fuzz target could be built. `fuzz_devicetree` is enabled and calls the real `eos_dt_parse()` API — it previously declared a non-existent `eos_dtb_parse()` and was commented out.
 
 ## [3.0.1] - 2026-05-16
 

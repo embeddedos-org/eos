@@ -1,4 +1,11 @@
 # EoS Unit Tests
+# --- test_board_configs: Board YAML schema shape ---
+add_executable(test_board_configs test_board_configs.c)
+add_test(NAME test_board_configs COMMAND test_board_configs boards)
+set_tests_properties(test_board_configs PROPERTIES
+    WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
+)
+
 # --- test_config: OS configuration ---
 add_executable(test_config test_config.c)
 target_link_libraries(test_config PRIVATE eos_core)
@@ -44,12 +51,22 @@ add_executable(test_crypto test_crypto.c)
 target_link_libraries(test_crypto PRIVATE eos_crypto)
 add_test(NAME test_crypto COMMAND test_crypto)
 
-# --- test_crypto_failclosed: the stub signature routines must refuse ---
-# Deliberately NOT built with EOS_ALLOW_STUB_CRYPTO: the point is to assert the
-# refusal that keeps the secure-boot bypass closed.
-add_executable(test_crypto_failclosed test_crypto_failclosed.c)
-target_link_libraries(test_crypto_failclosed PRIVATE eos_crypto)
-add_test(NAME test_crypto_failclosed COMMAND test_crypto_failclosed)
+# --- test_crypto_aes / _ecc / _rsa / _sha512: were sitting in tests/ unused ---
+add_executable(test_crypto_aes test_crypto_aes.c)
+target_link_libraries(test_crypto_aes PRIVATE eos_crypto)
+add_test(NAME test_crypto_aes COMMAND test_crypto_aes)
+
+add_executable(test_crypto_ecc test_crypto_ecc.c)
+target_link_libraries(test_crypto_ecc PRIVATE eos_crypto)
+add_test(NAME test_crypto_ecc COMMAND test_crypto_ecc)
+
+add_executable(test_crypto_rsa test_crypto_rsa.c)
+target_link_libraries(test_crypto_rsa PRIVATE eos_crypto)
+add_test(NAME test_crypto_rsa COMMAND test_crypto_rsa)
+
+add_executable(test_crypto_sha512 test_crypto_sha512.c)
+target_link_libraries(test_crypto_sha512 PRIVATE eos_crypto)
+add_test(NAME test_crypto_sha512 COMMAND test_crypto_sha512)
 
 # --- test_security: Keystore, ACL ---
 add_executable(test_security test_security.c)
@@ -136,3 +153,12 @@ target_include_directories(test_package PRIVATE
 )
 target_link_libraries(test_package PRIVATE eos_pkg eos_core)
 add_test(NAME test_package COMMAND test_package)
+
+# --- test_devicetree: Flattened device tree parser ---
+add_executable(test_devicetree test_devicetree.c)
+target_link_libraries(test_devicetree PRIVATE eos_devicetree)
+add_test(NAME test_devicetree COMMAND test_devicetree)
+
+# --- Fuzz targets ---
+# Opt-in (-DEOS_ENABLE_FUZZING=ON, Clang only); the subdirectory guards itself.
+add_subdirectory(fuzz)

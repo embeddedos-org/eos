@@ -152,9 +152,10 @@ void eos_task_wake_check(uint32_t current_tick)
 {
     for (int i = 0; i < EOS_MAX_TASKS; i++) {
         eos_task_t *t = &g_tasks[i];
-        if (t->state == EOS_TASK_BLOCKED && t->wake_tick > 0 &&
-            current_tick >= t->wake_tick) {
+        if (t->state == EOS_TASK_BLOCKED && t->wake_armed &&
+            EOS_TICK_REACHED(current_tick, t->wake_tick)) {
             t->state = EOS_TASK_READY;
+            t->wake_armed = 0;
             t->wake_tick = 0;
         }
     }
@@ -343,6 +344,7 @@ void eos_task_delay_ms(uint32_t ms)
     if (g_current >= 0) {
         uint32_t crit = eos_port_enter_critical();
         g_tasks[g_current].wake_tick = g_tick + ms;
+        g_tasks[g_current].wake_armed = 1;
         g_tasks[g_current].state = EOS_TASK_BLOCKED;
         eos_port_exit_critical(crit);
         eos_port_yield();
@@ -372,7 +374,9 @@ eos_task_state_t eos_task_get_state(eos_task_handle_t h)
 
 const char *eos_task_get_name(eos_task_handle_t h)
 {
-    if (h >= EOS_MAX_TASKS || !g_tasks[h].name) return "invalid";
+    if (h >= EOS_MAX_TASKS || g_tasks[h].state == EOS_TASK_DELETED || !g_tasks[h].name) {
+        return "invalid";
+    }
     return g_tasks[h].name;
 }
 
@@ -441,7 +445,7 @@ void eos_swtimer_tick(uint32_t current_tick)
     for (int i = 0; i < EOS_MAX_TIMERS; i++) {
         swtimer_t *t = &g_timers[i];
         if (!t->in_use || !t->active) continue;
-        if (current_tick >= t->next_tick) {
+        if (EOS_TICK_REACHED(current_tick, t->next_tick)) {
             t->callback((eos_swtimer_handle_t)i, t->ctx);
             if (t->auto_reload) {
                 t->next_tick = current_tick + t->period_ticks;
@@ -478,9 +482,11 @@ void eos_task_block_with_timeout(eos_task_handle_t h, uint32_t timeout_ms)
     if (h >= EOS_MAX_TASKS) return;
     g_tasks[h].state = EOS_TASK_BLOCKED;
     if (timeout_ms == EOS_WAIT_FOREVER) {
-        g_tasks[h].wake_tick = 0;  /* Never auto-wake */
+        g_tasks[h].wake_tick = 0;
+        g_tasks[h].wake_armed = 0;  /* Never auto-wake */
     } else {
         g_tasks[h].wake_tick = g_tick + timeout_ms;
+        g_tasks[h].wake_armed = 1;
     }
 }
 
@@ -489,4 +495,5 @@ void eos_task_unblock(eos_task_handle_t h)
     if (h >= EOS_MAX_TASKS) return;
     g_tasks[h].state = EOS_TASK_READY;
     g_tasks[h].wake_tick = 0;
+    g_tasks[h].wake_armed = 0;
 }

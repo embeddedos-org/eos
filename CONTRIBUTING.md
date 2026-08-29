@@ -26,10 +26,15 @@ Thank you for your interest in contributing to the Embedded Operating System!
 ```bash
 git clone https://github.com/embeddedos-org/eos.git
 cd eos
-cmake -B build -DEOS_BUILD_TESTS=ON
+cmake -B build -DEOS_BUILD_TESTS=ON -DEOS_PRODUCT=vbox_test
 cmake --build build
 ctest --test-dir build --output-on-failure
 ```
+
+`EOS_PRODUCT=vbox_test` is required alongside `EOS_BUILD_TESTS=ON`: the OTA,
+sensor, motor, and power tests only compile against a product profile that
+enables those services, and `vbox_test` is the profile meant for host-side
+testing.
 
 To build a specific product profile:
 ```bash
@@ -61,7 +66,7 @@ Before submitting a PR, ensure all checks pass:
 
 ```bash
 # 1. Full build with tests
-cmake -B build -DEOS_BUILD_TESTS=ON
+cmake -B build -DEOS_BUILD_TESTS=ON -DEOS_PRODUCT=vbox_test
 cmake --build build --config Release
 ctest --test-dir build --output-on-failure -C Release
 

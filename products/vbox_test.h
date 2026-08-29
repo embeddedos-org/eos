@@ -25,4 +25,8 @@
 #define EOS_ENABLE_COMPAT    1
 #define EOS_ENABLE_POSIX     1
 #define EOS_ENABLE_LINUX_IPC 1
+#define EOS_ENABLE_OTA        1
+#define EOS_ENABLE_SENSOR     1
+#define EOS_ENABLE_MOTOR_CTRL 1
+#define EOS_ENABLE_POWER      1
 #endif

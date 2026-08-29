@@ -64,7 +64,10 @@ cross-compiling.
 
 ```bash
 # C unit tests
-cmake -B build/host -DEOS_BUILD_TESTS=ON
+# EOS_PRODUCT is required here: several tests (OTA, sensor, motor, power)
+# only compile against a product profile that enables those services.
+# vbox_test is the profile meant for host-side testing.
+cmake -B build/host -DEOS_BUILD_TESTS=ON -DEOS_PRODUCT=vbox_test
 cmake --build build/host --parallel
 ctest --test-dir build/host --output-on-failure
 
