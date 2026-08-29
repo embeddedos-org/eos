@@ -73,6 +73,12 @@ add_executable(test_crypto_sha512 test_crypto_sha512.c)
 target_link_libraries(test_crypto_sha512 PRIVATE eos_crypto)
 add_test(NAME test_crypto_sha512 COMMAND test_crypto_sha512)
 
+# --- test_crypto_failclosed: unimplemented RSA/ECC stubs refuse to run ---
+# Must NOT define EOS_ALLOW_STUB_CRYPTO; this is the production fail-closed path.
+add_executable(test_crypto_failclosed test_crypto_failclosed.c)
+target_link_libraries(test_crypto_failclosed PRIVATE eos_crypto)
+add_test(NAME test_crypto_failclosed COMMAND test_crypto_failclosed)
+
 # --- test_crypto_aes: AES-128/192/256 ECB + CBC, NIST FIPS-197 / SP 800-38A ---
 add_executable(test_crypto_aes test_crypto_aes.c)
 target_link_libraries(test_crypto_aes PRIVATE eos_crypto)
