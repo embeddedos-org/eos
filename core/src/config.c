@@ -39,6 +39,11 @@ static int indent_level(const char *line) {
     return n / 2;
 }
 
+/* A package index is only safe to dereference when a `- name:` entry claimed
+ * a slot for it. It is -1 before the first entry and after one is refused for
+ * exceeding EOS_MAX_PACKAGES, so both ends have to be checked. */
+#define PKG_IDX_VALID(i) ((i) >= 0 && (i) < EOS_MAX_PACKAGES)
+
 static int parse_kv(const char *line, char *key, size_t ksz, char *val, size_t vsz) {
     const char *colon = strchr(line, ':');
     if (!colon) return -1;
@@ -127,9 +132,23 @@ EosResult eos_config_load(EosConfig *cfg, const char *path) {
                         strncpy(cfg->packages[pkg_idx].name, val, EOS_MAX_NAME - 1);
                         cfg->package_count++;
                         section = SEC_PKG_ENTRY;
+                    } else {
+                        /* Bug fix: EOS_MAX_PACKAGES exceeded. pkg_idx is now
+                         * out of range for cfg->packages[]. Fall back to the
+                         * neutral SEC_PACKAGES state so the "key: val" lines
+                         * that follow (belonging to this rejected package)
+                         * are NOT dispatched into SEC_PKG_ENTRY/SEC_PKG_BUILD/
+                         * SEC_PKG_OPTIONS below, which would otherwise index
+                         * cfg->packages[pkg_idx] out of bounds -- previously
+                         * this silently corrupted memory adjacent to the
+                         * packages[] array (package_count and beyond). */
+                        EOS_ERROR("Too many packages in config (max %d); ignoring '%s'",
+                                   EOS_MAX_PACKAGES, val);
+                        section = SEC_PACKAGES;
                     }
                 }
-            } else if (section == SEC_PKG_DEPS && pkg_idx >= 0) {
+            } else if (section == SEC_PKG_DEPS &&
+                       pkg_idx >= 0 && pkg_idx < EOS_MAX_PACKAGES) {
                 if (cfg->packages[pkg_idx].dep_count < EOS_MAX_DEPS) {
                     strncpy(cfg->packages[pkg_idx].deps[cfg->packages[pkg_idx].dep_count],
                             item, EOS_MAX_NAME - 1);
@@ -244,6 +263,10 @@ EosResult eos_config_load(EosConfig *cfg, const char *path) {
             }
             break;
         case SEC_PKG_ENTRY:
+            /* Defense in depth: pkg_idx should always be in range here given
+             * the SEC_PACKAGES fallback above, but bound it explicitly since
+             * this indexes cfg->packages[] directly. */
+            if (pkg_idx < 0 || pkg_idx >= EOS_MAX_PACKAGES) break;
             if (strcmp(key, "version") == 0) strncpy(cfg->packages[pkg_idx].version, val, EOS_MAX_NAME - 1);
             if (strcmp(key, "source") == 0)  strncpy(cfg->packages[pkg_idx].source, val, EOS_MAX_URL - 1);
             if (strcmp(key, "hash") == 0)    strncpy(cfg->packages[pkg_idx].hash, val, EOS_HASH_LEN - 1);
@@ -251,6 +274,7 @@ EosResult eos_config_load(EosConfig *cfg, const char *path) {
             if (strcmp(key, "deps") == 0)    { section = SEC_PKG_DEPS; continue; }
             break;
         case SEC_PKG_BUILD:
+            if (pkg_idx < 0 || pkg_idx >= EOS_MAX_PACKAGES) break;
             if (strcmp(key, "type") == 0) {
                 cfg->packages[pkg_idx].build_type = eos_build_type_from_str(val);
             }
@@ -261,7 +285,8 @@ EosResult eos_config_load(EosConfig *cfg, const char *path) {
             }
             break;
         case SEC_PKG_OPTIONS:
-            if (pkg_idx >= 0 && cfg->packages[pkg_idx].option_count < EOS_MAX_OPTIONS) {
+            if (pkg_idx >= 0 && pkg_idx < EOS_MAX_PACKAGES &&
+                cfg->packages[pkg_idx].option_count < EOS_MAX_OPTIONS) {
                 int oi = cfg->packages[pkg_idx].option_count;
                 strncpy(cfg->packages[pkg_idx].options[oi].key, key, EOS_MAX_NAME - 1);
                 strncpy(cfg->packages[pkg_idx].options[oi].value, val, EOS_MAX_PATH - 1);

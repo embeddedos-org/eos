@@ -94,8 +94,17 @@ int  eos_fs_readdir(eos_dir_t dir, eos_dirent_t *entry);
 int  eos_fs_closedir(eos_dir_t dir);
 
 /* Path operations */
+
+/* Unlink a path. POSIX semantics: the name is removed immediately, but a file
+ * with descriptors still open on it keeps its storage until the last one is
+ * closed. Until then it is invisible to eos_fs_exists() and eos_fs_readdir()
+ * while still counting towards eos_fs_stat()'s used_bytes. */
 int  eos_fs_remove(const char *path);
+
+/* Rename a path, replacing new_path if it already exists (as POSIX rename()
+ * does). Renaming a path onto itself succeeds and changes nothing. */
 int  eos_fs_rename(const char *old_path, const char *new_path);
+
 bool eos_fs_exists(const char *path);
 
 #ifdef __cplusplus

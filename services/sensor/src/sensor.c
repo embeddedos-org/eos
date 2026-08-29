@@ -7,13 +7,11 @@
 
 #if EOS_ENABLE_SENSOR
 
-#define FILTER_WIN 8
-
 typedef struct {
     eos_sensor_config_t cfg;
     eos_sensor_calib_t  calib;
     uint8_t  in_use;
-    float    filter_buf[FILTER_WIN];
+    float    filter_buf[EOS_SENSOR_FILTER_MAX_WINDOW];
     int      filter_idx;
     int      filter_count;
     float    last_filtered;
@@ -24,13 +22,37 @@ static sensor_ctx_t g_s[EOS_SENSOR_MAX];
 static int g_count = 0;
 static int g_init = 0;
 
+static int filter_requires_window(eos_filter_type_t filter) {
+    return filter == EOS_FILTER_AVERAGE || filter == EOS_FILTER_MEDIAN;
+}
+
+static int is_valid_filter(eos_filter_type_t filter) {
+    return filter >= EOS_FILTER_NONE && filter <= EOS_FILTER_KALMAN;
+}
+
+static int is_valid_filter_window(eos_filter_type_t filter, uint8_t window_size) {
+    if (!filter_requires_window(filter)) return 1;
+    return window_size <= EOS_SENSOR_FILTER_MAX_WINDOW;
+}
+
+static uint8_t normalize_filter_window(eos_filter_type_t filter, uint8_t window_size) {
+    if (!filter_requires_window(filter)) return 0;
+    return window_size == 0 ? EOS_SENSOR_FILTER_MAX_WINDOW : window_size;
+}
+
+static uint8_t active_filter_window(const sensor_ctx_t *s) {
+    return s->cfg.filter_window == 0 ? EOS_SENSOR_FILTER_MAX_WINDOW : s->cfg.filter_window;
+}
+
 int eos_sensor_init(void) { memset(g_s, 0, sizeof(g_s)); g_count = 0; g_init = 1; return 0; }
 void eos_sensor_deinit(void) { g_init = 0; g_count = 0; }
 
 int eos_sensor_register(const eos_sensor_config_t *cfg) {
     if (!g_init || !cfg || cfg->id >= EOS_SENSOR_MAX || g_s[cfg->id].in_use) return -1;
+    if (!is_valid_filter(cfg->filter) || !is_valid_filter_window(cfg->filter, cfg->filter_window)) return -1;
     memset(&g_s[cfg->id], 0, sizeof(sensor_ctx_t));
     g_s[cfg->id].cfg = *cfg;
+    g_s[cfg->id].cfg.filter_window = normalize_filter_window(cfg->filter, cfg->filter_window);
     g_s[cfg->id].calib.scale = 1.0f;
     g_s[cfg->id].in_use = 1;
     g_count++;
@@ -55,18 +77,21 @@ int eos_sensor_read(uint8_t id, eos_sensor_reading_t *r) {
 }
 
 static float do_avg(sensor_ctx_t *s, float v) {
+    const int window = active_filter_window(s);
     s->filter_buf[s->filter_idx] = v;
-    s->filter_idx = (s->filter_idx + 1) % FILTER_WIN;
-    if (s->filter_count < FILTER_WIN) s->filter_count++;
+    s->filter_idx = (s->filter_idx + 1) % window;
+    if (s->filter_count < window) s->filter_count++;
     float sum = 0; for (int i = 0; i < s->filter_count; i++) sum += s->filter_buf[i];
     return sum / (float)s->filter_count;
 }
 
 static float do_median(sensor_ctx_t *s, float v) {
+    const int window = active_filter_window(s);
     s->filter_buf[s->filter_idx] = v;
-    s->filter_idx = (s->filter_idx + 1) % FILTER_WIN;
-    if (s->filter_count < FILTER_WIN) s->filter_count++;
-    float sorted[FILTER_WIN]; memcpy(sorted, s->filter_buf, sizeof(float) * (size_t)s->filter_count);
+    s->filter_idx = (s->filter_idx + 1) % window;
+    if (s->filter_count < window) s->filter_count++;
+    float sorted[EOS_SENSOR_FILTER_MAX_WINDOW];
+    memcpy(sorted, s->filter_buf, sizeof(float) * (size_t)s->filter_count);
     for (int i = 0; i < s->filter_count - 1; i++)
         for (int j = i + 1; j < s->filter_count; j++)
             if (sorted[j] < sorted[i]) { float t = sorted[i]; sorted[i] = sorted[j]; sorted[j] = t; }
@@ -114,10 +139,12 @@ int eos_sensor_auto_calibrate(uint8_t id) {
 
 int eos_sensor_set_filter(uint8_t id, eos_filter_type_t f, uint8_t window_size) {
     if (!g_init || id >= EOS_SENSOR_MAX || !g_s[id].in_use) return -1;
+    if (!is_valid_filter(f) || !is_valid_filter_window(f, window_size)) return -1;
     g_s[id].cfg.filter = f;
-    g_s[id].cfg.filter_window = window_size;
-    g_s[id].filter_idx = 0; g_s[id].filter_count = 0;
-    (void)window_size;
+    g_s[id].cfg.filter_window = normalize_filter_window(f, window_size);
+    g_s[id].filter_idx = 0;
+    g_s[id].filter_count = 0;
+    g_s[id].last_filtered = 0.0f;
     return 0;
 }
 

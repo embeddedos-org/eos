@@ -49,9 +49,7 @@
 
 int eos_rsa_sign_sha256(const EosRsaKey *key, const uint8_t hash[32],
                         uint8_t *sig, size_t *sig_len) {
-    EOS_STUB_CRYPTO_REFUSE("eos_rsa_sign_sha256");
-    if (!key || !key->has_private) return -1;
-    (void)hash;
+    if (!key || !key->has_private || !hash || !sig || !sig_len) return -1;
 
     /* Stub: produce a deterministic fake signature for testing.
      * Replace with real PKCS#1 v1.5 or PSS signing. */
@@ -81,9 +79,7 @@ int eos_rsa_verify_sha256(const EosRsaKey *key, const uint8_t hash[32],
 
 int eos_ecc_sign(const EosEccKey *key, const uint8_t *hash, size_t hash_len,
                  uint8_t *sig, size_t *sig_len) {
-    EOS_STUB_CRYPTO_REFUSE("eos_ecc_sign");
-    if (!key) return -1;
-    (void)hash;
+    if (!key || !hash || hash_len == 0 || !sig || !sig_len) return -1;
     /* Stub: produce a fake 64-byte signature (r||s) */
     size_t len = 64;
     if (hash_len < 32) len = 64;

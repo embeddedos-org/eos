@@ -1,2 +1,0 @@
-aarch64-linux-gnu-ar qc libeos_security.a CMakeFiles/eos_security.dir/src/security.c.o
-aarch64-linux-gnu-ranlib libeos_security.a
