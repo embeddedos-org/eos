@@ -42,6 +42,14 @@ static void test_power_enter_deep_sleep(void) {
     eos_power_deinit();
     PASS("power enter deep sleep");
 }
+static void test_power_enter_invalid_mode(void) {
+    eos_power_config_t cfg = { .adc_channel = 0, .vbat_full_mv = 4200, .vbat_empty_mv = 3000, .divider_ratio_x10 = 20 };
+    eos_power_init(&cfg);
+    assert(eos_power_enter_mode((eos_power_mode_t)(EOS_POWER_SHUTDOWN + 1)) != 0);
+    assert(eos_power_get_mode() == EOS_POWER_RUN);
+    eos_power_deinit();
+    PASS("power enter invalid mode");
+}
 static void test_power_wake_sources(void) {
     eos_power_config_t cfg = { .adc_channel = 0, .vbat_full_mv = 4200, .vbat_empty_mv = 3000, .divider_ratio_x10 = 20 };
     eos_power_init(&cfg);
@@ -103,6 +111,13 @@ static void test_power_periph_invalid(void) {
     eos_power_config_t cfg = { .adc_channel = 0, .vbat_full_mv = 4200, .vbat_empty_mv = 3000, .divider_ratio_x10 = 20 };
     eos_power_init(&cfg);
     assert(eos_power_enable_peripheral(EOS_PERIPH_MAX) != 0);
+    assert(eos_power_disable_peripheral(EOS_PERIPH_MAX) != 0);
+    assert(eos_power_is_peripheral_enabled(EOS_PERIPH_MAX) == false);
+
+    eos_peripheral_id_t negative_id = (eos_peripheral_id_t)-1;
+    assert(eos_power_enable_peripheral(negative_id) != 0);
+    assert(eos_power_disable_peripheral(negative_id) != 0);
+    assert(eos_power_is_peripheral_enabled(negative_id) == false);
     eos_power_deinit();
     PASS("power periph invalid id");
 }
@@ -121,6 +136,7 @@ int main(void) {
     test_power_mode_default();
     test_power_enter_sleep();
     test_power_enter_deep_sleep();
+    test_power_enter_invalid_mode();
     test_power_wake_sources();
     test_power_battery_mv();
     test_power_battery_pct();

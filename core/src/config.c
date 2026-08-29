@@ -39,6 +39,11 @@ static int indent_level(const char *line) {
     return n / 2;
 }
 
+/* A package index is only safe to dereference when a `- name:` entry claimed
+ * a slot for it. It is -1 before the first entry and after one is refused for
+ * exceeding EOS_MAX_PACKAGES, so both ends have to be checked. */
+#define PKG_IDX_VALID(i) ((i) >= 0 && (i) < EOS_MAX_PACKAGES)
+
 static int parse_kv(const char *line, char *key, size_t ksz, char *val, size_t vsz) {
     const char *colon = strchr(line, ':');
     if (!colon) return -1;
@@ -122,14 +127,22 @@ EosResult eos_config_load(EosConfig *cfg, const char *path) {
                        section == SEC_PKG_OPTIONS) {
                 if (parse_kv(item, key, sizeof(key), val, sizeof(val)) == 0 &&
                     strcmp(key, "name") == 0) {
-                    pkg_idx = cfg->package_count;
-                    if (pkg_idx < EOS_MAX_PACKAGES) {
+                    if (cfg->package_count < EOS_MAX_PACKAGES) {
+                        pkg_idx = cfg->package_count;
                         strncpy(cfg->packages[pkg_idx].name, val, EOS_MAX_NAME - 1);
                         cfg->package_count++;
                         section = SEC_PKG_ENTRY;
+                    } else {
+                        /* Refusing the entry is not enough: pkg_idx must stop
+                         * pointing at a slot, or every key under this rejected
+                         * package writes one element past the array. */
+                        EOS_ERROR("config: more than %d packages, ignoring '%s'",
+                                  EOS_MAX_PACKAGES, val);
+                        pkg_idx = -1;
+                        section = SEC_NONE;
                     }
                 }
-            } else if (section == SEC_PKG_DEPS && pkg_idx >= 0) {
+            } else if (section == SEC_PKG_DEPS && PKG_IDX_VALID(pkg_idx)) {
                 if (cfg->packages[pkg_idx].dep_count < EOS_MAX_DEPS) {
                     strncpy(cfg->packages[pkg_idx].deps[cfg->packages[pkg_idx].dep_count],
                             item, EOS_MAX_NAME - 1);
@@ -244,24 +257,26 @@ EosResult eos_config_load(EosConfig *cfg, const char *path) {
             }
             break;
         case SEC_PKG_ENTRY:
+            if (strcmp(key, "build") == 0)   { section = SEC_PKG_BUILD; continue; }
+            if (strcmp(key, "deps") == 0)    { section = SEC_PKG_DEPS; continue; }
+            if (!PKG_IDX_VALID(pkg_idx)) break;
             if (strcmp(key, "version") == 0) strncpy(cfg->packages[pkg_idx].version, val, EOS_MAX_NAME - 1);
             if (strcmp(key, "source") == 0)  strncpy(cfg->packages[pkg_idx].source, val, EOS_MAX_URL - 1);
             if (strcmp(key, "hash") == 0)    strncpy(cfg->packages[pkg_idx].hash, val, EOS_HASH_LEN - 1);
-            if (strcmp(key, "build") == 0)   { section = SEC_PKG_BUILD; continue; }
-            if (strcmp(key, "deps") == 0)    { section = SEC_PKG_DEPS; continue; }
             break;
         case SEC_PKG_BUILD:
+            if (indent <= 2 && strcmp(key, "options") == 0) { section = SEC_PKG_OPTIONS; continue; }
+            if (!PKG_IDX_VALID(pkg_idx)) break;
             if (strcmp(key, "type") == 0) {
                 cfg->packages[pkg_idx].build_type = eos_build_type_from_str(val);
             }
-            if (indent <= 2 && strcmp(key, "options") == 0) { section = SEC_PKG_OPTIONS; continue; }
             if (indent <= 2 && strcmp(key, "version") == 0) {
                 section = SEC_PKG_ENTRY;
                 strncpy(cfg->packages[pkg_idx].version, val, EOS_MAX_NAME - 1);
             }
             break;
         case SEC_PKG_OPTIONS:
-            if (pkg_idx >= 0 && cfg->packages[pkg_idx].option_count < EOS_MAX_OPTIONS) {
+            if (PKG_IDX_VALID(pkg_idx) && cfg->packages[pkg_idx].option_count < EOS_MAX_OPTIONS) {
                 int oi = cfg->packages[pkg_idx].option_count;
                 strncpy(cfg->packages[pkg_idx].options[oi].key, key, EOS_MAX_NAME - 1);
                 strncpy(cfg->packages[pkg_idx].options[oi].value, val, EOS_MAX_PATH - 1);

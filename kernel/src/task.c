@@ -177,6 +177,7 @@ void eos_task_wake_check(uint32_t current_tick)
         if (t->state == EOS_TASK_BLOCKED && t->wake_tick > 0 &&
             tick_expired(current_tick, t->wake_tick)) {
             t->state = EOS_TASK_READY;
+            t->wake_armed = 0;
             t->wake_tick = 0;
         }
     }
@@ -228,6 +229,7 @@ int eos_kernel_init(void)
     idle->entry = idle_task_func;
     idle->arg = NULL;
     idle->priority = 255;  /* Lowest priority */
+    idle->base_priority = 255;
     idle->stack_size = IDLE_STACK_SIZE;
     idle->stack_base = g_idle_stack;
     idle->stack_base[0] = EOS_STACK_CANARY;
@@ -301,6 +303,7 @@ int eos_task_create(const char *name, eos_task_func_t entry, void *arg,
     g_tasks[slot].entry = entry;
     g_tasks[slot].arg = arg;
     g_tasks[slot].priority = priority;
+    g_tasks[slot].base_priority = priority;
     g_tasks[slot].stack_size = stack_size;
     g_tasks[slot].stack_base = stack_base;
     g_tasks[slot].stack_ptr = eos_port_init_stack(stack_top, entry, arg);
@@ -363,6 +366,7 @@ void eos_task_delay_ms(uint32_t ms)
     if (g_current >= 0) {
         uint32_t crit = eos_port_enter_critical();
         g_tasks[g_current].wake_tick = g_tick + ms;
+        g_tasks[g_current].wake_armed = 1;
         g_tasks[g_current].state = EOS_TASK_BLOCKED;
         eos_port_exit_critical(crit);
         eos_port_yield();
@@ -374,6 +378,16 @@ eos_task_handle_t eos_task_get_current(void)
     return (g_current >= 0) ? (eos_task_handle_t)g_current : 0xFF;
 }
 
+void eos_task_set_current_internal(eos_task_handle_t h)
+{
+    if (h >= EOS_MAX_TASKS) {
+        g_current = -1;
+        return;
+    }
+    g_current = (int)h;
+    g_tasks[h].state = EOS_TASK_RUNNING;
+}
+
 eos_task_state_t eos_task_get_state(eos_task_handle_t h)
 {
     if (h >= EOS_MAX_TASKS) return EOS_TASK_DELETED;
@@ -382,7 +396,9 @@ eos_task_state_t eos_task_get_state(eos_task_handle_t h)
 
 const char *eos_task_get_name(eos_task_handle_t h)
 {
-    if (h >= EOS_MAX_TASKS || !g_tasks[h].name) return "invalid";
+    if (h >= EOS_MAX_TASKS || g_tasks[h].state == EOS_TASK_DELETED || !g_tasks[h].name) {
+        return "invalid";
+    }
     return g_tasks[h].name;
 }
 
@@ -488,9 +504,11 @@ void eos_task_block_with_timeout(eos_task_handle_t h, uint32_t timeout_ms)
     if (h >= EOS_MAX_TASKS) return;
     g_tasks[h].state = EOS_TASK_BLOCKED;
     if (timeout_ms == EOS_WAIT_FOREVER) {
-        g_tasks[h].wake_tick = 0;  /* Never auto-wake */
+        g_tasks[h].wake_tick = 0;
+        g_tasks[h].wake_armed = 0;  /* Never auto-wake */
     } else {
         g_tasks[h].wake_tick = g_tick + timeout_ms;
+        g_tasks[h].wake_armed = 1;
     }
 }
 
@@ -499,6 +517,7 @@ void eos_task_unblock(eos_task_handle_t h)
     if (h >= EOS_MAX_TASKS) return;
     g_tasks[h].state = EOS_TASK_READY;
     g_tasks[h].wake_tick = 0;
+    g_tasks[h].wake_armed = 0;
 }
 
 /* ============================================================

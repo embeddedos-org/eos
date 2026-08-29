@@ -18,3 +18,7 @@ __pycache__/
 target/
 .pytest_cache/
 .DS_Store
+
+# pytest-cov writes this SQLite database into the repo root.
+.coverage
+.coverage.*

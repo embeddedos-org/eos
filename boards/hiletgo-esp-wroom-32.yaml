@@ -1,0 +1,33 @@
+# EoS Board: HiLetGo ESP-WROOM-32 ESP32 ESP-32S
+board:
+  name: hiletgo-esp-wroom-32
+  mcu: ESP32-D0WDQ6
+  family: ESP32
+  arch: xtensa
+  core: lx6
+  vendor: Espressif
+  clock_hz: 240000000
+  memory:
+    flash: 4194304
+    ram: 532480
+  peripherals:
+    - {name: UART0, type: uart, bus: peripheral}
+    - {name: UART1, type: uart, bus: peripheral}
+    - {name: SPI2, type: spi, bus: peripheral}
+    - {name: SPI3, type: spi, bus: peripheral}
+    - {name: I2C0, type: i2c, bus: peripheral}
+    - {name: I2C1, type: i2c, bus: peripheral}
+    - {name: GPIO, type: gpio, bus: peripheral}
+    - {name: ADC1, type: adc, bus: peripheral}
+    - {name: ADC2, type: adc, bus: peripheral}
+    - {name: DAC, type: dac, bus: peripheral}
+    - {name: PWM, type: pwm, bus: peripheral}
+    - {name: WIFI, type: wifi, bus: peripheral}
+    - {name: BLE, type: ble, bus: peripheral}
+    - {name: CAN, type: can, bus: peripheral}
+    - {name: DMA, type: dma, bus: system}
+    - {name: WDT, type: watchdog, bus: peripheral}
+    - {name: RTC, type: rtc, bus: peripheral}
+    - {name: TOUCH, type: touch, bus: peripheral}
+  features: [dual_core]
+  supply_voltage: 3.3

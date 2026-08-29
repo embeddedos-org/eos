@@ -255,6 +255,41 @@ if (remaining < EOS_STACK_CRITICAL_THRESHOLD) {
 
 ---
 
+## 13. Parsing Untrusted Binary Input
+
+A flattened device tree is not trusted input. It arrives from a prior boot
+stage or a flash region, and every offset and length inside the blob is chosen
+by whoever produced it. `eos_dt_parse()` therefore validates before it
+dereferences:
+
+- `totalsize` may not exceed the buffer length passed in, and the struct and
+  strings blocks must both begin inside the blob. Without this the
+  `size - off_struct` arithmetic wraps and the walk runs off the end.
+- Every token, property length and property name offset is bounds-checked
+  against its block before it is read.
+- Node names and property names must be NUL-terminated inside the blob;
+  an unterminated name is rejected rather than passed to `strlen()`.
+- Nesting deeper than `EOS_DT_MAX_DEPTH` is rejected rather than walking past
+  the parser's own node stack.
+- Property values are raw bytes and are not assumed to be NUL-terminated.
+  `eos_dt_find_compatible()` searches within `prop->len` instead of calling
+  `strstr()` on the buffer.
+
+Regression coverage lives in `tests/test_devicetree.c`, which sweeps every
+truncation of a valid blob and every single-byte corruption of it. A libFuzzer
+target is available for deeper coverage:
+
+```bash
+cmake -B build -DEOS_BUILD_TESTS=ON -DEOS_ENABLE_FUZZING=ON \
+      -DCMAKE_C_COMPILER=clang
+cmake --build build --target fuzz_devicetree
+./build/tests/fuzz/fuzz_devicetree -max_total_time=60
+```
+
+Apply the same rules to any new parser that consumes off-device data: validate
+offsets against the buffer you were actually handed, never trust a length field,
+and never assume a byte range is NUL-terminated.
+
 ## Production Build Checklist
 
 Use this checklist before releasing a production firmware image:
@@ -274,3 +309,4 @@ Use this checklist before releasing a production firmware image:
 - [ ] `EOS_LOG_LEVEL` is `EOS_LOG_ERROR` or `EOS_LOG_NONE`
 - [ ] Rollback protection counter is set correctly
 - [ ] SBOM is generated and archived for this build
+- [ ] Parsers for off-device input are fuzzed (see section 13)
