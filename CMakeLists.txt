@@ -171,6 +171,19 @@ add_library(eos_net STATIC
     net/src/net.c
 )
 
+# ADR-014 point 3 — on a host OS the eNet API maps onto POSIX sockets.
+#
+# Gated on CMAKE_CROSSCOMPILING alone, deliberately not on the
+# `EOS_PLATFORM STREQUAL "linux" OR ...` form used above for hal_linux.c:
+# EOS_PLATFORM defaults to "linux" and a cross toolchain file does not change
+# it, so that condition is true even for a Cortex-M build. hal_linux.c happens
+# to survive that because it uses only portable headers; net_posix.c needs
+# <netdb.h> and <sys/socket.h>, which bare-metal newlib does not have.
+if(NOT CMAKE_CROSSCOMPILING)
+    target_sources(eos_net PRIVATE net/src/net_posix.c)
+    target_compile_definitions(eos_net PRIVATE EOS_NET_POSIX=1)
+endif()
+
 target_include_directories(eos_net PUBLIC
     ${CMAKE_CURRENT_SOURCE_DIR}/net/include
     ${CMAKE_CURRENT_SOURCE_DIR}/include

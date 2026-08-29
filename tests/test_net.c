@@ -148,6 +148,99 @@ static void test_mdns_init(void) {
     eos_net_deinit();
     PASS("mdns init/deinit");
 }
+
+/* ── POSIX socket layer (ADR-014 point 3) ─────────────────────────────────
+ *
+ * Everything above tests the facade's argument validation, which passed just
+ * as well when eos_net_connect() was `return -1`. These exercise a real
+ * connection, so they compile only where a host OS supplies the sockets.
+ */
+#ifdef EOS_NET_POSIX
+#include <arpa/inet.h>
+#include <pthread.h>
+#include <time.h>
+
+static uint16_t g_test_port = 45771;
+
+static void *echo_server(void *arg) {
+    int *ready = (int *)arg;
+    eos_socket_t s = eos_net_socket(EOS_NET_TCP);
+    if (s == EOS_SOCKET_INVALID || eos_net_bind(s, g_test_port) != 0) {
+        *ready = -1;
+        return NULL;
+    }
+    eos_net_listen(s, 1);
+    *ready = 1;
+    eos_net_addr_t peer;
+    eos_socket_t c = eos_net_accept(s, &peer);
+    if (c != EOS_SOCKET_INVALID) {
+        char buf[32];
+        memset(buf, 0, sizeof(buf));
+        int n = eos_net_recv(c, buf, sizeof(buf) - 1, 2000);
+        if (n > 0) eos_net_send(c, buf, (size_t)n);
+        eos_net_close(c);
+    }
+    eos_net_close(s);
+    return NULL;
+}
+
+static void test_net_tcp_round_trip(void) {
+    eos_net_init();
+    int ready = 0;
+    pthread_t t;
+    pthread_create(&t, NULL, echo_server, &ready);
+    /* Wait for the listener rather than sleeping a fixed interval, so this
+     * does not go flaky on a loaded machine. */
+    for (int i = 0; i < 400 && ready == 0; i++) {
+        struct timespec ts;
+        ts.tv_sec = 0;
+        ts.tv_nsec = 5 * 1000 * 1000;
+        nanosleep(&ts, NULL);
+    }
+    assert(ready == 1);
+    eos_socket_t c = eos_net_socket(EOS_NET_TCP);
+    eos_net_addr_t addr;
+    addr.ip = inet_addr("127.0.0.1");
+    addr.port = g_test_port;
+    assert(eos_net_connect(c, &addr) == 0);
+    assert(eos_net_send(c, "ping", 4) == 4);
+    char buf[32];
+    memset(buf, 0, sizeof(buf));
+    assert(eos_net_recv(c, buf, sizeof(buf) - 1, 2000) == 4);
+    assert(strcmp(buf, "ping") == 0);
+    eos_net_close(c);
+    pthread_join(t, NULL);
+    eos_net_deinit();
+    PASS("net tcp round trip");
+}
+
+static void test_net_resolve_localhost(void) {
+    eos_net_init();
+    uint32_t ip = 0;
+    assert(eos_net_resolve("localhost", &ip) == 0);
+    assert(ip == inet_addr("127.0.0.1"));
+    /* A name that cannot resolve must fail rather than reporting success and
+     * leaving the caller with whatever was in the output already. */
+    uint32_t before = ip;
+    assert(eos_net_resolve("no.such.host.invalid", &ip) == -1);
+    assert(ip == before);
+    eos_net_deinit();
+    PASS("net resolve localhost");
+}
+
+static void test_net_connect_refused(void) {
+    eos_net_init();
+    eos_socket_t c = eos_net_socket(EOS_NET_TCP);
+    eos_net_addr_t addr;
+    addr.ip = inet_addr("127.0.0.1");
+    addr.port = 1;              /* nothing listens on port 1 */
+    assert(eos_net_connect(c, &addr) != 0);
+    eos_net_close(c);
+    eos_net_deinit();
+    PASS("net connect to a closed port fails");
+}
+#endif /* EOS_NET_POSIX */
+
 int main(void) {
     printf("=== EoS Networking Tests ===\n");
     test_net_init();
@@ -166,6 +259,11 @@ int main(void) {
     test_http_post();
     test_mqtt_connect();
     test_mdns_init();
+#ifdef EOS_NET_POSIX
+    test_net_tcp_round_trip();
+    test_net_resolve_localhost();
+    test_net_connect_refused();
+#endif
     printf("\n=== ALL %d NET TESTS PASSED ===\n", passed);
     return 0;
 }
