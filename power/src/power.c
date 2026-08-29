@@ -95,21 +95,21 @@ int eos_power_get_battery_info(eos_battery_info_t *info)
 
 int eos_power_enable_peripheral(eos_peripheral_id_t periph)
 {
-    if (periph >= EOS_PERIPH_MAX) return -1;
+    if ((uintmax_t)periph >= (uintmax_t)EOS_PERIPH_MAX) return -1;
     periph_enabled[periph] = true;
     return 0;
 }
 
 int eos_power_disable_peripheral(eos_peripheral_id_t periph)
 {
-    if (periph >= EOS_PERIPH_MAX) return -1;
+    if ((uintmax_t)periph >= (uintmax_t)EOS_PERIPH_MAX) return -1;
     periph_enabled[periph] = false;
     return 0;
 }
 
 bool eos_power_is_peripheral_enabled(eos_peripheral_id_t periph)
 {
-    if (periph >= EOS_PERIPH_MAX) return false;
+    if ((uintmax_t)periph >= (uintmax_t)EOS_PERIPH_MAX) return false;
     return periph_enabled[periph];
 }
 

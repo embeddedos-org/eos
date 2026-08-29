@@ -13,6 +13,23 @@ static uint8_t hex_val(char c) {
     return 0;
 }
 
+/**
+ * @brief Hex digit to value, reporting invalid input.
+ *
+ * hex_val() maps any non-hex byte to 0, which silently turns a malformed
+ * payload into zero bytes. Callers that write the decoded result to memory
+ * use this variant instead and reject the packet.
+ *
+ * @param c Candidate hex digit.
+ * @return 0-15 for a valid digit, -1 otherwise.
+ */
+static int hex_val_checked(char c) {
+    if (c >= '0' && c <= '9') return c - '0';
+    if (c >= 'a' && c <= 'f') return c - 'a' + 10;
+    if (c >= 'A' && c <= 'F') return c - 'A' + 10;
+    return -1;
+}
+
 static char hex_char(uint8_t v) {
     return "0123456789abcdef"[v & 0x0F];
 }
@@ -115,9 +132,20 @@ static void handle_write_mem(EosGdbStub *stub, const char *pkt) {
     const char *data = strchr(pkt, ':');
     if (!data) { send_packet(stub, "E01"); return; }
     data++;
+
+    /* The packet must actually carry two hex digits per byte. Without this
+     * check the decode loop read past the end of the received packet and
+     * handed whatever followed it to eos_gdb_write_mem() at an address the
+     * remote peer chose. */
+    if (strlen(data) < (size_t)len * 2u) { send_packet(stub, "E01"); return; }
+
     uint8_t buf[128];
-    for (uint32_t i = 0; i < len; i++)
-        buf[i] = (hex_val(data[i * 2]) << 4) | hex_val(data[i * 2 + 1]);
+    for (uint32_t i = 0; i < len; i++) {
+        int hi = hex_val_checked(data[i * 2]);
+        int lo = hex_val_checked(data[i * 2 + 1]);
+        if (hi < 0 || lo < 0) { send_packet(stub, "E01"); return; }
+        buf[i] = (uint8_t)((hi << 4) | lo);
+    }
     if (eos_gdb_write_mem(addr, buf, (int)len) != 0) {
         send_packet(stub, "E02");
         return;

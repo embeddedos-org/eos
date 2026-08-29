@@ -177,12 +177,28 @@ if (eos_fs_exists("/config.json")) {
     printf("Config file found\n");
 }
 
-/* Rename / move */
+/* Rename / move — replaces the destination if it already exists */
 eos_fs_rename("/config.json", "/config.json.bak");
 
 /* Delete */
 eos_fs_remove("/old_log.txt");
 ```
+
+### 12.7.1 Semantics
+
+Both operations follow POSIX:
+
+- `eos_fs_rename()` **replaces** an existing destination. The rotation pattern
+  above therefore works on the second and every later call, not only the first.
+  Renaming a path onto itself succeeds and changes nothing.
+- `eos_fs_remove()` unlinks the *name*. Descriptors already open on the file
+  keep reading and writing it, and the storage is released when the last one is
+  closed. Until then the file no longer appears in `eos_fs_exists()` or
+  `eos_fs_readdir()`, but its bytes still count towards `used_bytes`.
+
+Removing a file therefore never invalidates a descriptor that another part of
+the system is still holding, and never lets a later `eos_fs_open()` hand out
+storage that a live descriptor still points at.
 
 ## 12.8 Filesystem Statistics
 

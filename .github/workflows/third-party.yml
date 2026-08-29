@@ -1,0 +1,68 @@
+name: Third-party policy
+
+# Enforces ADR-017: external source lives only under third_party/, at a pinned
+# revision, with its licence recorded in NOTICE and in the generated SBOM.
+#
+# §26 requires an SBOM and a dependency/licence inventory. This job is what makes
+# that requirement enforceable rather than aspirational.
+
+on:
+  push:
+    branches: [master, main]
+  pull_request:
+    branches: [master, main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  policy:
+    name: Validate third_party/ and the SBOM
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Check dependency records
+        run: python3 scripts/check_third_party.py
+
+      - name: Check the SBOM is current
+        run: python3 scripts/generate_sbom.py --check
+
+      - name: Reject vendored source outside third_party/
+        run: |
+          # A dependency added anywhere else escapes the licence inventory, which is
+          # exactly how PR #57 reached review with 4,815 unattributed lines.
+          hits=$(git ls-files \
+                   ':(glob)**/vendor/**' \
+                   ':(glob)**/third-party/**' \
+                   ':(glob)**/3rdparty/**' \
+                   ':(glob)**/external/**' \
+                 | grep -v '^third_party/' || true)
+          if [ -n "$hits" ]; then
+            echo "External source found outside third_party/:"
+            echo "$hits"
+            echo
+            echo "ADR-017: third_party/<name>/ is the only location for external source."
+            echo "See third_party/README.md for how to import it properly."
+            exit 1
+          fi
+          echo "OK: no vendored source outside third_party/."
+
+      - name: Explain a failure
+        if: failure()
+        run: |
+          echo "::notice::A dependency does not conform to ADR-017."
+          echo "::notice::third_party/README.md documents the required layout:"
+          echo "::notice::  UPSTREAM  — pinned full 40-char SHA, licence, purpose, owner"
+          echo "::notice::  LICENSE   — copied verbatim from upstream"
+          echo "::notice::  NOTICE    — updated in the same commit"
+          echo "::notice::  sbom.json — regenerated with scripts/generate_sbom.py --write"

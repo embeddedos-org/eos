@@ -109,6 +109,45 @@ void *eos_malloc(size_t size)
 }
 
 /**
+ * @brief Recover the block header for a pointer returned by eos_malloc().
+ *
+ * eos_free() range-checked its argument; eos_realloc() did not, so the same
+ * pointer was trusted in one path and validated in the other. Both go through
+ * this now.
+ *
+ * The size check matters as much as the range check: eos_realloc() computed
+ * `block->size - HEADER_SIZE`, so a header whose size field is below
+ * HEADER_SIZE underflowed that to nearly SIZE_MAX and made every growth
+ * request look already satisfied. A single corrupted header byte then turned
+ * into an unbounded overflow in the caller's buffer.
+ *
+ * @return The header, or NULL if @p ptr did not come from this heap or its
+ *         header is not self-consistent.
+ */
+static block_header_t *block_from_ptr(const void *ptr)
+{
+    if (!ptr || !heap_start) return NULL;
+
+    uintptr_t base = (uintptr_t)heap_start;
+    uintptr_t end = base + heap_total;
+    uintptr_t addr = (uintptr_t)ptr;
+
+    if (addr < base + HEADER_SIZE || addr >= end) return NULL;
+
+    uintptr_t header = addr - HEADER_SIZE;
+    if ((header - base) % 8u != 0) return NULL;
+
+    block_header_t *block = (block_header_t *)header;
+
+    /* The block must be big enough to hold its own header and must not claim
+     * to extend past the end of the heap. */
+    if (block->size < MIN_BLOCK_SIZE) return NULL;
+    if (block->size > (size_t)(end - header)) return NULL;
+
+    return block;
+}
+
+/**
  * @brief Coalesce adjacent free blocks starting from the given block.
  */
 static void coalesce(block_header_t *block)
@@ -123,13 +162,8 @@ void eos_free(void *ptr)
 {
     if (!ptr) return;
 
-    block_header_t *block = (block_header_t *)((uint8_t *)ptr - HEADER_SIZE);
-
-    /* Sanity check: pointer should be within heap */
-    if ((uintptr_t)block < (uintptr_t)heap_start ||
-        (uintptr_t)block >= (uintptr_t)heap_start + heap_total) {
-        return;
-    }
+    block_header_t *block = block_from_ptr(ptr);
+    if (!block) return;       /* Not ours, or the header is not believable */
 
     if (block->free) return;  /* Double-free protection */
 
@@ -159,7 +193,9 @@ void *eos_realloc(void *ptr, size_t new_size)
     if (!ptr) return eos_malloc(new_size);
     if (new_size == 0) { eos_free(ptr); return NULL; }
 
-    block_header_t *block = (block_header_t *)((uint8_t *)ptr - HEADER_SIZE);
+    block_header_t *block = block_from_ptr(ptr);
+    if (!block) return NULL;  /* Not ours, or the header is not believable */
+
     size_t current_usable = block->size - HEADER_SIZE;
 
     if (new_size <= current_usable) return ptr;  /* Fits in current block */

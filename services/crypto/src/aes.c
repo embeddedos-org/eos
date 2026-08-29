@@ -57,8 +57,21 @@ static uint32_t rot_word(uint32_t w) {
     return (w<<8)|(w>>24);
 }
 
+/*
+ * Only 128, 192 and 256 are accepted. ctx->rk holds exactly the 60 words an
+ * AES-256 schedule needs, so a larger key_bits drives the expansion loop past
+ * the end of the context; key_bits == 0 makes nk zero, which reads rk[-1] and
+ * then divides by it; and a short non-zero size such as 64 indexes rcon[] out
+ * of bounds. Rejection zeroes the context, leaving nr == 0 -- never a valid
+ * round count -- so the routines below refuse a schedule that was never built
+ * instead of encrypting under uninitialised key material.
+ */
 void eos_aes_init(EosAesCtx *ctx, const uint8_t *key, int key_bits) {
-    if (!ctx || !key) return;
+    if (!ctx) return;
+    if (!key || (key_bits != 128 && key_bits != 192 && key_bits != 256)) {
+        memset(ctx, 0, sizeof(*ctx));
+        return;
+    }
 
     int nk = key_bits / 32;
     ctx->nr = nk + 6;
@@ -79,7 +92,7 @@ void eos_aes_init(EosAesCtx *ctx, const uint8_t *key, int key_bits) {
 
 void eos_aes_encrypt_block(const EosAesCtx *ctx,
                            const uint8_t in[16], uint8_t out[16]) {
-    if (!ctx || !in || !out) return;
+    if (!ctx || !in || !out || ctx->nr == 0) return;
 
     uint8_t s[16];
     memcpy(s, in, 16);
@@ -124,7 +137,7 @@ void eos_aes_encrypt_block(const EosAesCtx *ctx,
 
 void eos_aes_decrypt_block(const EosAesCtx *ctx,
                            const uint8_t in[16], uint8_t out[16]) {
-    if (!ctx || !in || !out) return;
+    if (!ctx || !in || !out || ctx->nr == 0) return;
 
     uint8_t s[16];
     memcpy(s, in, 16);
@@ -185,6 +198,8 @@ void eos_aes_decrypt_block(const EosAesCtx *ctx,
 
 void eos_aes_cbc_encrypt(const EosAesCtx *ctx, const uint8_t *iv,
                          const uint8_t *in, uint8_t *out, size_t len) {
+    if (!ctx || !iv || !in || !out || ctx->nr == 0) return;
+
     uint8_t prev[16];
     memcpy(prev, iv, 16);
     for (size_t off = 0; off + 16 <= len; off += 16) {
@@ -197,6 +212,8 @@ void eos_aes_cbc_encrypt(const EosAesCtx *ctx, const uint8_t *iv,
 
 void eos_aes_cbc_decrypt(const EosAesCtx *ctx, const uint8_t *iv,
                          const uint8_t *in, uint8_t *out, size_t len) {
+    if (!ctx || !iv || !in || !out || ctx->nr == 0) return;
+
     uint8_t prev[16];
     memcpy(prev, iv, 16);
     for (size_t off = 0; off + 16 <= len; off += 16) {
