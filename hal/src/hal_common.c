@@ -14,13 +14,39 @@
 
 static const eos_hal_backend_t *active_backend = NULL;
 
+/* Distinguishes "no backend has ever been chosen" from "a backend was chosen
+ * and it was NULL". eos_hal_init() fills the first case with the platform
+ * default; the second is a deliberate act by the application and is left
+ * alone, because a HAL that re-arms itself after being disarmed is worse than
+ * one that never armed. */
+static int backend_chosen = 0;
+
 void eos_hal_register_backend(const eos_hal_backend_t *backend)
 {
     active_backend = backend;
+    backend_chosen = 1;
 }
 
 int eos_hal_init(void)
 {
+    /* hal.h promises initialisation "for the current platform". Until now this
+     * returned -1 unless the application had already called
+     * eos_hal_register_backend() itself, which nothing in the tree, none of
+     * the examples, and none of the scaffolded templates did — so every HAL
+     * call on a host build silently did nothing and the generated hello-world
+     * produced no output.
+     *
+     * An application that registers its own backend before calling init keeps
+     * it, and so does one that deliberately registers NULL: the default only
+     * fills a slot nobody has set. */
+    if (!active_backend && !backend_chosen) {
+#ifdef __linux__
+        eos_hal_linux_register();
+#else
+        eos_hal_rtos_register();
+#endif
+    }
+
     if (!active_backend || !active_backend->init) return -1;
     return active_backend->init();
 }

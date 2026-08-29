@@ -29,9 +29,29 @@ extern "C" {
  * Initialize the HAL subsystem for the current platform.
  * Must be called before any other HAL function.
  *
+ * Selects the backend compiled for this platform when the application has not
+ * registered one of its own. A build that wants different hardware behaviour
+ * calls eos_hal_register_backend() first, and that choice is kept.
+ *
  * @return 0 on success, negative error code on failure.
  */
 int eos_hal_init(void);
+
+/**
+ * Register the backend for this platform.
+ *
+ * Called for you by eos_hal_init(). Declared because a board port that
+ * layers on top of the platform backend needs to name it, and because an
+ * undeclared registrar is one nobody can find.
+ *
+ * Exactly one of these is compiled: hal_linux.c is guarded on __linux__ and
+ * hal_rtos.c on its absence.
+ */
+#ifdef __linux__
+void eos_hal_linux_register(void);
+#else
+void eos_hal_rtos_register(void);
+#endif
 
 /**
  * Deinitialize the HAL subsystem, releasing all resources.
