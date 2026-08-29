@@ -73,16 +73,6 @@ add_executable(test_crypto_sha512 test_crypto_sha512.c)
 target_link_libraries(test_crypto_sha512 PRIVATE eos_crypto)
 add_test(NAME test_crypto_sha512 COMMAND test_crypto_sha512)
 
-# --- test_crypto_aes: AES-128/192/256 ECB + CBC, NIST FIPS-197 / SP 800-38A ---
-add_executable(test_crypto_aes test_crypto_aes.c)
-target_link_libraries(test_crypto_aes PRIVATE eos_crypto)
-add_test(NAME test_crypto_aes COMMAND test_crypto_aes)
-
-# --- test_crypto_sha512: SHA-512 against NIST vectors ---
-add_executable(test_crypto_sha512 test_crypto_sha512.c)
-target_link_libraries(test_crypto_sha512 PRIVATE eos_crypto)
-add_test(NAME test_crypto_sha512 COMMAND test_crypto_sha512)
-
 # --- test_security: Keystore, ACL ---
 add_executable(test_security test_security.c)
 target_link_libraries(test_security PRIVATE eos_security eos_crypto)

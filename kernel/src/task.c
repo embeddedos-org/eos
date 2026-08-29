@@ -573,8 +573,4 @@ int eos_task_get_all_stats(eos_task_stats_t *out, int max_entries, int *count)
     return EOS_KERN_OK;
 }
 
-void eos_task_set_current_internal(eos_task_handle_t h)
-{
-    if (h >= EOS_MAX_TASKS) return;
-    g_current = (int)h;
-}
+
