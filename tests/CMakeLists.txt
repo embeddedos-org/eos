@@ -26,6 +26,11 @@ add_executable(test_kernel test_kernel.c)
 target_link_libraries(test_kernel PRIVATE eos_kernel)
 add_test(NAME test_kernel COMMAND test_kernel)
 
+# --- test_priority_inherit: Mutex priority inheritance ---
+add_executable(test_priority_inherit test_priority_inherit.c)
+target_link_libraries(test_priority_inherit PRIVATE eos_kernel)
+add_test(NAME test_priority_inherit COMMAND test_priority_inherit)
+
 # --- test_heap: Kernel allocator and overflow handling ---
 add_executable(test_heap test_heap.c)
 target_link_libraries(test_heap PRIVATE eos_kernel)

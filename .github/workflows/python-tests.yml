@@ -17,7 +17,9 @@ jobs:
         uses: actions/setup-python@v5
         with:
           python-version: "3.11"
-          cache: pip
+          # No cache: pip -- this repository has neither requirements.txt nor
+          # pyproject.toml, and setup-python treats that as a hard error rather
+          # than skipping the cache.
 
       - name: Install dependencies
         run: |

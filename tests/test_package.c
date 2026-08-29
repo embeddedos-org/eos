@@ -9,13 +9,8 @@ static int passed = 0;
 
 static int dummy_init(void) { return 0; }
 
-/* EosPackageSet is EOS_MAX_PACKAGES * sizeof(EosPackage) = ~3.8 MB, which
- * overflows the 1 MB default thread stack on Windows and on any other
- * small-stack host, crashing these tests before main() gets to run them.
- * Every set below is therefore static, matching how cmd/eos/main.c declares
- * the same type. Each test memsets its set on entry, so nothing carries
- * over between tests. */
-
+/* sizeof(EosPackageSet) is ~3.9 MB, which overflows the default stack as a
+ * plain local. cmd/eos/main.c stores it static for the same reason. */
 static void test_package_register(void) {
     static EosPackageSet set;
     memset(&set, 0, sizeof(set));

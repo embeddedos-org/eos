@@ -47,6 +47,11 @@ uint8_t eos_task_get_priority_internal(eos_task_handle_t h);
 void eos_task_set_priority_internal(eos_task_handle_t h, uint8_t prio);
 
 /**
+ * @brief Make @p h the running task. Handles >= EOS_MAX_TASKS clear it.
+ */
+void eos_task_set_current_internal(eos_task_handle_t h);
+
+/**
  * @brief Block a task with a timeout.
  *
  * Sets the task state to BLOCKED and wake_tick to g_tick + timeout_ms,
