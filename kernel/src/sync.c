@@ -19,11 +19,16 @@
 
 #define MTX_MAX_WAITERS 8
 
+#define MTX_NO_OWNER 0xFFu
+
+/* Bounds the walk along a chain of blocked tasks. A lock-order inversion
+ * makes that chain cyclic, so the bound is required for termination. */
+#define PI_MAX_CHAIN_DEPTH 8
+
 typedef struct {
     uint8_t in_use;
     uint8_t locked;
     uint8_t owner;
-    uint8_t original_prio;
     uint8_t rec_count;
     uint8_t waiters[MTX_MAX_WAITERS];
     uint8_t waiter_count;
@@ -75,7 +80,7 @@ int eos_mutex_create(eos_mutex_handle_t *out)
         if (!g_mtx[i].in_use) {
             memset(&g_mtx[i], 0, sizeof(mtx_t));
             g_mtx[i].in_use = 1;
-            g_mtx[i].owner = 0xFF;
+            g_mtx[i].owner = MTX_NO_OWNER;
             *out = (uint8_t)i;
             eos_port_exit_critical(crit);
             return EOS_KERN_OK;
@@ -96,7 +101,6 @@ int eos_mutex_lock(eos_mutex_handle_t h, uint32_t timeout_ms)
     if (!g_mtx[h].locked) {
         g_mtx[h].locked = 1;
         g_mtx[h].owner = caller;
-        g_mtx[h].original_prio = eos_task_get_priority_internal(caller);
         g_mtx[h].rec_count = 1;
         eos_port_exit_critical(crit);
         return EOS_KERN_OK;
@@ -142,6 +146,9 @@ int eos_mutex_lock(eos_mutex_handle_t h, uint32_t timeout_ms)
 
     /* Resumed — check if we got the mutex */
     crit = eos_port_enter_critical();
+    if (task_valid(caller))
+        g_blocked_on[caller] = 0;
+
     if (g_mtx[h].owner == caller) {
         eos_port_exit_critical(crit);
         return EOS_KERN_OK;
@@ -170,10 +177,8 @@ int eos_mutex_unlock(eos_mutex_handle_t h)
         return EOS_KERN_OK;
     }
 
-    /* Restore owner's original priority */
-    eos_task_set_priority_internal(caller, g_mtx[h].original_prio);
-
     /* Grant to highest-priority waiter */
+    uint8_t next_owner = MTX_NO_OWNER;
     if (g_mtx[h].waiter_count > 0) {
         int best = 0;
         uint8_t best_prio = 255;
@@ -181,19 +186,26 @@ int eos_mutex_unlock(eos_mutex_handle_t h)
             uint8_t wp = eos_task_get_priority_internal(g_mtx[h].waiters[i]);
             if (wp < best_prio) { best_prio = wp; best = i; }
         }
-        uint8_t next_owner = g_mtx[h].waiters[best];
+        next_owner = g_mtx[h].waiters[best];
         for (int j = best; j < g_mtx[h].waiter_count - 1; j++)
             g_mtx[h].waiters[j] = g_mtx[h].waiters[j + 1];
         g_mtx[h].waiter_count--;
 
         g_mtx[h].owner = next_owner;
-        g_mtx[h].original_prio = eos_task_get_priority_internal(next_owner);
         g_mtx[h].rec_count = 1;
+        if (task_valid(next_owner))
+            g_blocked_on[next_owner] = 0;
         eos_task_unblock(next_owner);
     } else {
         g_mtx[h].locked = 0;
-        g_mtx[h].owner = 0xFF;
+        g_mtx[h].owner = MTX_NO_OWNER;
     }
+
+    /* Recompute after ownership has moved, so the releasing task keeps any
+     * boost its other mutexes still justify. */
+    pi_propagate(caller);
+    if (next_owner != MTX_NO_OWNER)
+        pi_propagate(next_owner);
 
     eos_port_exit_critical(crit);
     return EOS_KERN_OK;
@@ -203,9 +215,25 @@ int eos_mutex_delete(eos_mutex_handle_t h)
 {
     if (h >= EOS_MAX_MUTEXES || !g_mtx[h].in_use) return EOS_KERN_INVALID;
     uint32_t crit = eos_port_enter_critical();
-    for (int i = 0; i < g_mtx[h].waiter_count; i++)
-        eos_task_unblock(g_mtx[h].waiters[i]);
-    g_mtx[h].in_use = 0;
+
+    uint8_t owner = g_mtx[h].owner;
+    uint8_t waiters[MTX_MAX_WAITERS];
+    uint8_t waiter_count = g_mtx[h].waiter_count;
+    for (int i = 0; i < waiter_count; i++) {
+        waiters[i] = g_mtx[h].waiters[i];
+        if (task_valid(waiters[i]))
+            g_blocked_on[waiters[i]] = 0;
+        eos_task_unblock(waiters[i]);
+    }
+
+    /* Retire the mutex before recomputing so it no longer contributes. */
+    memset(&g_mtx[h], 0, sizeof(mtx_t));
+    g_mtx[h].owner = MTX_NO_OWNER;
+
+    pi_propagate(owner);
+    for (int i = 0; i < waiter_count; i++)
+        pi_propagate(waiters[i]);
+
     eos_port_exit_critical(crit);
     return EOS_KERN_OK;
 }
@@ -250,9 +278,14 @@ int eos_sem_wait(eos_sem_handle_t h, uint32_t timeout_ms)
         return EOS_KERN_TIMEOUT;
     }
 
+    /* Same lost-wakeup hazard as the mutex wait queue. */
+    if (g_sem[h].waiter_count >= MTX_MAX_WAITERS) {
+        eos_port_exit_critical(crit);
+        return EOS_KERN_NO_MEMORY;
+    }
+
     uint8_t caller = (uint8_t)eos_task_get_current();
-    if (g_sem[h].waiter_count < MTX_MAX_WAITERS)
-        g_sem[h].waiters[g_sem[h].waiter_count++] = caller;
+    g_sem[h].waiters[g_sem[h].waiter_count++] = caller;
     eos_task_block_with_timeout(caller, timeout_ms);
     eos_port_exit_critical(crit);
     eos_port_yield();

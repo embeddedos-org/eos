@@ -4,3 +4,21 @@ SPDX-License-Identifier: MIT
 
 Monorepo: https://github.com/embeddedos-org/ebuild
 Website: https://embeddedos-org.github.io
+
+--------------------------------------------------------------------------------
+Third-party components
+--------------------------------------------------------------------------------
+
+This section is the dependency and licence inventory required by §26 of the
+EmbeddedOS Platform Architecture & Ecosystem Design Document, and by ADR-017.
+
+Every directory under third_party/ must appear here, with the licence it ships
+under. This includes machine-learning model weights, whose licences are bespoke
+agreements rather than SPDX identifiers and may restrict redistribution. scripts/check_third_party.py fails the build when one does not, and
+scripts/generate_sbom.py emits the machine-readable form to sbom.json.
+
+  (none yet)
+
+External source may only be added under third_party/, at a pinned revision, with
+its licence copied verbatim. See third_party/README.md for the procedure and
+ADR-017 for the reasoning.

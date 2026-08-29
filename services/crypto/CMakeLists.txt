@@ -3,6 +3,11 @@ add_library(eos_crypto STATIC
     src/crc.c
     src/aes.c
     src/rsa_ecc_sha512.c
+    src/ed25519_verify.c
+    src/ed25519_ge.c
+    src/ed25519_sc.c
+    src/ed25519_fe.c
+    src/ed25519_sha512.c
 )
 
 target_include_directories(eos_crypto PUBLIC

@@ -186,6 +186,49 @@ Mutexes provide mutual exclusion for protecting shared resources.
 | `eos_mutex_unlock` | `int eos_mutex_unlock(eos_mutex_handle_t h)` | Release lock |
 | `eos_mutex_delete` | `int eos_mutex_delete(eos_mutex_handle_t h)` | Destroy mutex |
 
+`eos_mutex_lock` returns `EOS_KERN_NO_MEMORY` if the mutex's wait queue is
+already full (`MTX_MAX_WAITERS`, 8). The call fails rather than blocking,
+because a task that blocks without being enqueued would never be granted the
+mutex.
+
+### Priority Inheritance
+
+A low-priority task holding a mutex that a high-priority task needs would
+otherwise be preemptible by every unrelated medium-priority task on the
+system — the high-priority task ends up waiting on work that is not even
+related to it. This is *priority inversion*, and unbounded inversion is what
+famously reset the Mars Pathfinder lander repeatedly on the surface.
+
+EoS bounds it by inheritance. While a task holds a mutex, its scheduling
+priority is:
+
+```
+effective = min( base_priority,
+                 priority of every task waiting on every mutex it holds )
+```
+
+with lower values meaning more urgent. Two properties follow, and both matter:
+
+- **The effective priority is recomputed from that rule** on every lock,
+  unlock, timeout and delete — it is not a value saved on the way in and
+  restored on the way out. A task holding two mutexes that releases one keeps
+  whatever boost the other still justifies, and a task boosted while already
+  holding a mutex never mistakes the inherited value for its own baseline.
+  `base_priority` in the TCB always holds the priority the task was created
+  with, and inheritance only ever restores down to that.
+
+- **Boosts propagate transitively.** If A waits on a mutex held by B, and B is
+  itself blocked on a mutex held by C, then C inherits A's priority too — C is
+  the task that actually has to run before anything can be released. The walk
+  is bounded by `PI_MAX_CHAIN_DEPTH` (8), which keeps the operation analysable
+  for WCET and terminates even if the application creates a lock-order cycle.
+
+Inheritance is applied automatically; there is no API to enable it. Note that
+it *bounds* inversion, it does not prevent deadlock: acquiring two mutexes in
+opposite orders in two tasks still deadlocks, and the chain-depth bound simply
+stops the kernel from spinning while it happens. Establish a global lock
+ordering for nested acquisition.
+
 ### Example: Protected Shared Counter
 
 ```c

@@ -86,21 +86,12 @@ static int eos_rmdir_recursive(const char *path)
 #endif
 }
 
-static void eos_sha256_stub(const uint8_t *data, size_t len, uint8_t out[EAPP_HASH_LEN])
-{
-    memset(out, 0, EAPP_HASH_LEN);
-    for (size_t i = 0; i < len; i++) {
-        out[i % EAPP_HASH_LEN] ^= data[i];
-        out[(i + 7) % EAPP_HASH_LEN] += data[i];
-    }
-}
+#include <eos/crypto.h>
+#include <ed25519.h>
 
-static int eos_ed25519_verify_stub(const uint8_t *sig, size_t sig_len,
-                                   const uint8_t *data, size_t data_len)
-{
-    (void)sig; (void)sig_len; (void)data; (void)data_len;
-    return 0;
-}
+// Temporary hardcoded public key for package verification.
+// In a real system, this should be loaded from a secure keystore.
+static const uint8_t eos_pkg_public_key[32] = {0};
 
 static void eos_print_capabilities(uint32_t caps)
 {
@@ -368,7 +359,10 @@ int eos_pkg_verify(const char *eapp_path)
     }
 
     uint8_t computed_hash[EAPP_HASH_LEN];
-    eos_sha256_stub(binary_data, hdr.binary_size, computed_hash);
+    EosSha256 sha_ctx;
+    eos_sha256_init(&sha_ctx);
+    eos_sha256_update(&sha_ctx, binary_data, hdr.binary_size);
+    eos_sha256_final(&sha_ctx, computed_hash);
 
     if (memcmp(computed_hash, hdr.hash, EAPP_HASH_LEN) != 0) {
         fprintf(stderr, "eos-pkg: hash mismatch — package may be corrupted\n");
@@ -377,8 +371,7 @@ int eos_pkg_verify(const char *eapp_path)
         return -1;
     }
 
-    if (eos_ed25519_verify_stub(hdr.signature, EAPP_SIGNATURE_LEN,
-                                binary_data, hdr.binary_size) != 0) {
+    if (!ed25519_verify(hdr.signature, binary_data, hdr.binary_size, eos_pkg_public_key)) {
         fprintf(stderr, "eos-pkg: signature verification failed\n");
         free(binary_data);
         fclose(f);
@@ -480,7 +473,10 @@ int eos_pkg_install(eapp_db_t *db, const char *eapp_path)
     }
 
     uint8_t computed_hash[EAPP_HASH_LEN];
-    eos_sha256_stub(binary_data, hdr.binary_size, computed_hash);
+    EosSha256 sha_ctx;
+    eos_sha256_init(&sha_ctx);
+    eos_sha256_update(&sha_ctx, binary_data, hdr.binary_size);
+    eos_sha256_final(&sha_ctx, computed_hash);
     if (memcmp(computed_hash, hdr.hash, EAPP_HASH_LEN) != 0) {
         fprintf(stderr, "eos-pkg: hash verification failed\n");
         free(binary_data);
@@ -488,8 +484,7 @@ int eos_pkg_install(eapp_db_t *db, const char *eapp_path)
         return -1;
     }
 
-    if (eos_ed25519_verify_stub(hdr.signature, EAPP_SIGNATURE_LEN,
-                                binary_data, hdr.binary_size) != 0) {
+    if (!ed25519_verify(hdr.signature, binary_data, hdr.binary_size, eos_pkg_public_key)) {
         fprintf(stderr, "eos-pkg: signature verification failed\n");
         free(binary_data);
         fclose(f);

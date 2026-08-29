@@ -67,8 +67,11 @@ EosResult eos_firmware_init(EosFirmware *fw, const EosRtosConfig *rtos_cfg,
         EOS_ERROR("Firmware build path exceeds %d bytes", EOS_MAX_PATH);
         return EOS_ERR_OVERFLOW;
     }
-
-    snprintf(fw->src_dir, EOS_MAX_PATH, "%s", fw->entry);
+    n = snprintf(fw->src_dir, EOS_MAX_PATH, "%s", fw->entry);
+    if (n < 0 || n >= EOS_MAX_PATH) {
+        EOS_ERROR("Firmware source path exceeds %d bytes", EOS_MAX_PATH);
+        return EOS_ERR_OVERFLOW;
+    }
 
     n = snprintf(fw->install_dir, EOS_MAX_PATH, "%s/firmware/output",
                  cfg->workspace.build_dir);

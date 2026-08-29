@@ -25,6 +25,7 @@ extern "C" {
 #endif
 
 #define EOS_SENSOR_MAX 16
+#define EOS_SENSOR_FILTER_MAX_WINDOW 32
 
 typedef enum {
     EOS_SENSOR_TEMPERATURE  = 0,
