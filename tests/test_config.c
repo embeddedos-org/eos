@@ -4,7 +4,11 @@
 
 #include <stdio.h>
 #include <string.h>
+#include <fcntl.h>
+#include <sys/stat.h>
+#include <unistd.h>
 #include "eos/config.h"
+#include "eos/lockfile.h"
 #include "eos/log.h"
 
 static int tests_run = 0;
@@ -100,6 +104,228 @@ static void test_config_missing_file(void) {
     ASSERT(res == EOS_ERR_IO, "returns IO error for missing file");
 }
 
+static void test_config_package_overflow(void) {
+    printf("test_config_package_overflow:\n");
+
+    /* One more package than the array holds. Refusing the extra entry is not
+     * enough on its own: the parser used to leave pkg_idx pointing at
+     * packages[EOS_MAX_PACKAGES], so the "version:" line under the refused
+     * entry wrote 127 bytes past the end of the array. AddressSanitizer
+     * reported it as a stack-buffer-overflow at config.c:247.
+     *
+     * package_count and the accepted entries all look correct even when the
+     * overflow happens, so asserting on them proves nothing. The config is
+     * placed in a struct with a trailing canary instead: members of one
+     * struct are laid out in order, so anything written past `packages`
+     * lands in `canary` and is detectable without a sanitizer. */
+    struct {
+        EosConfig     cfg;
+        unsigned char canary[4096];
+    } probe;
+
+    memset(&probe.cfg, 0, sizeof probe.cfg);
+    memset(probe.canary, 0xA5, sizeof probe.canary);
+
+    const char *path = "test_pkg_overflow.yaml";
+    int fd = open(path, O_WRONLY | O_CREAT | O_TRUNC, S_IRUSR | S_IWUSR);
+    ASSERT(fd >= 0, "can create the overflow fixture");
+    if (fd < 0) return;
+    FILE *f = fdopen(fd, "w");
+    ASSERT(f != NULL, "can write the overflow fixture");
+    if (!f) {
+        close(fd);
+        return;
+    }
+    fprintf(f, "packages:\n");
+    for (int i = 0; i < EOS_MAX_PACKAGES + 1; i++) {
+        fprintf(f, "  - name: pkg%d\n", i);
+        fprintf(f, "    version: 1.0.0\n");
+        fprintf(f, "    source: https://example.invalid/pkg%d\n", i);
+    }
+    fclose(f);
+
+    eos_config_init(&probe.cfg);
+    memset(probe.canary, 0xA5, sizeof probe.canary);
+    EosResult res = eos_config_load(&probe.cfg, path);
+
+    size_t clobbered = 0;
+    for (size_t i = 0; i < sizeof probe.canary; i++) {
+        if (probe.canary[i] != 0xA5) clobbered++;
+    }
+
+    ASSERT(clobbered == 0, "parser wrote nothing past the packages array");
+    if (clobbered) {
+        printf("        %zu byte(s) past the array were overwritten\n", clobbered);
+    }
+    ASSERT(res == EOS_OK, "an over-long package list still parses");
+    ASSERT(probe.cfg.package_count == EOS_MAX_PACKAGES,
+           "package_count is clamped to EOS_MAX_PACKAGES");
+    ASSERT(strcmp(probe.cfg.packages[EOS_MAX_PACKAGES - 1].version, "1.0.0") == 0,
+           "the last accepted package kept its own version");
+
+    remove(path);
+}
+
+static void test_lockfile_freshness(void) {
+    printf("test_lockfile_freshness:\n");
+    static EosConfig cfg;
+    static EosLockfile lock;
+
+    eos_config_init(&cfg);
+    snprintf(cfg.project.name, sizeof(cfg.project.name), "%s", "demo");
+    snprintf(cfg.project.version, sizeof(cfg.project.version), "%s", "1.0.0");
+    cfg.package_count = 2;
+
+    snprintf(cfg.packages[0].name, sizeof(cfg.packages[0].name), "%s", "alpha");
+    snprintf(cfg.packages[0].version, sizeof(cfg.packages[0].version), "%s", "1.2.3");
+    snprintf(cfg.packages[0].source, sizeof(cfg.packages[0].source), "%s", "https://example.com/alpha.tar.gz");
+    snprintf(cfg.packages[0].hash, sizeof(cfg.packages[0].hash), "%s", "explicit-checksum");
+    cfg.packages[0].build_type = EOS_BUILD_CMAKE;
+
+    snprintf(cfg.packages[1].name, sizeof(cfg.packages[1].name), "%s", "beta");
+    snprintf(cfg.packages[1].version, sizeof(cfg.packages[1].version), "%s", "4.5.6");
+    snprintf(cfg.packages[1].source, sizeof(cfg.packages[1].source), "%s", "https://example.com/beta.tar.gz");
+    cfg.packages[1].build_type = EOS_BUILD_MAKE;
+
+    ASSERT(eos_lockfile_generate(&lock, &cfg) == EOS_OK, "lockfile generates");
+    ASSERT(eos_lockfile_is_current(&lock, &cfg), "generated lockfile is current");
+
+    EosLockEntry tmp = lock.entries[0];
+    lock.entries[0] = lock.entries[1];
+    lock.entries[1] = tmp;
+    ASSERT(eos_lockfile_is_current(&lock, &cfg), "package order does not affect freshness");
+    tmp = lock.entries[0];
+    lock.entries[0] = lock.entries[1];
+    lock.entries[1] = tmp;
+
+    snprintf(cfg.project.version, sizeof(cfg.project.version), "%s", "2.0.0");
+    ASSERT(!eos_lockfile_is_current(&lock, &cfg), "project version change is stale");
+    snprintf(cfg.project.version, sizeof(cfg.project.version), "%s", "1.0.0");
+
+    snprintf(cfg.packages[0].name, sizeof(cfg.packages[0].name), "%s", "renamed-alpha");
+    ASSERT(!eos_lockfile_is_current(&lock, &cfg), "package name change is stale");
+    snprintf(cfg.packages[0].name, sizeof(cfg.packages[0].name), "%s", "alpha");
+
+    snprintf(cfg.packages[0].version, sizeof(cfg.packages[0].version), "%s", "1.2.4");
+    ASSERT(!eos_lockfile_is_current(&lock, &cfg), "requested version change is stale");
+    snprintf(cfg.packages[0].version, sizeof(cfg.packages[0].version), "%s", "1.2.3");
+
+    snprintf(cfg.packages[0].source, sizeof(cfg.packages[0].source), "%s", "https://example.com/alpha-v2.tar.gz");
+    ASSERT(!eos_lockfile_is_current(&lock, &cfg), "package source change is stale");
+    snprintf(cfg.packages[0].source, sizeof(cfg.packages[0].source), "%s", "https://example.com/alpha.tar.gz");
+
+    snprintf(cfg.packages[0].hash, sizeof(cfg.packages[0].hash), "%s", "new-checksum");
+    ASSERT(!eos_lockfile_is_current(&lock, &cfg), "explicit checksum change is stale");
+    snprintf(cfg.packages[0].hash, sizeof(cfg.packages[0].hash), "%s", "explicit-checksum");
+
+    cfg.packages[0].build_type = EOS_BUILD_MAKE;
+    ASSERT(!eos_lockfile_is_current(&lock, &cfg), "build type change is stale");
+    cfg.packages[0].build_type = EOS_BUILD_CMAKE;
+
+    snprintf(lock.entries[0].resolved_version, sizeof(lock.entries[0].resolved_version), "%s", "1.2.4");
+    ASSERT(!eos_lockfile_is_current(&lock, &cfg), "resolved version change is stale");
+    snprintf(lock.entries[0].resolved_version, sizeof(lock.entries[0].resolved_version), "%s", "1.2.3");
+
+    lock.entries[1].hash[0] ^= 1;
+    ASSERT(!eos_lockfile_is_current(&lock, &cfg), "generated checksum change is stale");
+}
+
+static void test_package_after_dependencies(void) {
+    printf("test_package_after_dependencies:\n");
+
+    static EosConfig cfg;
+
+    FILE *fp = fopen("test_package_dependencies.yaml", "w");
+    if (!fp) {
+        printf("  SKIP: cannot create dependency test file\n");
+        return;
+    }
+
+    fprintf(fp, "packages:\n");
+    fprintf(fp, "  - name: application\n");
+    fprintf(fp, "    version: 1.0.0\n");
+    fprintf(fp, "    deps:\n");
+    fprintf(fp, "      - logging-library\n");
+    fprintf(fp, "  - name: network-library\n");
+    fprintf(fp, "    version: 2.0.0\n");
+
+    fclose(fp);
+
+    EosResult res = eos_config_load(
+        &cfg,
+        "test_package_dependencies.yaml"
+    );
+
+    ASSERT(res == EOS_OK,
+           "configuration with package dependencies loads");
+
+    ASSERT(cfg.package_count == 2,
+           "two separate packages are parsed");
+
+    ASSERT(strcmp(cfg.packages[0].name, "application") == 0,
+           "first package name is correct");
+
+    ASSERT(cfg.packages[0].dep_count == 1,
+           "first package has exactly one dependency");
+
+    ASSERT(strcmp(cfg.packages[0].deps[0], "logging-library") == 0,
+           "dependency value is correct");
+
+    ASSERT(strcmp(cfg.packages[1].name, "network-library") == 0,
+           "package following dependency list is parsed");
+
+    ASSERT(strcmp(cfg.packages[1].version, "2.0.0") == 0,
+           "second package version is parsed");
+
+    remove("test_package_dependencies.yaml");
+}
+
+static void test_dependencies_after_build(void) {
+    printf("test_dependencies_after_build:\n");
+
+    static EosConfig cfg;
+
+    FILE *fp = fopen("test_dependencies_after_build.yaml", "w");
+    if (!fp) {
+        printf("  SKIP: cannot create build dependency test file\n");
+        return;
+    }
+
+    fprintf(fp, "packages:\n");
+    fprintf(fp, "  - name: busybox\n");
+    fprintf(fp, "    version: 1.36.1\n");
+    fprintf(fp, "    build:\n");
+    fprintf(fp, "      type: kbuild\n");
+    fprintf(fp, "    deps:\n");
+    fprintf(fp, "      - zlib\n");
+    fclose(fp);
+
+    EosResult res = eos_config_load(
+        &cfg,
+        "test_dependencies_after_build.yaml"
+    );
+
+    ASSERT(res == EOS_OK,
+           "configuration with dependencies after build loads");
+
+    ASSERT(cfg.package_count == 1,
+           "one package is parsed");
+
+    ASSERT(strcmp(cfg.packages[0].name, "busybox") == 0,
+           "package name is correct");
+
+    ASSERT(cfg.packages[0].build_type == EOS_BUILD_KBUILD,
+           "build type before dependencies is parsed");
+
+    ASSERT(cfg.packages[0].dep_count == 1,
+           "package has one dependency");
+
+    ASSERT(strcmp(cfg.packages[0].deps[0], "zlib") == 0,
+           "dependency after build is parsed");
+
+    remove("test_dependencies_after_build.yaml");
+}
+
 int main(void) {
     eos_log_set_level(EOS_LOG_ERROR);
 
@@ -107,7 +333,11 @@ int main(void) {
 
     test_config_init();
     test_config_load();
+    test_package_after_dependencies();
+    test_dependencies_after_build();
     test_config_missing_file();
+    test_config_package_overflow();
+    test_lockfile_freshness();
 
     printf("\n=== Results: %d/%d passed ===\n", tests_passed, tests_run);
     return (tests_passed == tests_run) ? 0 : 1;

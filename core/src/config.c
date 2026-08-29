@@ -39,6 +39,11 @@ static int indent_level(const char *line) {
     return n / 2;
 }
 
+/* A package index is only safe to dereference when a `- name:` entry claimed
+ * a slot for it. It is -1 before the first entry and after one is refused for
+ * exceeding EOS_MAX_PACKAGES, so both ends have to be checked. */
+#define PKG_IDX_VALID(i) ((i) >= 0 && (i) < EOS_MAX_PACKAGES)
+
 static int parse_kv(const char *line, char *key, size_t ksz, char *val, size_t vsz) {
     const char *colon = strchr(line, ':');
     if (!colon) return -1;
@@ -116,25 +121,32 @@ EosResult eos_config_load(EosConfig *cfg, const char *path) {
                     strncpy(cfg->layers[cfg->layer_count], item, EOS_MAX_PATH - 1);
                     cfg->layer_count++;
                 }
-            } else if (section == SEC_PACKAGES ||
-                       section == SEC_PKG_ENTRY ||
-                       section == SEC_PKG_BUILD ||
-                       section == SEC_PKG_OPTIONS) {
-                if (parse_kv(item, key, sizeof(key), val, sizeof(val)) == 0 &&
-                    strcmp(key, "name") == 0) {
-                    pkg_idx = cfg->package_count;
-                    if (pkg_idx < EOS_MAX_PACKAGES) {
-                        strncpy(cfg->packages[pkg_idx].name, val, EOS_MAX_NAME - 1);
-                        cfg->package_count++;
-                        section = SEC_PKG_ENTRY;
-                    }
-                }
-            } else if (section == SEC_PKG_DEPS && pkg_idx >= 0) {
-                if (cfg->packages[pkg_idx].dep_count < EOS_MAX_DEPS) {
-                    strncpy(cfg->packages[pkg_idx].deps[cfg->packages[pkg_idx].dep_count],
-                            item, EOS_MAX_NAME - 1);
-                    cfg->packages[pkg_idx].dep_count++;
-                }
+} else if (section == SEC_PACKAGES ||
+           section == SEC_PKG_ENTRY ||
+           section == SEC_PKG_BUILD ||
+           section == SEC_PKG_OPTIONS) {
+    if (parse_kv(item, key, sizeof(key), val, sizeof(val)) == 0 &&
+        strcmp(key, "name") == 0) {
+        pkg_idx = cfg->package_count;
+        if (pkg_idx < EOS_MAX_PACKAGES) {
+            strncpy(cfg->packages[pkg_idx].name, val, EOS_MAX_NAME - 1);
+            cfg->package_count++;
+            section = SEC_PKG_ENTRY;
+        } else {
+            EOS_ERROR("packages: too many entries in config (max %d), ignoring '%s'",
+                       EOS_MAX_PACKAGES, val);
+            pkg_idx = -1;
+            section = SEC_NONE;
+        }
+    }
+}
+} else if (section == SEC_PKG_DEPS && pkg_idx >= 0 && pkg_idx < EOS_MAX_PACKAGES) {
+    if (cfg->packages[pkg_idx].dep_count < EOS_MAX_DEPS) {
+        strncpy(cfg->packages[pkg_idx].deps[cfg->packages[pkg_idx].dep_count],
+                item, EOS_MAX_NAME - 1);
+        cfg->packages[pkg_idx].dep_count++;
+    }
+}
             } else if (section == SEC_SYSTEM_RTOS || section == SEC_SYSTEM_RTOS_ENTRY) {
                 /* "- provider: freertos" starts a new RTOS entry */
                 if (parse_kv(item, key, sizeof(key), val, sizeof(val)) == 0 &&
@@ -243,31 +255,34 @@ EosResult eos_config_load(EosConfig *cfg, const char *path) {
                 if (strcmp(key, "format") == 0)   rc->format = eos_firmware_format_from_str(val);
             }
             break;
-        case SEC_PKG_ENTRY:
-            if (strcmp(key, "version") == 0) strncpy(cfg->packages[pkg_idx].version, val, EOS_MAX_NAME - 1);
-            if (strcmp(key, "source") == 0)  strncpy(cfg->packages[pkg_idx].source, val, EOS_MAX_URL - 1);
-            if (strcmp(key, "hash") == 0)    strncpy(cfg->packages[pkg_idx].hash, val, EOS_HASH_LEN - 1);
-            if (strcmp(key, "build") == 0)   { section = SEC_PKG_BUILD; continue; }
-            if (strcmp(key, "deps") == 0)    { section = SEC_PKG_DEPS; continue; }
-            break;
-        case SEC_PKG_BUILD:
-            if (strcmp(key, "type") == 0) {
-                cfg->packages[pkg_idx].build_type = eos_build_type_from_str(val);
-            }
-            if (indent <= 2 && strcmp(key, "options") == 0) { section = SEC_PKG_OPTIONS; continue; }
-            if (indent <= 2 && strcmp(key, "version") == 0) {
-                section = SEC_PKG_ENTRY;
-                strncpy(cfg->packages[pkg_idx].version, val, EOS_MAX_NAME - 1);
-            }
-            break;
-        case SEC_PKG_OPTIONS:
-            if (pkg_idx >= 0 && cfg->packages[pkg_idx].option_count < EOS_MAX_OPTIONS) {
-                int oi = cfg->packages[pkg_idx].option_count;
-                strncpy(cfg->packages[pkg_idx].options[oi].key, key, EOS_MAX_NAME - 1);
-                strncpy(cfg->packages[pkg_idx].options[oi].value, val, EOS_MAX_PATH - 1);
-                cfg->packages[pkg_idx].option_count++;
-            }
-            break;
+case SEC_PKG_ENTRY:
+    if (pkg_idx < 0 || pkg_idx >= EOS_MAX_PACKAGES) break;
+    if (strcmp(key, "version") == 0) strncpy(cfg->packages[pkg_idx].version, val, EOS_MAX_NAME - 1);
+    if (strcmp(key, "source") == 0)  strncpy(cfg->packages[pkg_idx].source, val, EOS_MAX_URL - 1);
+    if (strcmp(key, "hash") == 0)    strncpy(cfg->packages[pkg_idx].hash, val, EOS_HASH_LEN - 1);
+    if (strcmp(key, "build") == 0)   { section = SEC_PKG_BUILD; continue; }
+    if (strcmp(key, "deps") == 0)    { section = SEC_PKG_DEPS; continue; }
+    break;
+case SEC_PKG_BUILD:
+    if (pkg_idx < 0 || pkg_idx >= EOS_MAX_PACKAGES) break;
+    if (strcmp(key, "type") == 0) {
+        cfg->packages[pkg_idx].build_type = eos_build_type_from_str(val);
+    }
+    if (indent <= 2 && strcmp(key, "options") == 0) { section = SEC_PKG_OPTIONS; continue; }
+    if (indent <= 2 && strcmp(key, "version") == 0) {
+        section = SEC_PKG_ENTRY;
+        strncpy(cfg->packages[pkg_idx].version, val, EOS_MAX_NAME - 1);
+    }
+    break;
+case SEC_PKG_OPTIONS:
+    if (pkg_idx >= 0 && pkg_idx < EOS_MAX_PACKAGES &&
+        cfg->packages[pkg_idx].option_count < EOS_MAX_OPTIONS) {
+        int oi = cfg->packages[pkg_idx].option_count;
+        strncpy(cfg->packages[pkg_idx].options[oi].key, key, EOS_MAX_NAME - 1);
+        strncpy(cfg->packages[pkg_idx].options[oi].value, val, EOS_MAX_PATH - 1);
+        cfg->packages[pkg_idx].option_count++;
+    }
+    break;
         case SEC_DOCS:
             if (strcmp(key, "enabled") == 0)    cfg->docs.enabled = (strcmp(val, "false") != 0 && strcmp(val, "0") != 0);
             if (strcmp(key, "api_docs") == 0)   cfg->docs.api_docs = (strcmp(val, "false") != 0 && strcmp(val, "0") != 0);

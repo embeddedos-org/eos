@@ -85,7 +85,7 @@ jobs:
           CF="-mcpu=cortex-m4 -mthumb -mfloat-abi=hard -mfpu=fpv4-sp-d16 \
               -std=c11 -Wall -Os -g -ffunction-sections -fdata-sections \
               -fno-common -specs=nosys.specs -DEOS_MCU_STM32F4 \
-              -Ikernel/include -Iinclude -Iboards/stm32f407_discovery"
+              -Ikernel/include -Iinclude -Iboards/stm32f407_discovery -Ihal/include"
           LF="-mcpu=cortex-m4 -mthumb -mfloat-abi=hard -mfpu=fpv4-sp-d16 \
               -Tboards/stm32f407vg.ld -Wl,--gc-sections \
               -specs=nosys.specs -specs=nano.specs -lc -lnosys"
@@ -140,7 +140,7 @@ jobs:
           CF="-mcpu=cortex-m3 -mthumb -std=c11 -Wall -Os -g \
               -ffunction-sections -fdata-sections -fno-common \
               -specs=nosys.specs -DEOS_MCU_STM32F4 -DEOS_NO_FPU \
-              -Ikernel/include -Iinclude -Iboards/stm32f407_discovery"
+              -Ikernel/include -Iinclude -Iboards/stm32f407_discovery -Ihal/include"
           LF="-mcpu=cortex-m3 -mthumb -Tboards/lm3s6965evb.ld \
               -Wl,--gc-sections -specs=nosys.specs -specs=rdimon.specs \
               -lc -lrdimon"

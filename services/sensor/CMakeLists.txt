@@ -2,6 +2,8 @@ add_library(eos_sensor STATIC
     src/sensor.c
 )
 
+target_compile_definitions(eos_sensor PUBLIC EOS_ENABLE_SENSOR=1)
+
 target_include_directories(eos_sensor PUBLIC
     ${CMAKE_CURRENT_SOURCE_DIR}/include
     ${CMAKE_SOURCE_DIR}/include

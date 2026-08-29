@@ -16,6 +16,28 @@
 #include "eos/mem.h"
 #include <string.h>
 
+/* ============================================================
+ * Overflow-Safe Tick Comparison
+ * ============================================================ */
+
+/**
+ * @brief Check whether a tick deadline has expired (overflow-safe).
+ *
+ * Uses unsigned subtraction so that the comparison works correctly
+ * even when the 32-bit tick counter wraps past UINT32_MAX.  This is
+ * the standard technique used by FreeRTOS, Zephyr, and the Linux
+ * kernel (time_after macro).  Valid for deadline distances up to
+ * INT32_MAX ticks (~24.8 days at 1 kHz).
+ *
+ * @param current  The current tick value.
+ * @param deadline The target tick at which the event should fire.
+ * @return true if the deadline has passed.
+ */
+static inline bool tick_expired(uint32_t current, uint32_t deadline)
+{
+    return (int32_t)(current - deadline) >= 0;
+}
+
 /* Stack canary value — placed at bottom of each task's stack */
 #define EOS_STACK_CANARY    0xDEADBEEFU
 
@@ -153,8 +175,9 @@ void eos_task_wake_check(uint32_t current_tick)
     for (int i = 0; i < EOS_MAX_TASKS; i++) {
         eos_task_t *t = &g_tasks[i];
         if (t->state == EOS_TASK_BLOCKED && t->wake_tick > 0 &&
-            current_tick >= t->wake_tick) {
+            tick_expired(current_tick, t->wake_tick)) {
             t->state = EOS_TASK_READY;
+            t->wake_armed = 0;
             t->wake_tick = 0;
         }
     }
@@ -206,6 +229,7 @@ int eos_kernel_init(void)
     idle->entry = idle_task_func;
     idle->arg = NULL;
     idle->priority = 255;  /* Lowest priority */
+    idle->base_priority = 255;
     idle->stack_size = IDLE_STACK_SIZE;
     idle->stack_base = g_idle_stack;
     idle->stack_base[0] = EOS_STACK_CANARY;
@@ -279,6 +303,7 @@ int eos_task_create(const char *name, eos_task_func_t entry, void *arg,
     g_tasks[slot].entry = entry;
     g_tasks[slot].arg = arg;
     g_tasks[slot].priority = priority;
+    g_tasks[slot].base_priority = priority;
     g_tasks[slot].stack_size = stack_size;
     g_tasks[slot].stack_base = stack_base;
     g_tasks[slot].stack_ptr = eos_port_init_stack(stack_top, entry, arg);
@@ -341,6 +366,7 @@ void eos_task_delay_ms(uint32_t ms)
     if (g_current >= 0) {
         uint32_t crit = eos_port_enter_critical();
         g_tasks[g_current].wake_tick = g_tick + ms;
+        g_tasks[g_current].wake_armed = 1;
         g_tasks[g_current].state = EOS_TASK_BLOCKED;
         eos_port_exit_critical(crit);
         eos_port_yield();
@@ -352,6 +378,16 @@ eos_task_handle_t eos_task_get_current(void)
     return (g_current >= 0) ? (eos_task_handle_t)g_current : 0xFF;
 }
 
+void eos_task_set_current_internal(eos_task_handle_t h)
+{
+    if (h >= EOS_MAX_TASKS) {
+        g_current = -1;
+        return;
+    }
+    g_current = (int)h;
+    g_tasks[h].state = EOS_TASK_RUNNING;
+}
+
 eos_task_state_t eos_task_get_state(eos_task_handle_t h)
 {
     if (h >= EOS_MAX_TASKS) return EOS_TASK_DELETED;
@@ -360,7 +396,9 @@ eos_task_state_t eos_task_get_state(eos_task_handle_t h)
 
 const char *eos_task_get_name(eos_task_handle_t h)
 {
-    if (h >= EOS_MAX_TASKS || !g_tasks[h].name) return "invalid";
+    if (h >= EOS_MAX_TASKS || g_tasks[h].state == EOS_TASK_DELETED || !g_tasks[h].name) {
+        return "invalid";
+    }
     return g_tasks[h].name;
 }
 
@@ -429,7 +467,7 @@ void eos_swtimer_tick(uint32_t current_tick)
     for (int i = 0; i < EOS_MAX_TIMERS; i++) {
         swtimer_t *t = &g_timers[i];
         if (!t->in_use || !t->active) continue;
-        if (current_tick >= t->next_tick) {
+        if (tick_expired(current_tick, t->next_tick)) {
             t->callback((eos_swtimer_handle_t)i, t->ctx);
             if (t->auto_reload) {
                 t->next_tick = current_tick + t->period_ticks;
@@ -466,9 +504,11 @@ void eos_task_block_with_timeout(eos_task_handle_t h, uint32_t timeout_ms)
     if (h >= EOS_MAX_TASKS) return;
     g_tasks[h].state = EOS_TASK_BLOCKED;
     if (timeout_ms == EOS_WAIT_FOREVER) {
-        g_tasks[h].wake_tick = 0;  /* Never auto-wake */
+        g_tasks[h].wake_tick = 0;
+        g_tasks[h].wake_armed = 0;  /* Never auto-wake */
     } else {
         g_tasks[h].wake_tick = g_tick + timeout_ms;
+        g_tasks[h].wake_armed = 1;
     }
 }
 
@@ -477,4 +517,57 @@ void eos_task_unblock(eos_task_handle_t h)
     if (h >= EOS_MAX_TASKS) return;
     g_tasks[h].state = EOS_TASK_READY;
     g_tasks[h].wake_tick = 0;
+    g_tasks[h].wake_armed = 0;
+}
+
+/* ============================================================
+ * Runtime Statistics API
+ * ============================================================ */
+
+int eos_task_get_stats(eos_task_handle_t h, eos_task_stats_t *out)
+{
+    if (h >= EOS_MAX_TASKS || !out) return EOS_KERN_INVALID;
+    if (g_tasks[h].entry == NULL && h != 0) return EOS_KERN_INVALID;
+
+    out->id        = g_tasks[h].id;
+    out->name      = g_tasks[h].name;
+    out->priority  = g_tasks[h].priority;
+    out->state     = g_tasks[h].state;
+    out->run_count = g_tasks[h].run_count;
+    out->stack_size = g_tasks[h].stack_size;
+
+    /* Estimate stack usage: scan from base upward for canary/zero words */
+    if (g_tasks[h].stack_base && g_tasks[h].stack_size > 0) {
+        uint32_t total_words = g_tasks[h].stack_size / sizeof(uint32_t);
+        uint32_t unused_words = 0;
+        /* Skip word 0 (canary), count zero-filled words from bottom up */
+        for (uint32_t w = 1; w < total_words; w++) {
+            if (g_tasks[h].stack_base[w] == 0) {
+                unused_words++;
+            } else {
+                break;
+            }
+        }
+        uint32_t used_bytes = (total_words - 1 - unused_words) * sizeof(uint32_t);
+        out->stack_used = used_bytes;
+    } else {
+        out->stack_used = 0;
+    }
+
+    return EOS_KERN_OK;
+}
+
+int eos_task_get_all_stats(eos_task_stats_t *out, int max_entries, int *count)
+{
+    if (!out || max_entries <= 0 || !count) return EOS_KERN_INVALID;
+
+    int n = 0;
+    for (int i = 0; i < EOS_MAX_TASKS && n < max_entries; i++) {
+        if (g_tasks[i].entry != NULL || i == 0) {
+            eos_task_get_stats((eos_task_handle_t)i, &out[n]);
+            n++;
+        }
+    }
+    *count = n;
+    return EOS_KERN_OK;
 }

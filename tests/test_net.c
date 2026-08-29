@@ -30,6 +30,16 @@ static void test_net_socket_udp(void) {
     eos_net_deinit();
     PASS("net socket UDP");
 }
+static void test_net_socket_invalid_protocol(void) {
+    eos_net_init();
+
+    eos_socket_t s = eos_net_socket((eos_net_proto_t)99);
+
+    assert(s == EOS_SOCKET_INVALID);
+
+    eos_net_deinit();
+    PASS("net socket invalid protocol");
+}
 static void test_net_bind(void) {
     eos_net_init();
     eos_socket_t s = eos_net_socket(EOS_NET_TCP);
@@ -143,6 +153,7 @@ int main(void) {
     test_net_init();
     test_net_socket_tcp();
     test_net_socket_udp();
+    test_net_socket_invalid_protocol();
     test_net_bind();
     test_net_listen();
     test_net_close();
