@@ -227,7 +227,7 @@ For cross-compilation to a specific board:
 
 ```bash
 cmake -B build \
-  -DCMAKE_TOOLCHAIN_FILE=../../toolchains/arm-none-eabi.cmake \
+  -DCMAKE_TOOLCHAIN_FILE=../../toolchains/arm-cortex-m4.cmake \
   -DEOS_PRODUCT=industrial
 cmake --build build
 ```

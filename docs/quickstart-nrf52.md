@@ -35,11 +35,11 @@ nrfjprog --version              # Should print 10.x or later
 ## Step 1: Clone and build
 
 ```bash
-git clone https://github.com/anthropic/EoS.git
-cd EoS/eos/examples/blink-gpio
+git clone https://github.com/embeddedos-org/eos.git
+cd eos/examples/blink-gpio
 
 cmake -B build \
-  -DCMAKE_TOOLCHAIN_FILE=../../toolchains/arm-none-eabi.cmake \
+  -DCMAKE_TOOLCHAIN_FILE=../../toolchains/arm-cortex-m4.cmake \
   -DEOS_PRODUCT=iot
 cmake --build build
 ```

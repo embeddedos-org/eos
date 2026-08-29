@@ -338,7 +338,7 @@ Toolchains are YAML-based definitions specifying CC, CXX, AR, sysroot, and flags
 Usage:
 
 ```bash
-cmake -B build -DCMAKE_TOOLCHAIN_FILE=toolchains/arm-none-eabi.cmake
+cmake -B build -DCMAKE_TOOLCHAIN_FILE=toolchains/arm-cortex-m4.cmake
 `
 
 ## 3.9 Configuration Schema Summary

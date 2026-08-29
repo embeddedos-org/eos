@@ -52,7 +52,7 @@ A complete touchscreen application that builds an interactive interface with LVG
 ```bash
 # Cross-compile for ARM target
 cmake -B build \
-  -DCMAKE_TOOLCHAIN_FILE=../../toolchains/arm-none-eabi.cmake \
+  -DCMAKE_TOOLCHAIN_FILE=../../toolchains/arm-cortex-m4.cmake \
   -DEOS_PRODUCT=hmi
 cmake --build build
 
