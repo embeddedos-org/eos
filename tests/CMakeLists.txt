@@ -106,6 +106,14 @@ add_executable(test_service test_service.c)
 target_link_libraries(test_service PRIVATE eos_service)
 add_test(NAME test_service COMMAND test_service)
 
+# --- test_gps: GPS NMEA sentence parsing ---
+add_executable(test_gps test_gps.c)
+target_link_libraries(test_gps PRIVATE eos_gps)
+if(UNIX AND NOT APPLE)
+    target_link_libraries(test_gps PRIVATE m)
+endif()
+add_test(NAME test_gps COMMAND test_gps)
+
 # --- test_debug: GDB stub + core dump ---
 add_executable(test_debug test_debug.c)
 target_include_directories(test_debug PRIVATE

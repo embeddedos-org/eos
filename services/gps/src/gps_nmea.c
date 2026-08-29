@@ -1,17 +1,14 @@
+// SPDX-License-Identifier: MIT
+// Copyright (c) 2026 EoS Project
+// ISO/IEC 25000 | ISO/IEC/IEEE 15288:2023
 
+#include <eos/gps_nmea.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 #include <stdbool.h>
 
-typedef struct {
-    double latitude;
-    double longitude;
-    float altitude;
-    float speed_knots;
-    int satellites;
-    bool fix_valid;
-} eos_gps_data_t;
+#if EOS_ENABLE_GPS
 
 /* Parse standard NMEA $GPRMC sentence */
 int eos_gps_parse_gprmc(const char *nmea, eos_gps_data_t *data) {
@@ -62,3 +59,5 @@ int eos_gps_parse_gprmc(const char *nmea, eos_gps_data_t *data) {
     data->fix_valid = true;
     return 0;
 }
+
+#endif /* EOS_ENABLE_GPS */

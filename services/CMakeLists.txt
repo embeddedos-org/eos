@@ -1,4 +1,5 @@
 add_subdirectory(crypto)
+add_subdirectory(gps)
 add_subdirectory(security)
 add_subdirectory(os)
 add_subdirectory(linux)
