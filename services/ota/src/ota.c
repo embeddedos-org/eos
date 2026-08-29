@@ -67,7 +67,10 @@ int eos_ota_begin(const eos_ota_source_t *source) {
 
 int eos_ota_write_chunk(const uint8_t *data, size_t len) {
     if (!g_ota.initialized || !g_ota.in_progress || !data) return -1;
-    if (g_ota.bytes_written + len > g_ota.total_size) return -1;
+    /* Compare against remaining space. Adding len can wrap and accept a huge chunk. */
+    if (g_ota.bytes_written > g_ota.total_size ||
+        len > (size_t)(g_ota.total_size - g_ota.bytes_written))
+        return -1;
     eos_sha256_update(&g_ota.hash_ctx, data, len);
     g_ota.bytes_written += (uint32_t)len;
     if (g_ota.progress_cb && g_ota.total_size > 0) {
