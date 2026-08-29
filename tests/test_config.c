@@ -4,6 +4,9 @@
 
 #include <stdio.h>
 #include <string.h>
+#include <fcntl.h>
+#include <sys/stat.h>
+#include <unistd.h>
 #include "eos/config.h"
 #include "eos/lockfile.h"
 #include "eos/log.h"
@@ -124,9 +127,15 @@ static void test_config_package_overflow(void) {
     memset(probe.canary, 0xA5, sizeof probe.canary);
 
     const char *path = "test_pkg_overflow.yaml";
-    FILE *f = fopen(path, "w");
+    int fd = open(path, O_WRONLY | O_CREAT | O_TRUNC, S_IRUSR | S_IWUSR);
+    ASSERT(fd >= 0, "can create the overflow fixture");
+    if (fd < 0) return;
+    FILE *f = fdopen(fd, "w");
     ASSERT(f != NULL, "can write the overflow fixture");
-    if (!f) return;
+    if (!f) {
+        close(fd);
+        return;
+    }
     fprintf(f, "packages:\n");
     for (int i = 0; i < EOS_MAX_PACKAGES + 1; i++) {
         fprintf(f, "  - name: pkg%d\n", i);
