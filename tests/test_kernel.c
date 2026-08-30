@@ -268,6 +268,8 @@ int main(void) {
     test_semaphore();
     test_queue();
     test_queue_full();
-    printf("=== ALL KERNEL TESTS PASSED (10/10) ===\n");
+    test_task_stats();
+    test_tick_overflow();
+    printf("=== ALL KERNEL TESTS PASSED (12/12) ===\n");
     return 0;
 }
