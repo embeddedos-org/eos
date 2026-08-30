@@ -105,7 +105,15 @@ static bool abstime_reached(const struct timespec *deadline)
 }
 
 /* No pthread_mutex_timedlock() on Darwin. Poll trylock until the deadline;
- * the interval bounds how long a timed lock can overshoot. */
+ * the interval bounds how long a timed lock can overshoot.
+ *
+ * Nothing in the tree reaches this today: posix_mutex_lock_fn() sends a zero
+ * timeout to pthread_mutex_trylock() and EOS_OSA_WAIT_FOREVER to plain
+ * pthread_mutex_lock(), so only a finite non-zero timeout arrives here, and
+ * every eos_mutex_lock() call currently passes 0 or EOS_NO_WAIT. A caller that
+ * does want a finite timed lock inherits this granularity: a timeout shorter
+ * than the interval still waits a full interval before giving up. Lower the
+ * value, or take the Linux path, if that ever matters. */
 #define COMPAT_LOCK_POLL_NS 1000000L /* 1 ms */
 
 static int compat_mutex_timedlock(pthread_mutex_t *m, const struct timespec *deadline)
