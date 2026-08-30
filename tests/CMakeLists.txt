@@ -56,27 +56,20 @@ add_executable(test_crypto test_crypto.c)
 target_link_libraries(test_crypto PRIVATE eos_crypto)
 add_test(NAME test_crypto COMMAND test_crypto)
 
-# --- test_crypto_aes / _ecc / _rsa / _sha512: were sitting in tests/ unused ---
-add_executable(test_crypto_aes test_crypto_aes.c)
-target_link_libraries(test_crypto_aes PRIVATE eos_crypto)
-add_test(NAME test_crypto_aes COMMAND test_crypto_aes)
-
-add_executable(test_crypto_ecc test_crypto_ecc.c)
-target_link_libraries(test_crypto_ecc PRIVATE eos_crypto)
-add_test(NAME test_crypto_ecc COMMAND test_crypto_ecc)
-
-add_executable(test_crypto_rsa test_crypto_rsa.c)
-target_link_libraries(test_crypto_rsa PRIVATE eos_crypto)
-add_test(NAME test_crypto_rsa COMMAND test_crypto_rsa)
-
-add_executable(test_crypto_sha512 test_crypto_sha512.c)
-target_link_libraries(test_crypto_sha512 PRIVATE eos_crypto)
-add_test(NAME test_crypto_sha512 COMMAND test_crypto_sha512)
-
 # --- test_crypto_aes: AES-128/192/256 ECB + CBC, NIST FIPS-197 / SP 800-38A ---
 add_executable(test_crypto_aes test_crypto_aes.c)
 target_link_libraries(test_crypto_aes PRIVATE eos_crypto)
 add_test(NAME test_crypto_aes COMMAND test_crypto_aes)
+
+# --- test_crypto_ecc: ECC point arithmetic and ECDSA ---
+add_executable(test_crypto_ecc test_crypto_ecc.c)
+target_link_libraries(test_crypto_ecc PRIVATE eos_crypto)
+add_test(NAME test_crypto_ecc COMMAND test_crypto_ecc)
+
+# --- test_crypto_rsa: RSA modular exponentiation and verify ---
+add_executable(test_crypto_rsa test_crypto_rsa.c)
+target_link_libraries(test_crypto_rsa PRIVATE eos_crypto)
+add_test(NAME test_crypto_rsa COMMAND test_crypto_rsa)
 
 # --- test_crypto_sha512: SHA-512 against NIST vectors ---
 add_executable(test_crypto_sha512 test_crypto_sha512.c)
