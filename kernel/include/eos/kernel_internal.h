@@ -48,6 +48,9 @@ void eos_task_set_priority_internal(eos_task_handle_t h, uint8_t prio);
 
 /**
  * @brief Make @p h the running task. Handles >= EOS_MAX_TASKS clear it.
+ *
+ * Used by host tests to exercise multi-task mutex/IPC paths without a
+ * running context switcher. Not part of the public kernel API.
  */
 void eos_task_set_current_internal(eos_task_handle_t h);
 
@@ -64,14 +67,6 @@ void eos_task_block_with_timeout(eos_task_handle_t h, uint32_t timeout_ms);
  * @brief Unblock a task (set state to READY, disarm the wake deadline).
  */
 void eos_task_unblock(eos_task_handle_t h);
-
-/**
- * @brief Set the scheduler's notion of the current task.
- *
- * Used by host tests to exercise multi-task mutex/IPC paths without a
- * running context switcher. Not part of the public kernel API.
- */
-void eos_task_set_current_internal(eos_task_handle_t h);
 
 #ifdef __cplusplus
 }

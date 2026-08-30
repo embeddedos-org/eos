@@ -4,10 +4,11 @@
 
 ### Fixed
 - **Build:** `cmake -B build/host -DEOS_BUILD_TESTS=ON` failed at configure time. `tests/CMakeLists.txt` declared `test_crypto_aes` and `test_crypto_sha512` twice each, and a duplicate `add_executable`/`add_test` name is a hard CMake error, so no test target could be generated at all.
+- **Build:** `kernel/src/sync.c` and `kernel/src/task.c` did not compile. A merge left `sync.c` referencing both halves of two different priority-inheritance designs: `mtx_recompute_owner_priority()` read a `mtx_t::original_prio` field that no longer exists, while `eos_mutex_lock`/`_unlock`/`_delete` called `task_valid()`, `pi_propagate()` and `g_blocked_on[]`, none of which were defined. `eos_task_set_current_internal()` was defined twice in `task.c` and declared twice in `kernel_internal.h`. The recompute-from-invariant design the kernel documentation describes is restored, which also covers the waiter-timeout case the `original_prio` variant was added for.
 - **`eos_queue_create`:** Size check now uses division so `item_size * capacity` cannot wrap `size_t` on 32-bit targets and overflow the 1024-byte queue store.
 - **`eos_sem_create`:** Reject `initial > max` and `max` values that do not fit in `int32_t`, so the counting-semaphore invariant cannot be created already broken.
 - **`eos_mutex_lock`:** Recursive lock returns `EOS_KERN_FULL` at `uint8_t` saturation instead of wrapping `rec_count` to 0 and leaving the mutex stuck.
-- **`eos_mutex_lock`:** A waiter that times out no longer leaves the mutex owner permanently boosted. Owner priority is recomputed from remaining waiters (or restored to `original_prio`). A full waiter table now returns `EOS_KERN_NO_MEMORY` without applying a boost.
+- **`eos_mutex_lock`:** A waiter that times out no longer leaves the mutex owner permanently boosted. The owner's effective priority is recomputed from its base priority and the waiters that remain. A full waiter table returns `EOS_KERN_NO_MEMORY` without applying a boost, since a caller that is never enqueued is never granted the mutex.
 
 ## [3.0.1] - 2026-05-16
 
