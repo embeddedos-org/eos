@@ -135,6 +135,7 @@ int eos_fs_write(eos_file_t fd, const void *data, size_t len) {
     if (p > n->cap) return -1;
     if (p + len > n->cap) len = n->cap - p;
     if (len == 0) return 0;
+    if (p > n->size) memset(n->data + n->size, 0, p - n->size);
     memcpy(n->data + p, data, len); g_fds[fd].pos += (uint32_t)len;
     if (g_fds[fd].pos > n->size) n->size = g_fds[fd].pos;
     return (int)len;
@@ -156,7 +157,11 @@ int eos_fs_truncate(eos_file_t fd, uint32_t size) {
     if (fd < 0 || fd >= EOS_FILE_MAX || !g_fds[fd].in_use) return -1;
     inode_t *n = &g_inodes[g_fds[fd].inode];
     if (size > n->cap) size = n->cap;
-    if (size < n->size) memset(n->data + size, 0, n->size - size);
+    if (size < n->size) {
+        memset(n->data + size, 0, n->size - size);
+    } else if (size > n->size) {
+        memset(n->data + n->size, 0, size - n->size);
+    }
     n->size = size; if (g_fds[fd].pos > size) g_fds[fd].pos = size;
     return 0;
 }
