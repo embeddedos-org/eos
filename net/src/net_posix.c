@@ -25,6 +25,14 @@
 
 #include "eos/net.h"
 
+/* net.h declares eos_socket_t, eos_net_addr_t and eos_net_proto_t only under
+ * EOS_ENABLE_NET, and eos_config.h defaults that to 0. CMake adds this file to
+ * eos_net on every non-cross build regardless of the feature flag, so without
+ * this guard the translation unit fails to compile whenever eNet is disabled —
+ * which is the default, and what the README's own quick start configures.
+ * net.c is bracketed the same way; this is the sibling that was missing it. */
+#if EOS_ENABLE_NET
+
 #include <errno.h>
 #include <netdb.h>
 #include <netinet/in.h>
@@ -203,3 +211,5 @@ int eos_net_resolve(const char *hostname, uint32_t *ip)
     freeaddrinfo(res);
     return 0;
 }
+
+#endif /* EOS_ENABLE_NET */
