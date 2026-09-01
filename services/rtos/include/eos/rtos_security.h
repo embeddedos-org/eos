@@ -20,6 +20,9 @@
 /* ---- MPU-based Task Isolation ---- */
 
 #define EOS_MPU_MAX_REGIONS   16
+/* ARMv7-M RASR.SIZE encodes 2^(SIZE+1) bytes with SIZE >= 4, so the
+ * smallest region the hardware can express is 32 bytes. */
+#define EOS_MPU_MIN_REGION_SIZE 32u
 #define EOS_MPU_MAX_TASKS     32
 
 typedef enum {

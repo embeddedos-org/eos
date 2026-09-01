@@ -1,0 +1,2 @@
+/usr/bin/ar qc libeos_os_services.a CMakeFiles/eos_os_services.dir/src/os_services.c.o
+/usr/bin/ranlib libeos_os_services.a

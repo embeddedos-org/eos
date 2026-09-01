@@ -85,10 +85,13 @@ int eos_queue_send(eos_queue_handle_t h, const void *item, uint32_t timeout_ms)
         return EOS_KERN_FULL;
     }
 
-    uint8_t caller = (uint8_t)eos_task_get_current();
-    if (g_q[h].send_waiter_count < Q_MAX_WAITERS) {
-        g_q[h].send_waiters[g_q[h].send_waiter_count++] = caller;
+    if (g_q[h].send_waiter_count >= Q_MAX_WAITERS) {
+        eos_port_exit_critical(crit);
+        return EOS_KERN_NO_MEMORY;
     }
+
+    uint8_t caller = (uint8_t)eos_task_get_current();
+    g_q[h].send_waiters[g_q[h].send_waiter_count++] = caller;
     eos_task_block_with_timeout(caller, timeout_ms);
     eos_port_exit_critical(crit);
     eos_port_yield();
@@ -146,10 +149,13 @@ int eos_queue_receive(eos_queue_handle_t h, void *item, uint32_t timeout_ms)
         return EOS_KERN_EMPTY;
     }
 
-    uint8_t caller = (uint8_t)eos_task_get_current();
-    if (g_q[h].recv_waiter_count < Q_MAX_WAITERS) {
-        g_q[h].recv_waiters[g_q[h].recv_waiter_count++] = caller;
+    if (g_q[h].recv_waiter_count >= Q_MAX_WAITERS) {
+        eos_port_exit_critical(crit);
+        return EOS_KERN_NO_MEMORY;
     }
+
+    uint8_t caller = (uint8_t)eos_task_get_current();
+    g_q[h].recv_waiters[g_q[h].recv_waiter_count++] = caller;
     eos_task_block_with_timeout(caller, timeout_ms);
     eos_port_exit_critical(crit);
     eos_port_yield();
