@@ -4,7 +4,7 @@
 
 #include "eos/ota.h"
 #include "eos/crypto.h"
-#include <stdio.h>
+#include "eos/log.h"
 #include <string.h>
 
 #if EOS_ENABLE_OTA
@@ -67,7 +67,10 @@ int eos_ota_begin(const eos_ota_source_t *source) {
 
 int eos_ota_write_chunk(const uint8_t *data, size_t len) {
     if (!g_ota.initialized || !g_ota.in_progress || !data) return -1;
-    if (g_ota.bytes_written + len > g_ota.total_size) return -1;
+    /* Compare against remaining space. Adding len can wrap and accept a huge chunk. */
+    if (g_ota.bytes_written > g_ota.total_size ||
+        len > (size_t)(g_ota.total_size - g_ota.bytes_written))
+        return -1;
     eos_sha256_update(&g_ota.hash_ctx, data, len);
     g_ota.bytes_written += (uint32_t)len;
     if (g_ota.progress_cb && g_ota.total_size > 0) {
@@ -128,11 +131,11 @@ int eos_ota_apply(void) {
 #ifdef EOS_ALLOW_UNSIGNED_OTA
         g_ota.authenticated = 1;
 #else
-        fprintf(stderr,
-                "eos-ota: refusing to apply an update with no authenticator "
-                "installed; expected_sha256 travels with the update and proves "
-                "nothing about its origin. Call eos_ota_set_authenticator(), "
-                "or build with EOS_ALLOW_UNSIGNED_OTA.\n");
+        EOS_ERROR("ota: refusing to apply an update with no authenticator "
+                  "installed; expected_sha256 travels with the update and "
+                  "proves nothing about its origin. Call "
+                  "eos_ota_set_authenticator(), or build with "
+                  "EOS_ALLOW_UNSIGNED_OTA.");
         return -1;
 #endif
     }

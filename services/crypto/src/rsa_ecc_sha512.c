@@ -18,11 +18,12 @@
  * are the image's own SHA-256 — no private key involved — was enough to make
  * secure boot report VERIFIED for an arbitrary image.
  *
- * So these now refuse to run unless a build explicitly opts in by defining
- * EOS_ALLOW_STUB_CRYPTO, which the crypto unit tests do. Anything else gets a
- * hard failure instead of a forged pass. Remove the guard only when the
- * functions actually verify signatures — do not hand-roll the arithmetic, link
- * a reviewed implementation.
+ * Verify already refused unless a build defines EOS_ALLOW_STUB_CRYPTO. Sign
+ * must do the same: a stub that mints a PKCS#1-looking blob or a fake r||s
+ * lets a signing pipeline appear to work. Anything else gets a hard failure
+ * instead of a forged pass. Remove the guard only when the functions actually
+ * sign and verify — do not hand-roll the arithmetic, link a reviewed
+ * implementation.
  */
 #ifdef EOS_ALLOW_STUB_CRYPTO
 #define EOS_STUB_CRYPTO_REFUSE(_what) ((void)0)
@@ -50,6 +51,7 @@
 int eos_rsa_sign_sha256(const EosRsaKey *key, const uint8_t hash[32],
                         uint8_t *sig, size_t *sig_len) {
     if (!key || !key->has_private || !hash || !sig || !sig_len) return -1;
+    EOS_STUB_CRYPTO_REFUSE("eos_rsa_sign_sha256");
 
     /* Stub: produce a deterministic fake signature for testing.
      * Replace with real PKCS#1 v1.5 or PSS signing. */
@@ -80,6 +82,7 @@ int eos_rsa_verify_sha256(const EosRsaKey *key, const uint8_t hash[32],
 int eos_ecc_sign(const EosEccKey *key, const uint8_t *hash, size_t hash_len,
                  uint8_t *sig, size_t *sig_len) {
     if (!key || !hash || hash_len == 0 || !sig || !sig_len) return -1;
+    EOS_STUB_CRYPTO_REFUSE("eos_ecc_sign");
     /* Stub: produce a fake 64-byte signature (r||s) */
     size_t len = 64;
     if (hash_len < 32) len = 64;

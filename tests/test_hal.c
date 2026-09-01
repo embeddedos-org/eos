@@ -150,14 +150,66 @@ TEST(test_no_backend) {
     ASSERT(eos_get_tick_ms() == 0);
 }
 
+
+/* ── Platform backend selection ───────────────────────────────────────────
+ *
+ * hal.h promises initialisation "for the current platform". It used to return
+ * -1 unless the application had already called eos_hal_register_backend()
+ * itself — which nothing in the tree, none of the examples and none of the
+ * scaffolded templates did. Every HAL call on a host build silently did
+ * nothing, and the generated hello-world produced no output.
+ */
+
+static int g_custom_init_calls;
+
+static int custom_init(void) { g_custom_init_calls++; return 0; }
+
+static const eos_hal_backend_t custom_backend = {
+    .name = "custom",
+    .init = custom_init,
+};
+
+TEST(test_init_selects_the_platform_backend) {
+    /* A program that has registered nothing still gets a working HAL. */
+    ASSERT(eos_hal_init() == 0);
+    eos_hal_deinit();
+}
+
+TEST(test_tick_source_advances) {
+    /* The one facility every platform must provide. A backend that was never
+     * selected reports 0 forever, which reads as a stopped clock rather than
+     * as a missing backend. */
+    ASSERT(eos_hal_init() == 0);
+    uint32_t before = eos_get_tick_ms();
+    eos_delay_ms(20);
+    ASSERT(eos_get_tick_ms() >= before + 10);
+    eos_hal_deinit();
+}
+
+TEST(test_an_application_backend_is_not_overridden) {
+    /* The default fills an empty slot; it does not outrank a choice. */
+    g_custom_init_calls = 0;
+    eos_hal_register_backend(&custom_backend);
+    ASSERT(eos_hal_init() == 0);
+    ASSERT(g_custom_init_calls == 1);
+    eos_hal_register_backend(NULL);
+}
+
 int main(void) {
     printf("=== EoS: HAL Unit Tests ===\n\n");
+    /* These two must come first. Every later test calls setup(), which
+     * registers a mock backend; run after it, they would exercise the mock
+     * and quietly stop testing platform selection at all. */
+    run_test_init_selects_the_platform_backend();
+    run_test_tick_source_advances();
+
     run_test_init_deinit();
     run_test_gpio_write_read();
     run_test_gpio_toggle();
     run_test_tick_counter();
+    run_test_an_application_backend_is_not_overridden();
     run_test_no_backend();
-    tests_run = 5;
+    tests_run = 8;
     printf("\n%d/%d tests passed\n", tests_passed, tests_run);
     return (tests_passed == tests_run) ? 0 : 1;
 }

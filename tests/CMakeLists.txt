@@ -56,15 +56,17 @@ add_executable(test_crypto test_crypto.c)
 target_link_libraries(test_crypto PRIVATE eos_crypto)
 add_test(NAME test_crypto COMMAND test_crypto)
 
-# --- test_crypto_aes / _ecc / _rsa / _sha512: were sitting in tests/ unused ---
+# --- test_crypto_aes: AES-128/192/256 ECB + CBC, NIST FIPS-197 / SP 800-38A ---
 add_executable(test_crypto_aes test_crypto_aes.c)
 target_link_libraries(test_crypto_aes PRIVATE eos_crypto)
 add_test(NAME test_crypto_aes COMMAND test_crypto_aes)
 
+# --- test_crypto_ecc: ECC point arithmetic and ECDSA ---
 add_executable(test_crypto_ecc test_crypto_ecc.c)
 target_link_libraries(test_crypto_ecc PRIVATE eos_crypto)
 add_test(NAME test_crypto_ecc COMMAND test_crypto_ecc)
 
+# --- test_crypto_rsa: RSA modular exponentiation and verify ---
 add_executable(test_crypto_rsa test_crypto_rsa.c)
 target_link_libraries(test_crypto_rsa PRIVATE eos_crypto)
 add_test(NAME test_crypto_rsa COMMAND test_crypto_rsa)
@@ -105,6 +107,14 @@ add_test(NAME test_filesystem COMMAND test_filesystem)
 add_executable(test_service test_service.c)
 target_link_libraries(test_service PRIVATE eos_service)
 add_test(NAME test_service COMMAND test_service)
+
+# --- test_gps: GPS NMEA sentence parsing ---
+add_executable(test_gps test_gps.c)
+target_link_libraries(test_gps PRIVATE eos_gps)
+if(UNIX AND NOT APPLE)
+    target_link_libraries(test_gps PRIVATE m)
+endif()
+add_test(NAME test_gps COMMAND test_gps)
 
 # --- test_debug: GDB stub + core dump ---
 add_executable(test_debug test_debug.c)
@@ -170,6 +180,47 @@ add_test(NAME test_package COMMAND test_package)
 add_executable(test_devicetree test_devicetree.c)
 target_link_libraries(test_devicetree PRIVATE eos_devicetree)
 add_test(NAME test_devicetree COMMAND test_devicetree)
+
+
+# ---------------------------------------------------------------------------
+# Suites that existed in tests/ but were never registered.
+#
+# Each of these has a main() and compiles; none was in any add_executable(),
+# so CI never built or ran them. test_crypto_failclosed.c is the one that
+# matters most -- it asserts that the stub RSA/ECC routines refuse to run,
+# written after a 256-byte file with the right trailing bytes made secure
+# boot report VERIFIED for an arbitrary image. A regression guard that is
+# never executed is exactly the failure it was written to prevent.
+# ---------------------------------------------------------------------------
+add_executable(test_crypto_failclosed test_crypto_failclosed.c)
+target_link_libraries(test_crypto_failclosed PRIVATE eos_crypto)
+add_test(NAME test_crypto_failclosed COMMAND test_crypto_failclosed)
+
+add_executable(test_crc test_crc.c)
+target_link_libraries(test_crc PRIVATE eos_crypto)
+add_test(NAME test_crc COMMAND test_crc)
+
+add_executable(test_driver_recovery test_driver_recovery.c)
+target_link_libraries(test_driver_recovery PRIVATE eos_drivers)
+add_test(NAME test_driver_recovery COMMAND test_driver_recovery)
+
+# test_net_integration.c is deliberately NOT registered. It hangs.
+#
+# test_accept_no_client() asserts that eos_net_accept() returns
+# EOS_SOCKET_INVALID with no client pending -- its own comment says
+# "No connection pending in stub". That was true of the net.c stub, which
+# returned INVALID unconditionally. Since the POSIX implementation landed,
+# accept() on a blocking listening socket waits for a connection that
+# never arrives, so the suite never returns.
+#
+# eos_net_accept() takes no timeout and there is no non-blocking option in
+# the API, so the test cannot simply be retimed: either it grows a client
+# to accept, or the API grows a way to poll. That is a design decision,
+# not a registration, so it is left out here rather than bundled in.
+
+add_executable(test_stress test_stress.c)
+target_link_libraries(test_stress PRIVATE eos_kernel)
+add_test(NAME test_stress COMMAND test_stress)
 
 # --- Fuzz targets ---
 # Opt-in (-DEOS_ENABLE_FUZZING=ON, Clang only); the subdirectory guards itself.
