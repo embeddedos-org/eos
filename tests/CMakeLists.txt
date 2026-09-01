@@ -56,6 +56,11 @@ add_executable(test_crypto test_crypto.c)
 target_link_libraries(test_crypto PRIVATE eos_crypto)
 add_test(NAME test_crypto COMMAND test_crypto)
 
+# --- test_crc: CRC-32 / CRC-64 known answers and file error paths ---
+add_executable(test_crc test_crc.c)
+target_link_libraries(test_crc PRIVATE eos_crypto)
+add_test(NAME test_crc COMMAND test_crc)
+
 # --- test_crypto_aes / _ecc / _rsa / _sha512: were sitting in tests/ unused ---
 add_executable(test_crypto_aes test_crypto_aes.c)
 target_link_libraries(test_crypto_aes PRIVATE eos_crypto)
