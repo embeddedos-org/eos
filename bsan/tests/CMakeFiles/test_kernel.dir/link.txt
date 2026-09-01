@@ -1,0 +1,1 @@
+/usr/bin/cc -fsanitize=address,undefined -fno-omit-frame-pointer -g -arch arm64 -Wl,-search_paths_first -Wl,-headerpad_max_install_names -fsanitize=address,undefined CMakeFiles/test_kernel.dir/test_kernel.c.o -o test_kernel  ../libeos_kernel.a ../libeos_hal.a

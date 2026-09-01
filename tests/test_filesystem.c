@@ -62,6 +62,51 @@ static void test_fs_truncate(void) {
     printf("[PASS] fs truncate\n");
 }
 
+/* Growing a truncated file must not make discarded contents readable again. */
+static void test_fs_truncate_growth_zero_fills_stale_bytes(void) {
+    eos_fs_init(NULL);
+    eos_file_t fd = eos_fs_open("/secret", EOS_O_CREATE | EOS_O_WRITE);
+    assert(fd != EOS_FILE_INVALID);
+    assert(eos_fs_write(fd, "secret", 6) == 6);
+    assert(eos_fs_close(fd) == 0);
+
+    fd = eos_fs_open("/secret", EOS_O_TRUNC | EOS_O_READ | EOS_O_WRITE);
+    assert(fd != EOS_FILE_INVALID);
+    assert(eos_fs_truncate(fd, 6) == 0);
+    assert(eos_fs_seek(fd, 0, EOS_SEEK_SET) == 0);
+
+    uint8_t buf[6] = {1, 1, 1, 1, 1, 1};
+    static const uint8_t zeros[6] = {0};
+    assert(eos_fs_read(fd, buf, sizeof(buf)) == (int)sizeof(buf));
+    assert(memcmp(buf, zeros, sizeof(buf)) == 0);
+    assert(eos_fs_close(fd) == 0);
+    eos_fs_deinit();
+    printf("[PASS] fs truncate growth zero-fills stale bytes\n");
+}
+
+/* A sparse write has the same zero-fill requirement for its unwritten gap. */
+static void test_fs_sparse_write_zero_fills_gap(void) {
+    eos_fs_init(NULL);
+    eos_file_t fd = eos_fs_open("/sparse", EOS_O_CREATE | EOS_O_WRITE);
+    assert(fd != EOS_FILE_INVALID);
+    assert(eos_fs_write(fd, "secret", 6) == 6);
+    assert(eos_fs_close(fd) == 0);
+
+    fd = eos_fs_open("/sparse", EOS_O_TRUNC | EOS_O_READ | EOS_O_WRITE);
+    assert(fd != EOS_FILE_INVALID);
+    assert(eos_fs_seek(fd, 4, EOS_SEEK_SET) == 0);
+    assert(eos_fs_write(fd, "X", 1) == 1);
+    assert(eos_fs_seek(fd, 0, EOS_SEEK_SET) == 0);
+
+    uint8_t buf[5] = {1, 1, 1, 1, 1};
+    static const uint8_t expected[5] = {0, 0, 0, 0, 'X'};
+    assert(eos_fs_read(fd, buf, sizeof(buf)) == (int)sizeof(buf));
+    assert(memcmp(buf, expected, sizeof(buf)) == 0);
+    assert(eos_fs_close(fd) == 0);
+    eos_fs_deinit();
+    printf("[PASS] fs sparse write zero-fills gap\n");
+}
+
 static void test_fs_dir(void) {
     eos_fs_init(NULL);
     assert(eos_fs_mkdir("/data") == 0);
@@ -274,6 +319,8 @@ int main(void) {
     test_fs_write_read();
     test_fs_seek();
     test_fs_truncate();
+    test_fs_truncate_growth_zero_fills_stale_bytes();
+    test_fs_sparse_write_zero_fills_gap();
     test_fs_dir();
     test_fs_remove_rename();
     test_fs_format();
@@ -283,6 +330,6 @@ int main(void) {
     test_fs_rename_replaces_existing_target();
     test_fs_rename_onto_itself_is_a_noop();
     test_fs_open_does_not_leak_inode_when_fds_exhausted();
-    printf("=== ALL FS TESTS PASSED (13/13) ===\n");
+    printf("=== ALL FS TESTS PASSED (15/15) ===\n");
     return 0;
 }

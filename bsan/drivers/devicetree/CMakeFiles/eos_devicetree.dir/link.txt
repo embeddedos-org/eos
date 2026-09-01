@@ -1,0 +1,2 @@
+/usr/bin/ar qc libeos_devicetree.a CMakeFiles/eos_devicetree.dir/devicetree.c.o
+/usr/bin/ranlib libeos_devicetree.a
