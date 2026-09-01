@@ -1,0 +1,29 @@
+{
+	"InstallScripts" : 
+	[
+		"/Users/kartikey/Desktop/task/eos/bsan/cmake_install.cmake",
+		"/Users/kartikey/Desktop/task/eos/bsan/core/cmake_install.cmake",
+		"/Users/kartikey/Desktop/task/eos/bsan/toolchains/cmake_install.cmake",
+		"/Users/kartikey/Desktop/task/eos/bsan/systems/cmake_install.cmake",
+		"/Users/kartikey/Desktop/task/eos/bsan/services/cmake_install.cmake",
+		"/Users/kartikey/Desktop/task/eos/bsan/services/crypto/cmake_install.cmake",
+		"/Users/kartikey/Desktop/task/eos/bsan/services/security/cmake_install.cmake",
+		"/Users/kartikey/Desktop/task/eos/bsan/services/os/cmake_install.cmake",
+		"/Users/kartikey/Desktop/task/eos/bsan/services/linux/cmake_install.cmake",
+		"/Users/kartikey/Desktop/task/eos/bsan/services/rtos/cmake_install.cmake",
+		"/Users/kartikey/Desktop/task/eos/bsan/services/sensor/cmake_install.cmake",
+		"/Users/kartikey/Desktop/task/eos/bsan/services/motor/cmake_install.cmake",
+		"/Users/kartikey/Desktop/task/eos/bsan/services/ota/cmake_install.cmake",
+		"/Users/kartikey/Desktop/task/eos/bsan/services/filesystem/cmake_install.cmake",
+		"/Users/kartikey/Desktop/task/eos/bsan/services/datacenter/cmake_install.cmake",
+		"/Users/kartikey/Desktop/task/eos/bsan/services/ui/cmake_install.cmake",
+		"/Users/kartikey/Desktop/task/eos/bsan/services/compat/cmake_install.cmake",
+		"/Users/kartikey/Desktop/task/eos/bsan/pkg/cmake_install.cmake",
+		"/Users/kartikey/Desktop/task/eos/bsan/debug/cmake_install.cmake",
+		"/Users/kartikey/Desktop/task/eos/bsan/drivers/devicetree/cmake_install.cmake",
+		"/Users/kartikey/Desktop/task/eos/bsan/services/init/cmake_install.cmake",
+		"/Users/kartikey/Desktop/task/eos/bsan/tests/cmake_install.cmake",
+		"/Users/kartikey/Desktop/task/eos/bsan/tests/fuzz/cmake_install.cmake"
+	],
+	"Parallel" : false
+}

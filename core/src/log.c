@@ -5,6 +5,7 @@
 #include "eos/log.h"
 #include <stdio.h>
 #include <stdarg.h>
+#include <inttypes.h>
 #include <string.h>
 #include <time.h>
 
@@ -106,12 +107,22 @@ static const char *color_reset(void) {
 }
 
 static uint32_t get_timestamp_ms(void) {
-#ifdef _WIN32
+#if defined(_WIN32)
     return (uint32_t)GetTickCount();
-#else
+#elif defined(CLOCK_MONOTONIC)
     struct timespec ts;
     if (clock_gettime(CLOCK_MONOTONIC, &ts) == 0)
         return (uint32_t)(ts.tv_sec * 1000 + ts.tv_nsec / 1000000);
+    return 0;
+#else
+    /* Bare-metal newlib (arm-none-eabi and friends) declares neither
+     * clock_gettime nor CLOCK_MONOTONIC, so the POSIX branch does not
+     * compile for the Cortex-M targets this project exists to build for.
+     *
+     * There is a timebase on a target -- eos_get_tick_ms() in the HAL -- but
+     * core/ sits below hal/ and must not depend upward, so log entries carry
+     * a zero timestamp until a port supplies one. Ordering within the ring
+     * buffer is preserved regardless; only the absolute time is missing. */
     return 0;
 #endif
 }
@@ -140,7 +151,7 @@ void eos_log_ring_dump(void) {
     for (int i = 0; i < g_ring_count; i++) {
         const EosLogEntry *e = eos_log_ring_get(i);
         if (e) {
-            fprintf(stderr, "[%u %5s] %s%s%s\n",
+            fprintf(stderr, "[%" PRIu32 " %5s] %s%s%s\n",
                     e->timestamp_ms, level_str(e->level),
                     e->module ? e->module : "", e->module ? ": " : "",
                     e->message);

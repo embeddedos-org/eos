@@ -4,7 +4,7 @@
 
 #include "eos/ota.h"
 #include "eos/crypto.h"
-#include <stdio.h>
+#include "eos/log.h"
 #include <string.h>
 
 #if EOS_ENABLE_OTA
@@ -128,11 +128,11 @@ int eos_ota_apply(void) {
 #ifdef EOS_ALLOW_UNSIGNED_OTA
         g_ota.authenticated = 1;
 #else
-        fprintf(stderr,
-                "eos-ota: refusing to apply an update with no authenticator "
-                "installed; expected_sha256 travels with the update and proves "
-                "nothing about its origin. Call eos_ota_set_authenticator(), "
-                "or build with EOS_ALLOW_UNSIGNED_OTA.\n");
+        EOS_ERROR("ota: refusing to apply an update with no authenticator "
+                  "installed; expected_sha256 travels with the update and "
+                  "proves nothing about its origin. Call "
+                  "eos_ota_set_authenticator(), or build with "
+                  "EOS_ALLOW_UNSIGNED_OTA.");
         return -1;
 #endif
     }

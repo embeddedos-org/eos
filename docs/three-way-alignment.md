@@ -211,7 +211,7 @@ cmake --build build
 # Outputs: libeboot_hal.a, libeboot_core.a, ebldr_stage0.bin, eboot_firmware.bin
 
 # Step 5: Sign and flash (uses eboot tools)
-cd EoS/eboot/tools
+cd eBoot/tools
 python3 sign_image.py --key key.pem --input ../../eos/build/app.bin --output signed.bin
 ```
 

@@ -112,8 +112,8 @@ sudo udevadm trigger
 ## Step 1 — Clone the Repository
 
 ```bash
-git clone https://github.com/anthropic/EoS.git
-cd EoS/eos
+git clone https://github.com/embeddedos-org/eos.git
+cd eos
 ```
 
 ---

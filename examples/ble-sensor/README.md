@@ -31,7 +31,7 @@ A complete IoT sensor node that reads temperature from an I2C sensor, computes a
 ```bash
 # Cross-compile for nRF52
 cmake -B build \
-  -DCMAKE_TOOLCHAIN_FILE=../../toolchains/arm-none-eabi.cmake \
+  -DCMAKE_TOOLCHAIN_FILE=../../toolchains/arm-cortex-m4.cmake \
   -DEOS_PRODUCT=iot
 cmake --build build
 

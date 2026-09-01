@@ -46,15 +46,15 @@ Best for: nRF52840-DK, nRF52832-DK, or custom nRF52 boards.
 
 ### 1. Clone the repository
 ```bash
-git clone https://github.com/anthropic/EoS.git
-cd EoS
+git clone https://github.com/embeddedos-org/eos.git
+cd eos
 ```
 
 ### 2. Build the blink example
 ```bash
 cd eos/examples/blink-gpio
 cmake -B build \
-  -DCMAKE_TOOLCHAIN_FILE=../../toolchains/arm-none-eabi.cmake \
+  -DCMAKE_TOOLCHAIN_FILE=../../toolchains/arm-cortex-m4.cmake \
   -DEOS_PRODUCT=iot
 cmake --build build
 ```
@@ -96,11 +96,11 @@ Best for: STM32H743-Nucleo, STM32F4-Discovery, or custom STM32 boards.
 
 ### 1. Clone and build
 ```bash
-git clone https://github.com/anthropic/EoS.git
-cd EoS/eos/examples/blink-gpio
+git clone https://github.com/embeddedos-org/eos.git
+cd eos/examples/blink-gpio
 
 cmake -B build \
-  -DCMAKE_TOOLCHAIN_FILE=../../toolchains/arm-none-eabi.cmake \
+  -DCMAKE_TOOLCHAIN_FILE=../../toolchains/arm-cortex-m4.cmake \
   -DEOS_PRODUCT=industrial
 cmake --build build
 ```
@@ -128,8 +128,8 @@ Build and run on your development machine — no MCU needed.
 
 ### 1. Clone and build
 ```bash
-git clone https://github.com/anthropic/EoS.git
-cd EoS/eos/examples/blink-gpio
+git clone https://github.com/embeddedos-org/eos.git
+cd eos/examples/blink-gpio
 
 # Host build uses Linux HAL backend (simulated GPIO via sysfs/printf)
 cmake -B build -DEOS_PRODUCT=iot -DEOS_BUILD_TESTS=ON
@@ -264,7 +264,7 @@ This produces:
 ### 3. Sign and flash
 ```bash
 # Create signing key (first time only)
-cd EoS/eboot/tools
+cd eBoot/tools
 python3 sign_image.py --generate-key my-key.pem
 
 # Sign firmware
