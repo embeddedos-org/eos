@@ -3,6 +3,7 @@
 ## [Unreleased]
 
 ### Fixed
+- **`eos_queue_send` / `eos_queue_receive`:** A full send/recv waiter table now returns `EOS_KERN_NO_MEMORY` instead of blocking a task that can never be woken, matching mutex and semaphore behavior.
 - **`eos_queue_create`:** Size check now uses division so `item_size * capacity` cannot wrap `size_t` on 32-bit targets and overflow the 1024-byte queue store.
 - **`eos_sem_create`:** Reject `initial > max` and `max` values that do not fit in `int32_t`, so the counting-semaphore invariant cannot be created already broken.
 - **`eos_mutex_lock`:** Recursive lock returns `EOS_KERN_FULL` at `uint8_t` saturation instead of wrapping `rec_count` to 0 and leaving the mutex stuck.

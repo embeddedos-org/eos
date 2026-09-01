@@ -16,7 +16,15 @@
 #include <stdlib.h>
 #include <time.h>
 
-#ifdef __linux__
+/* The host backend. Named for Linux, but it uses only clock_gettime() and
+ * nanosleep() -- POSIX, and available on macOS and the BSDs too. CMake decides
+ * which backend file to compile and sets EOS_HAL_BACKEND_HOST when it picks
+ * this one; __linux__ remains as a fallback for builds that compile this file
+ * directly without CMake. Keying on __linux__ alone meant a macOS host build
+ * compiled this file to an empty translation unit and then had no backend at
+ * all. */
+#include "eos/hal.h"
+#if EOS_HAL_HOSTED
 
 #include <unistd.h>
 #include <fcntl.h>
@@ -280,4 +288,4 @@ void eos_hal_linux_register(void)
     eos_hal_register_backend(&linux_backend);
 }
 
-#endif /* __linux__ */
+#endif /* EOS_HAL_HOSTED */

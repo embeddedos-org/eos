@@ -31,8 +31,8 @@ winget install CMake.CMake
 ## Step 1: Build an example
 
 ```bash
-git clone https://github.com/anthropic/EoS.git
-cd EoS/eos/examples/blink-gpio
+git clone https://github.com/embeddedos-org/eos.git
+cd eos/examples/blink-gpio
 
 cmake -B build -DEOS_PRODUCT=iot
 cmake --build build
@@ -58,7 +58,7 @@ Press `Ctrl+C` to stop.
 ## Step 3: Run the full test suite
 
 ```bash
-cd EoS/eos
+cd eos
 cmake -B build -DEOS_BUILD_TESTS=ON
 cmake --build build
 ctest --test-dir build --output-on-failure
@@ -69,7 +69,7 @@ ctest --test-dir build --output-on-failure
 ## Try all examples
 
 ```bash
-cd EoS/eos/examples
+cd eos/examples
 
 # Each example builds the same way:
 for example in blink-gpio uart-echo multitask-rtos posix-app multicore-amp; do
@@ -97,7 +97,7 @@ done
 When you're ready to target an MCU:
 
 1. Install the cross-compiler (`arm-none-eabi-gcc`)
-2. Add `-DCMAKE_TOOLCHAIN_FILE=../../toolchains/arm-none-eabi.cmake` to your cmake command
+2. Add `-DCMAKE_TOOLCHAIN_FILE=../../toolchains/arm-cortex-m4.cmake` to your cmake command
 3. Flash the resulting binary to your board
 
 Your application code stays the same — only the build command changes.

@@ -81,9 +81,11 @@ int  eos_fs_stat(eos_fs_stat_t *stat);
 eos_file_t eos_fs_open(const char *path, uint32_t flags);
 int  eos_fs_close(eos_file_t fd);
 int  eos_fs_read(eos_file_t fd, void *buf, size_t len);
+/* Writing after seeking beyond EOF zero-fills the intervening gap. */
 int  eos_fs_write(eos_file_t fd, const void *data, size_t len);
 int  eos_fs_seek(eos_file_t fd, int32_t offset, eos_seek_whence_t whence);
 int  eos_fs_tell(eos_file_t fd, uint32_t *pos);
+/* Shrink or grow a file; bytes added by growth read back as zero. */
 int  eos_fs_truncate(eos_file_t fd, uint32_t size);
 int  eos_fs_sync(eos_file_t fd);
 

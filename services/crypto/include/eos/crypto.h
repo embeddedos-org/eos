@@ -59,6 +59,22 @@ void eos_sha512_hex(const uint8_t digest[EOS_SHA512_DIGEST_SIZE],
 
 uint32_t eos_crc32(uint32_t crc, const void *data, size_t len);
 uint32_t eos_crc32_file(const char *path);
+
+/**
+ * CRC-32 of a file, with the read result reported separately.
+ *
+ * eos_crc32_file() returns 0 both when the file cannot be read and when its
+ * CRC really is 0 -- which is the CRC of an empty file -- so a caller cannot
+ * tell the two apart. Every uint32_t is a valid CRC, so the status needs
+ * somewhere else to live.
+ *
+ * @param path File to read.
+ * @param out  Receives the CRC on success; left untouched on failure.
+ * @return 0 on success, -1 if path or out is NULL, the file cannot be
+ *         opened, or an error occurred while reading it.
+ */
+int eos_crc32_file_ex(const char *path, uint32_t *out);
+
 uint64_t eos_crc64(uint64_t crc, const void *data, size_t len);
 
 /* ---- AES-128 / AES-256 ---- */
