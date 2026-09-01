@@ -72,10 +72,21 @@ add_library(eos_hal STATIC
     hal/src/hal_extended_stubs.c
 )
 
+# Which backend source is compiled, and which one eos_hal_init() falls back to,
+# have to be the same decision. hal_common.c used to make it independently with
+# `#ifdef __linux__`, which disagrees with this condition on any non-Linux host
+# build -- macOS compiles hal_linux.c here and then referenced
+# eos_hal_rtos_register(), which is not in the library:
+#
+#   Undefined symbols: "_eos_hal_rtos_register", referenced from _eos_hal_init
+#
+# The build system knows which file it compiled, so it says so.
 if(EOS_PLATFORM STREQUAL "linux" OR NOT CMAKE_CROSSCOMPILING)
     target_sources(eos_hal PRIVATE hal/src/hal_linux.c)
+    target_compile_definitions(eos_hal PRIVATE EOS_HAL_BACKEND_HOST)
 else()
     target_sources(eos_hal PRIVATE hal/src/hal_rtos.c)
+    target_compile_definitions(eos_hal PRIVATE EOS_HAL_BACKEND_RTOS)
 endif()
 
 target_include_directories(eos_hal PUBLIC
@@ -170,6 +181,19 @@ target_link_libraries(eos_power PUBLIC eos_hal)
 add_library(eos_net STATIC
     net/src/net.c
 )
+
+# ADR-014 point 3 — on a host OS the eNet API maps onto POSIX sockets.
+#
+# Gated on CMAKE_CROSSCOMPILING alone, deliberately not on the
+# `EOS_PLATFORM STREQUAL "linux" OR ...` form used above for hal_linux.c:
+# EOS_PLATFORM defaults to "linux" and a cross toolchain file does not change
+# it, so that condition is true even for a Cortex-M build. hal_linux.c happens
+# to survive that because it uses only portable headers; net_posix.c needs
+# <netdb.h> and <sys/socket.h>, which bare-metal newlib does not have.
+if(NOT CMAKE_CROSSCOMPILING)
+    target_sources(eos_net PRIVATE net/src/net_posix.c)
+    target_compile_definitions(eos_net PRIVATE EOS_NET_POSIX=1)
+endif()
 
 target_include_directories(eos_net PUBLIC
     ${CMAKE_CURRENT_SOURCE_DIR}/net/include

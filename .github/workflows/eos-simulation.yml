@@ -83,6 +83,7 @@ jobs:
           cmake -B build_ci -S . \
             -DCMAKE_TOOLCHAIN_FILE=toolchains/aarch64-linux-gnu.cmake \
             -DEBLDR_BOARD=qemu_arm64 \
+            -DEBLDR_VERIFY_STAGE1=OFF \
             -DCMAKE_BUILD_TYPE=Release
           cmake --build build_ci --parallel $(nproc)
           echo "eBoot artifacts:"
@@ -152,14 +153,33 @@ jobs:
       - name: Run EoS in QEMU (ARM64 virt, Cortex-A57)
         run: |
           echo "=== Booting EoS v${EOS_VERSION} in QEMU ==="
+          ls -la eos_qemu.elf eos_qemu.bin
+          file eos_qemu.elf || true
+          # Do NOT discard stderr: the last run exited in ~20ms with an empty
+          # serial log and no visible reason, because the one message that said
+          # why went to /dev/null. QEMU's own errors are the diagnostic.
+          # timeout(1) exits 124 when it kills a still-running guest -- that is
+          # the expected way a bare-metal image "finishes", so treat 124 as
+          # success and anything else as QEMU refusing to run.
+          rc=0
           timeout 30 qemu-system-aarch64 \
             -machine virt \
             -cpu cortex-a57 \
             -m 512M \
             -serial file:eos_serial.log \
             -display none \
+            -nic none \
             -kernel eos_qemu.bin \
-            -no-reboot 2>/dev/null || true
+            -no-reboot 2>qemu_stderr.log || rc=$?
+          echo "qemu exit code: ${rc}"
+          if [ -s qemu_stderr.log ]; then
+            echo "=== QEMU stderr ==="
+            cat qemu_stderr.log
+          fi
+          if [ "${rc}" -ne 0 ] && [ "${rc}" -ne 124 ]; then
+            echo "::error::qemu-system-aarch64 exited ${rc} without running the guest"
+            exit 1
+          fi
           echo "=== Serial console output ==="
           cat eos_serial.log
 

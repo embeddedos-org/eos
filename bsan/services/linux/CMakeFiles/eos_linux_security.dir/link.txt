@@ -1,0 +1,2 @@
+/usr/bin/ar qc libeos_linux_security.a CMakeFiles/eos_linux_security.dir/src/linux_security.c.o
+/usr/bin/ranlib libeos_linux_security.a

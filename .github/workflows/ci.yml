@@ -14,7 +14,10 @@ on:
 # cancel-in-progress because a superseded commit's result is not wanted.
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
-  cancel-in-progress: true
+  # Cancel superseded runs on PR branches, but never on master: cancelling
+  # master's runs on every merge is how a hanging test stayed invisible --
+  # no master run had been allowed to finish since 08-30.
+  cancel-in-progress: ${{ github.ref != 'refs/heads/master' }}
 
 env:
   BUILD_TYPE: Release
@@ -55,7 +58,12 @@ jobs:
           cd build/host
           # --no-tests=error: ctest exits 0 when it finds no tests at all, which
           # is how this job stayed green while building none of them.
-          ctest --output-on-failure --no-tests=error --parallel $(nproc)
+          # --timeout 120: without a per-test timeout, one hung test holds the
+          # job open forever. This step has not completed on master since
+          # 08-30 -- every run was cancelled by a later push before anyone saw
+          # which test was hanging. A timeout turns an invisible hang into a
+          # named failure.
+          ctest --output-on-failure --no-tests=error --timeout 120 --parallel $(nproc)
 
       # --cov-fail-under=0 disables pytest-cov's local gate. .coveragerc sets
       # fail_under = 100 and the suite measures 95.65%, so this step failed on
