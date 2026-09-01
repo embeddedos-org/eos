@@ -78,6 +78,167 @@ static void sleep_ms(uint32_t ms)
 }
 
 /* ============================================================
+ * Darwin portability
+ *
+ * This adapter is documented above as running on macOS, but Darwin does not
+ * implement three of the POSIX primitives it reaches for:
+ *
+ *   - pthread_mutex_timedlock() is absent entirely.
+ *   - sem_init() fails with ENOSYS; Darwin has no unnamed semaphores.
+ *   - sem_getvalue() fails with ENOSYS, so the count the semaphore ceiling
+ *     is enforced against cannot be read back.
+ *
+ * Named semaphores do not help: sem_open() works, but sem_getvalue() still
+ * does not. So on Apple platforms the semaphore is a mutex and a condition
+ * variable holding its own count, which also makes the timed wait exact
+ * instead of polled. Every other POSIX host keeps the system primitives.
+ * ============================================================ */
+
+#ifdef __APPLE__
+
+static bool abstime_reached(const struct timespec *deadline)
+{
+    struct timespec now;
+    clock_gettime(CLOCK_REALTIME, &now);
+    if (now.tv_sec != deadline->tv_sec) return now.tv_sec > deadline->tv_sec;
+    return now.tv_nsec >= deadline->tv_nsec;
+}
+
+/* No pthread_mutex_timedlock() on Darwin. Poll trylock until the deadline;
+ * the interval bounds how long a timed lock can overshoot.
+ *
+ * Nothing in the tree reaches this today: posix_mutex_lock_fn() sends a zero
+ * timeout to pthread_mutex_trylock() and EOS_OSA_WAIT_FOREVER to plain
+ * pthread_mutex_lock(), so only a finite non-zero timeout arrives here, and
+ * every eos_mutex_lock() call currently passes 0 or EOS_NO_WAIT. A caller that
+ * does want a finite timed lock inherits this granularity: a timeout shorter
+ * than the interval still waits a full interval before giving up. Lower the
+ * value, or take the Linux path, if that ever matters. */
+#define COMPAT_LOCK_POLL_NS 1000000L /* 1 ms */
+
+static int compat_mutex_timedlock(pthread_mutex_t *m, const struct timespec *deadline)
+{
+    for (;;) {
+        if (pthread_mutex_trylock(m) == 0) return 0;
+        if (abstime_reached(deadline)) return -1;
+        struct timespec gap = { .tv_sec = 0, .tv_nsec = COMPAT_LOCK_POLL_NS };
+        nanosleep(&gap, NULL);
+    }
+}
+
+typedef struct {
+    pthread_mutex_t lock;
+    pthread_cond_t  cv;
+    unsigned        count;
+} compat_sem_t;
+
+static int compat_sem_init(compat_sem_t *s, unsigned value)
+{
+    if (pthread_mutex_init(&s->lock, NULL) != 0) return -1;
+    if (pthread_cond_init(&s->cv, NULL) != 0) {
+        pthread_mutex_destroy(&s->lock);
+        return -1;
+    }
+    s->count = value;
+    return 0;
+}
+
+static int compat_sem_destroy(compat_sem_t *s)
+{
+    pthread_cond_destroy(&s->cv);
+    pthread_mutex_destroy(&s->lock);
+    return 0;
+}
+
+static int compat_sem_trywait(compat_sem_t *s)
+{
+    int rc = -1;
+    pthread_mutex_lock(&s->lock);
+    if (s->count > 0u) {
+        s->count--;
+        rc = 0;
+    }
+    pthread_mutex_unlock(&s->lock);
+    return rc;
+}
+
+static int compat_sem_wait(compat_sem_t *s)
+{
+    pthread_mutex_lock(&s->lock);
+    while (s->count == 0u) {
+        pthread_cond_wait(&s->cv, &s->lock);
+    }
+    s->count--;
+    pthread_mutex_unlock(&s->lock);
+    return 0;
+}
+
+static int compat_sem_timedwait(compat_sem_t *s, const struct timespec *deadline)
+{
+    int rc = 0;
+    pthread_mutex_lock(&s->lock);
+    while (s->count == 0u && rc == 0) {
+        rc = pthread_cond_timedwait(&s->cv, &s->lock, deadline);
+    }
+    if (s->count > 0u) {
+        s->count--;
+        rc = 0;
+    } else {
+        rc = -1;
+    }
+    pthread_mutex_unlock(&s->lock);
+    return rc;
+}
+
+static int compat_sem_post(compat_sem_t *s)
+{
+    pthread_mutex_lock(&s->lock);
+    s->count++;
+    pthread_cond_signal(&s->cv);
+    pthread_mutex_unlock(&s->lock);
+    return 0;
+}
+
+static int compat_sem_getvalue(compat_sem_t *s, int *value)
+{
+    pthread_mutex_lock(&s->lock);
+    *value = (int)s->count;
+    pthread_mutex_unlock(&s->lock);
+    return 0;
+}
+
+#else /* !__APPLE__ — use the system primitives */
+
+typedef sem_t compat_sem_t;
+
+static int compat_mutex_timedlock(pthread_mutex_t *m, const struct timespec *deadline)
+{
+    return pthread_mutex_timedlock(m, deadline);
+}
+
+static int compat_sem_init(compat_sem_t *s, unsigned value) { return sem_init(s, 0, value); }
+static int compat_sem_destroy(compat_sem_t *s)              { return sem_destroy(s); }
+static int compat_sem_trywait(compat_sem_t *s)              { return sem_trywait(s); }
+static int compat_sem_post(compat_sem_t *s)                 { return sem_post(s); }
+static int compat_sem_getvalue(compat_sem_t *s, int *value) { return sem_getvalue(s, value); }
+
+static int compat_sem_wait(compat_sem_t *s)
+{
+    int rc;
+    while ((rc = sem_wait(s)) == -1 && errno == EINTR) { }
+    return rc;
+}
+
+static int compat_sem_timedwait(compat_sem_t *s, const struct timespec *deadline)
+{
+    int rc;
+    while ((rc = sem_timedwait(s, deadline)) == -1 && errno == EINTR) { }
+    return rc;
+}
+
+#endif /* __APPLE__ */
+
+/* ============================================================
  * Tasks
  * ============================================================ */
 
@@ -327,7 +488,7 @@ static int posix_mutex_lock_fn(uint8_t handle, uint32_t timeout_ms)
 
     struct timespec deadline;
     ms_to_abstime(timeout_ms, &deadline);
-    return pthread_mutex_timedlock(m, &deadline) == 0 ? 0 : -1;
+    return compat_mutex_timedlock(m, &deadline) == 0 ? 0 : -1;
 }
 
 static int posix_mutex_unlock(uint8_t handle)
@@ -351,9 +512,9 @@ static int posix_mutex_delete(uint8_t handle)
  * ============================================================ */
 
 typedef struct {
-    bool     in_use;
-    sem_t    sem;
-    uint32_t max;
+    bool         in_use;
+    compat_sem_t sem;
+    uint32_t     max;
 } posix_sem_t;
 
 static posix_sem_t     g_sems[POSIX_MAX_SEMS];
@@ -365,7 +526,7 @@ static int posix_sem_create(uint8_t *out, uint32_t initial, uint32_t max)
     pthread_mutex_lock(&g_sems_lock);
     for (int i = 0; i < POSIX_MAX_SEMS; i++) {
         if (!g_sems[i].in_use) {
-            if (sem_init(&g_sems[i].sem, 0, (unsigned)initial) != 0) {
+            if (compat_sem_init(&g_sems[i].sem, (unsigned)initial) != 0) {
                 pthread_mutex_unlock(&g_sems_lock);
                 return -1;
             }
@@ -383,22 +544,18 @@ static int posix_sem_create(uint8_t *out, uint32_t initial, uint32_t max)
 static int posix_sem_wait(uint8_t handle, uint32_t timeout_ms)
 {
     if (handle >= POSIX_MAX_SEMS || !g_sems[handle].in_use) return -1;
-    sem_t *s = &g_sems[handle].sem;
+    compat_sem_t *s = &g_sems[handle].sem;
 
     if (timeout_ms == 0u) {
-        return sem_trywait(s) == 0 ? 0 : -1;
+        return compat_sem_trywait(s) == 0 ? 0 : -1;
     }
     if (timeout_ms == EOS_OSA_WAIT_FOREVER) {
-        int rc;
-        while ((rc = sem_wait(s)) == -1 && errno == EINTR) { }
-        return rc == 0 ? 0 : -1;
+        return compat_sem_wait(s) == 0 ? 0 : -1;
     }
 
     struct timespec deadline;
     ms_to_abstime(timeout_ms, &deadline);
-    int rc;
-    while ((rc = sem_timedwait(s, &deadline)) == -1 && errno == EINTR) { }
-    return rc == 0 ? 0 : -1;
+    return compat_sem_timedwait(s, &deadline) == 0 ? 0 : -1;
 }
 
 static int posix_sem_post(uint8_t handle)
@@ -409,18 +566,18 @@ static int posix_sem_post(uint8_t handle)
      * maximum, so without this the counting invariant the EoS semaphore
      * guarantees would silently not hold on this backend. */
     int value = 0;
-    if (sem_getvalue(&g_sems[handle].sem, &value) == 0 &&
+    if (compat_sem_getvalue(&g_sems[handle].sem, &value) == 0 &&
         (uint32_t)value >= g_sems[handle].max) {
         return -1;
     }
-    return sem_post(&g_sems[handle].sem) == 0 ? 0 : -1;
+    return compat_sem_post(&g_sems[handle].sem) == 0 ? 0 : -1;
 }
 
 static int posix_sem_delete(uint8_t handle)
 {
     if (handle >= POSIX_MAX_SEMS || !g_sems[handle].in_use) return -1;
     pthread_mutex_lock(&g_sems_lock);
-    sem_destroy(&g_sems[handle].sem);
+    compat_sem_destroy(&g_sems[handle].sem);
     g_sems[handle].in_use = false;
     pthread_mutex_unlock(&g_sems_lock);
     return 0;
@@ -430,7 +587,7 @@ static uint32_t posix_sem_get_count(uint8_t handle)
 {
     if (handle >= POSIX_MAX_SEMS || !g_sems[handle].in_use) return 0;
     int value = 0;
-    if (sem_getvalue(&g_sems[handle].sem, &value) != 0 || value < 0) return 0;
+    if (compat_sem_getvalue(&g_sems[handle].sem, &value) != 0 || value < 0) return 0;
     return (uint32_t)value;
 }
 

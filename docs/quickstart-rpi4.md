@@ -24,8 +24,8 @@ sudo apt install cmake gcc g++ git python3 python3-pip
 
 ```bash
 # On the Raspberry Pi:
-git clone https://github.com/anthropic/EoS.git
-cd EoS/eos/examples/blink-gpio
+git clone https://github.com/embeddedos-org/eos.git
+cd eos/examples/blink-gpio
 
 # Build using the Linux HAL backend (native compile on Pi)
 cmake -B build -DEOS_PRODUCT=gateway
@@ -69,7 +69,7 @@ Connect an LED + resistor (330Ω) between GPIO 18 and GND, then run.
 sudo apt install gcc-aarch64-linux-gnu
 
 # Build
-cd EoS/eos/examples/blink-gpio
+cd eos/examples/blink-gpio
 cmake -B build \
   -DCMAKE_C_COMPILER=aarch64-linux-gnu-gcc \
   -DEOS_PRODUCT=gateway

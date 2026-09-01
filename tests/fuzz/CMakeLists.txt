@@ -34,12 +34,12 @@ if(EOS_ENABLE_FUZZING)
         LINK_FLAGS "${FUZZ_FLAGS}"
     )
 
-    # add_executable(fuzz_ota_header fuzz_ota_header.c)
-    # target_link_libraries(fuzz_ota_header PRIVATE eos_ota)
-    # set_target_properties(fuzz_ota_header PROPERTIES
-    #     COMPILE_FLAGS "${FUZZ_FLAGS}"
-    #     LINK_FLAGS "${FUZZ_FLAGS}"
-    # )
+    add_executable(fuzz_ota_header fuzz_ota_header.c)
+    target_link_libraries(fuzz_ota_header PRIVATE eos_ota)
+    set_target_properties(fuzz_ota_header PROPERTIES
+        COMPILE_FLAGS "${FUZZ_FLAGS}"
+        LINK_FLAGS "${FUZZ_FLAGS}"
+    )
 
-    message(STATUS "  Fuzz targets: fuzz_sha256, fuzz_aes, fuzz_devicetree")
+    message(STATUS "  Fuzz targets: fuzz_sha256, fuzz_aes, fuzz_devicetree, fuzz_ota_header")
 endif()

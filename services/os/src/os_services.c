@@ -338,7 +338,17 @@ int eos_integrity_check_crc32(const char *path, uint32_t expected_crc,
     memset(result, 0, sizeof(*result));
     strncpy(result->path, path, sizeof(result->path) - 1);
     result->expected_crc32 = expected_crc;
-    result->computed_crc32 = eos_crc32_file(path);
+
+    /* A file that cannot be read is not a file that matched. eos_crc32_file()
+     * returns 0 on a failed read, which is also the CRC of an empty file, so
+     * comparing its result directly let a missing file pass whenever the
+     * caller expected a CRC of 0. eos_integrity_check_sha256() above already
+     * treats an unreadable file as a failure. */
+    if (eos_crc32_file_ex(path, &result->computed_crc32) != 0) {
+        result->crc32_ok = 0;
+        return -1;
+    }
+
     result->crc32_ok = (result->computed_crc32 == expected_crc);
     return result->crc32_ok ? 0 : -1;
 }

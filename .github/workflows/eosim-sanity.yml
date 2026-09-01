@@ -13,7 +13,11 @@ concurrency:
   cancel-in-progress: false
 
 env:
-  EOSIM_VERSION: "0.1.0"
+  # v0.1.0 has never existed. embeddedos-org/EoSim tags v1.0.0 through
+  # v3.0.1, so `git clone --branch v0.1.0` fails with "Remote branch
+  # v0.1.0 not found in upstream origin" and this workflow has never had a
+  # green run. v1.5.0 is the release marked Latest and installs from source.
+  EOSIM_VERSION: "1.5.0"
 
 jobs:
   install-validate:

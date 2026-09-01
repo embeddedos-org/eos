@@ -90,7 +90,7 @@ cd build && ctest
 
 ```bash
 cmake -B build-arm -DEBLDR_BOARD=stm32f4 \
-  -DCMAKE_TOOLCHAIN_FILE=toolchains/arm-none-eabi.cmake
+  -DCMAKE_TOOLCHAIN_FILE=toolchains/arm-cortex-m4.cmake
 cmake --build build-arm
 ```
 

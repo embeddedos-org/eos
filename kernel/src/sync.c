@@ -45,31 +45,78 @@ typedef struct {
 static mtx_t g_mtx[EOS_MAX_MUTEXES];
 static sem_t g_sem[EOS_MAX_SEMAPHORES];
 
-static void mtx_remove_waiter(mtx_t *m, uint8_t task)
+/* ============================================================
+ * Priority inheritance
+ *
+ * A task holding mutexes runs at
+ *
+ *     effective = min( base_priority,
+ *                      priority of every task waiting on every mutex it owns )
+ *
+ * with lower meaning more urgent. Recomputing from that invariant on every
+ * change, instead of saving and restoring a value around each lock, keeps the
+ * nested cases correct and lets a boost propagate along the blocking chain.
+ * ============================================================ */
+
+/* Mutex each task is blocked on, as handle + 1 so that 0 means "none". */
+static uint8_t g_blocked_on[EOS_MAX_TASKS];
+
+static inline int task_valid(uint8_t t)
 {
-    for (int i = 0; i < m->waiter_count; i++) {
-        if (m->waiters[i] == task) {
-            for (int j = i; j < m->waiter_count - 1; j++)
-                m->waiters[j] = m->waiters[j + 1];
-            m->waiter_count--;
-            break;
+    return t < EOS_MAX_TASKS;
+}
+
+/** @return non-zero if the effective priority changed. */
+static int pi_recompute(uint8_t task)
+{
+    if (!task_valid(task)) return 0;
+
+    uint8_t eff = g_tasks[task].base_priority;
+
+    for (int i = 0; i < EOS_MAX_MUTEXES; i++) {
+        const mtx_t *m = &g_mtx[i];
+        if (!m->in_use || !m->locked || m->owner != task) continue;
+        for (int w = 0; w < m->waiter_count; w++) {
+            uint8_t waiter = m->waiters[w];
+            if (!task_valid(waiter)) continue;
+            if (g_tasks[waiter].priority < eff)
+                eff = g_tasks[waiter].priority;
         }
+    }
+
+    if (g_tasks[task].priority == eff) return 0;
+    g_tasks[task].priority = eff;
+    return 1;
+}
+
+static void pi_propagate(uint8_t task)
+{
+    for (int depth = 0; depth < PI_MAX_CHAIN_DEPTH; depth++) {
+        if (!task_valid(task)) return;
+        if (!pi_recompute(task) && depth > 0) return;
+
+        uint8_t enc = g_blocked_on[task];
+        if (enc == 0) return;
+
+        uint8_t m = (uint8_t)(enc - 1u);
+        if (m >= EOS_MAX_MUTEXES) return;
+        if (!g_mtx[m].in_use || !g_mtx[m].locked) return;
+        if (g_mtx[m].owner == task) return;
+
+        task = g_mtx[m].owner;
     }
 }
 
-/* Recompute inherited priority from remaining waiters, or restore original. */
-static void mtx_recompute_owner_priority(mtx_t *m)
+static int mtx_remove_waiter(mtx_t *m, uint8_t task)
 {
-    if (m->owner == 0xFF)
-        return;
-
-    uint8_t prio = m->original_prio;
     for (int i = 0; i < m->waiter_count; i++) {
-        uint8_t wp = eos_task_get_priority_internal(m->waiters[i]);
-        if (wp < prio)
-            prio = wp;
+        if (m->waiters[i] != task) continue;
+        for (int j = i; j < m->waiter_count - 1; j++)
+            m->waiters[j] = m->waiters[j + 1];
+        m->waiter_count--;
+        return 1;
     }
-    eos_task_set_priority_internal(m->owner, prio);
+    return 0;
 }
 
 int eos_mutex_create(eos_mutex_handle_t *out)
@@ -123,21 +170,17 @@ int eos_mutex_lock(eos_mutex_handle_t h, uint32_t timeout_ms)
         return EOS_KERN_TIMEOUT;
     }
 
-    /* Waiter table full: fail without boosting, or the owner would stay
-     * elevated even though this caller is never queued. */
+    /* Refuse rather than block: a task that is not enqueued is never granted
+     * the mutex, so with EOS_WAIT_FOREVER it would sleep forever. */
     if (g_mtx[h].waiter_count >= MTX_MAX_WAITERS) {
         eos_port_exit_critical(crit);
         return EOS_KERN_NO_MEMORY;
     }
 
-    /* Priority inheritance: boost owner to caller's priority if higher */
-    uint8_t caller_prio = eos_task_get_priority_internal(caller);
-    uint8_t owner_prio = eos_task_get_priority_internal(g_mtx[h].owner);
-    if (caller_prio < owner_prio) {
-        eos_task_set_priority_internal(g_mtx[h].owner, caller_prio);
-    }
-
     g_mtx[h].waiters[g_mtx[h].waiter_count++] = caller;
+    if (task_valid(caller))
+        g_blocked_on[caller] = (uint8_t)(h + 1u);
+    pi_propagate(g_mtx[h].owner);
 
     /* Block the calling task */
     eos_task_block_with_timeout(caller, timeout_ms);
@@ -154,10 +197,11 @@ int eos_mutex_lock(eos_mutex_handle_t h, uint32_t timeout_ms)
         return EOS_KERN_OK;
     }
 
-    /* Timeout — drop from the wait queue and drop the inheritance boost
-     * if this waiter was the reason the owner was running elevated. */
+    /* Timeout — leave the queue and drop the boost we were causing. */
+    uint8_t owner = g_mtx[h].owner;
     mtx_remove_waiter(&g_mtx[h], caller);
-    mtx_recompute_owner_priority(&g_mtx[h]);
+    pi_propagate(owner);
+
     eos_port_exit_critical(crit);
     return EOS_KERN_TIMEOUT;
 }

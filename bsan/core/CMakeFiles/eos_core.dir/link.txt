@@ -1,0 +1,2 @@
+/usr/bin/ar qc libeos_core.a CMakeFiles/eos_core.dir/src/log.c.o CMakeFiles/eos_core.dir/src/config.c.o CMakeFiles/eos_core.dir/src/graph.c.o CMakeFiles/eos_core.dir/src/cache.c.o CMakeFiles/eos_core.dir/src/lockfile.c.o CMakeFiles/eos_core.dir/src/layer.c.o CMakeFiles/eos_core.dir/src/scheduler.c.o
+/usr/bin/ranlib libeos_core.a

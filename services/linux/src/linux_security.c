@@ -247,27 +247,32 @@ int eos_dmverity_create(EosDmVerity *dv, const char *image_path,
         pclose(proc);
     }
 
-    if (!dv->root_hash[0]) {
-        /* Fallback: compute SHA-256 of the image as a placeholder root hash */
-        char hex[65];
-        snprintf(cmd, sizeof(cmd), "sha256sum \"%s\" | cut -d' ' -f1", image_path);
-        proc = popen(cmd, "r");
-        if (proc) {
-            if (fgets(hex, sizeof(hex), proc)) {
-                char *nl = strchr(hex, '\n');
-                if (nl) *nl = '\0';
-                strncpy(dv->root_hash, hex, sizeof(dv->root_hash) - 1);
-            }
-            pclose(proc);
-        }
-    }
+    /* No sha256sum fallback.
+     *
+     * This used to run `sha256sum <image>` when veritysetup was unavailable or
+     * failed, and store the result in dv->root_hash. A dm-verity root hash is
+     * the root of a Merkle tree over the image's blocks -- it is what lets the
+     * kernel check each block as it is read. A flat digest of the whole file is
+     * a different thing that happens to be the same length, so the substitution
+     * was invisible: eos_dmverity_generate_table() would emit a table the
+     * kernel rejects, and anything treating root_hash as an integrity token got
+     * a value with none of dm-verity's properties.
+     *
+     * A hash device that could not be built is a failure. Reporting one is more
+     * useful than inventing a hash that cannot verify anything.
+     */
 #else
     (void)image_path;
     (void)hash_output;
 #endif
 
-    dv->verified = (dv->root_hash[0] != '\0');
-    return dv->verified ? 0 : -1;
+    /* `verified` says an image was checked against a known-good root hash.
+     * Formatting a hash device is not that check -- it establishes the root
+     * hash, it does not verify anything against it. Setting the flag here made
+     * every successful create() look like a completed verification to any
+     * caller that trusts the field, and eos_dmverity_verify() is the only
+     * function entitled to set it. */
+    return dv->root_hash[0] != '\0' ? 0 : -1;
 }
 
 int eos_dmverity_generate_table(const EosDmVerity *dv, char *table, size_t table_sz) {
