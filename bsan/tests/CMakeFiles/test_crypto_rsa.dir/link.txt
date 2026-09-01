@@ -1,0 +1,1 @@
+/usr/bin/cc -fsanitize=address,undefined -fno-omit-frame-pointer -g -arch arm64 -Wl,-search_paths_first -Wl,-headerpad_max_install_names -fsanitize=address,undefined CMakeFiles/test_crypto_rsa.dir/test_crypto_rsa.c.o -o test_crypto_rsa  ../services/crypto/libeos_crypto.a

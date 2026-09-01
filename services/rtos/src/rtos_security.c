@@ -72,14 +72,47 @@ int eos_mpu_validate(const EosMpuConfig *mpu) {
         }
         for (int r = 0; r < task->region_count; r++) {
             const EosMpuRegion *reg = &task->regions[r];
-            /* Check power-of-2 alignment (ARM MPU requirement) */
-            if (reg->size > 0 && (reg->size & (reg->size - 1)) != 0) {
-                printf("  WARN: Task '%s' region '%s' size 0x%x not power-of-2\n",
-                       task->task_name, reg->label, reg->size);
+
+            /* These are errors, not warnings.
+             *
+             * ARMv7-M encodes a region's extent as a power-of-two exponent in
+             * RASR.SIZE, and RBAR requires the base to be aligned to that
+             * extent. A region that violates either cannot be expressed: what
+             * gets programmed covers different memory than was asked for. For
+             * a task-isolation service, "isolated, but not over the range you
+             * specified" is the failure this validation exists to catch, so it
+             * has to count against the return value rather than print a note
+             * and report the configuration clean. */
+            if (reg->size == 0) {
+                printf("  ERROR: Task '%s' region '%s' has size 0\n",
+                       task->task_name, reg->label);
+                errors++;
+                continue;   /* every check below divides by or masks with size */
             }
-            if (reg->base_addr % reg->size != 0 && reg->size > 0) {
-                printf("  WARN: Task '%s' region '%s' base 0x%x not aligned to size 0x%x\n",
+            if ((reg->size & (reg->size - 1)) != 0) {
+                printf("  ERROR: Task '%s' region '%s' size 0x%x not power-of-2\n",
+                       task->task_name, reg->label, reg->size);
+                errors++;
+            }
+            if (reg->size < EOS_MPU_MIN_REGION_SIZE) {
+                printf("  ERROR: Task '%s' region '%s' size 0x%x below the "
+                       "%u-byte minimum\n",
+                       task->task_name, reg->label, reg->size,
+                       (unsigned)EOS_MPU_MIN_REGION_SIZE);
+                errors++;
+            }
+            /* Guarded by the size == 0 check above: `base % size` with size 0
+             * is undefined. It was previously written as
+             * `reg->base_addr % reg->size != 0 && reg->size > 0`, and && only
+             * guards what is to its right -- so the modulo ran first and a
+             * zero-sized region divided by zero. UBSan aborts on it; on x86
+             * that is SIGFPE, while AArch64's udiv quietly yields 0, so it
+             * reproduced only on some hosts. */
+            if (reg->base_addr % reg->size != 0) {
+                printf("  ERROR: Task '%s' region '%s' base 0x%x not aligned "
+                       "to size 0x%x\n",
                        task->task_name, reg->label, reg->base_addr, reg->size);
+                errors++;
             }
         }
     }

@@ -225,7 +225,7 @@ Both devices run EoS firmware with the `wearable` product profile:
 
 ```bash
 cmake -B build -DEOS_PRODUCT=wearable \
-  -DCMAKE_TOOLCHAIN_FILE=toolchains/arm-none-eabi.cmake
+  -DCMAKE_TOOLCHAIN_FILE=toolchains/arm-cortex-m4.cmake
 ```
 
 The firmware leverages:
