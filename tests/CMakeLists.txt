@@ -17,6 +17,26 @@
 # ---------------------------------------------------------------------------
 add_compile_options(-UNDEBUG)
 
+# ---------------------------------------------------------------------------
+# A check macro that is not declared is not a check.
+#
+# test_net.c called assert() with no <assert.h>: `assert` became an implicit
+# declaration, so the file did not compile on Clang >= 15 and did not link on
+# any toolchain (undefined reference to `assert`). ctest reported the whole
+# suite as Not Run.
+#
+# gcc-12, which the CI test job uses, only warns about an implicit
+# declaration, so nothing failed at the point the mistake was introduced.
+# Promoting it to an error here catches the next one at the same place.
+#
+# Test targets only, and only for the compiler families that spell the flag
+# this way -- MSVC uses /we4013 and nightly.yml builds these tests on
+# windows-latest. Mirrors the guard at CMakeLists.txt:14.
+# ---------------------------------------------------------------------------
+if(CMAKE_C_COMPILER_ID MATCHES "GNU|Clang")
+    add_compile_options(-Werror=implicit-function-declaration)
+endif()
+
 # EoS Unit Tests
 # --- test_board_configs: Board YAML schema shape ---
 add_executable(test_board_configs test_board_configs.c)

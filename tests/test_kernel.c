@@ -320,6 +320,7 @@ int main(void) {
     test_queue_full();
     test_task_stats();
     test_tick_overflow();
-    printf("=== ALL KERNEL TESTS PASSED (12/12) ===\n");
+    test_queue_send_waiter_overflow();
+    printf("=== ALL KERNEL TESTS PASSED (13/13) ===\n");
     return 0;
 }
