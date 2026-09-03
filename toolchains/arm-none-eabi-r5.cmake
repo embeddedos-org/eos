@@ -18,9 +18,14 @@ set(CMAKE_SIZE         arm-none-eabi-size)
 set(CMAKE_AR           arm-none-eabi-ar)
 set(CMAKE_RANLIB       arm-none-eabi-ranlib)
 
-set(CMAKE_C_FLAGS_INIT   "-mcpu=cortex-r5 -mfloat-abi=hard -mfpu=vfpv3-d16 --specs=nosys.specs -ffunction-sections -fdata-sections -fno-common")
+# -specs= belongs on the link line only. It reached one here as well, via the
+# compiler driver, so this file was not broken -- but it was one added linker
+# -specs= away from the duplicate-spec failure arm-cortex-m4.cmake had, which
+# is the natural thing to write the first time an executable fails to link.
+# Moved so all three ARM bare-metal toolchains state it the same way.
+set(CMAKE_C_FLAGS_INIT   "-mcpu=cortex-r5 -mfloat-abi=hard -mfpu=vfpv3-d16 -ffunction-sections -fdata-sections -fno-common")
 set(CMAKE_CXX_FLAGS_INIT "${CMAKE_C_FLAGS_INIT}")
-set(CMAKE_EXE_LINKER_FLAGS_INIT "-Wl,--gc-sections -nostartfiles")
+set(CMAKE_EXE_LINKER_FLAGS_INIT "-Wl,--gc-sections -nostartfiles -specs=nosys.specs")
 
 set(CMAKE_TRY_COMPILE_TARGET_TYPE STATIC_LIBRARY)
 
