@@ -125,8 +125,8 @@ static int find_next_task(void)
     for (int i = 0; i < EOS_MAX_TASKS; i++) {
         int idx = (start + i) % EOS_MAX_TASKS;
         eos_task_t *t = &g_tasks[idx];
-        if (t->state != EOS_TASK_READY) continue;
-        if (t->priority < best_prio) {
+        if (t->entry == NULL || t->state != EOS_TASK_READY) continue;
+        if (best < 0 || t->priority < best_prio) {
             best_prio = t->priority;
             best = idx;
         }
@@ -141,15 +141,7 @@ static int find_next_task(void)
  */
 void eos_schedule(void)
 {
-    int next = find_next_task();
-    if (next < 0) return;  /* No ready tasks — stay on current */
-
-    /* Mark current task as ready (if it was running) */
-    if (g_current >= 0 && g_tasks[g_current].state == EOS_TASK_RUNNING) {
-        g_tasks[g_current].state = EOS_TASK_READY;
-    }
-
-    /* Check stack canary on current task */
+    /* Validate the outgoing task before making it eligible for selection. */
     if (g_current >= 0 && g_tasks[g_current].stack_base) {
         if (g_tasks[g_current].stack_base[0] != EOS_STACK_CANARY) {
             /* Stack overflow detected! */
@@ -158,12 +150,24 @@ void eos_schedule(void)
         }
     }
 
-    /* Switch to next task */
-    g_current_sp = &g_tasks[g_current >= 0 ? g_current : next].stack_ptr;
+    /* A preempted task remains runnable and competes at its normal priority. */
+    if (g_current >= 0 && g_tasks[g_current].state == EOS_TASK_RUNNING) {
+        g_tasks[g_current].state = EOS_TASK_READY;
+    }
+
+    int next = find_next_task();
+    if (next < 0) return;  /* No valid task is runnable. */
+
+    /*
+     * PendSV has already saved the outgoing PSP through g_current_sp.
+     * Point both assembly-facing slots at the task that is now current, so
+     * the next PendSV saves that task's PSP into its own control block.
+     */
     g_current = next;
     g_tasks[next].state = EOS_TASK_RUNNING;
     g_tasks[next].run_count++;
-    g_next_sp = &g_tasks[next].stack_ptr;
+    g_current_sp = &g_tasks[next].stack_ptr;
+    g_next_sp = g_current_sp;
 }
 
 /**
@@ -281,6 +285,8 @@ int eos_task_create(const char *name, eos_task_func_t entry, void *arg,
     if (!entry) return EOS_KERN_INVALID;
     if (stack_size == 0) stack_size = 1024;
 
+    uint32_t crit = eos_port_enter_critical();
+
     /* Find free slot (skip slot 0 = idle) */
     int slot = -1;
     for (int i = 1; i < EOS_MAX_TASKS; i++) {
@@ -290,30 +296,41 @@ int eos_task_create(const char *name, eos_task_func_t entry, void *arg,
             break;
         }
     }
-    if (slot < 0) return EOS_KERN_NO_MEMORY;
+    if (slot < 0) {
+        eos_port_exit_critical(crit);
+        return EOS_KERN_NO_MEMORY;
+    }
 
     /* Allocate stack */
     uint32_t *stack_base = alloc_task_stack(stack_size);
-    if (!stack_base) return EOS_KERN_NO_MEMORY;
+    if (!stack_base) {
+        eos_port_exit_critical(crit);
+        return EOS_KERN_NO_MEMORY;
+    }
 
     uint32_t *stack_top = stack_base + stack_size / sizeof(uint32_t);
 
     memset(&g_tasks[slot], 0, sizeof(eos_task_t));
+    g_tasks[slot].state = EOS_TASK_DELETED;
     g_tasks[slot].id = (uint8_t)slot;
     g_tasks[slot].name = name;
-    g_tasks[slot].entry = entry;
     g_tasks[slot].arg = arg;
     g_tasks[slot].priority = priority;
     g_tasks[slot].base_priority = priority;
     g_tasks[slot].stack_size = stack_size;
     g_tasks[slot].stack_base = stack_base;
     g_tasks[slot].stack_ptr = eos_port_init_stack(stack_top, entry, arg);
+
+    /* Publish the entry and READY state only after the TCB is complete. */
+    g_tasks[slot].entry = entry;
     g_tasks[slot].state = EOS_TASK_READY;
     g_task_count++;
 
     /* If kernel is running and new task has higher priority, yield */
-    if (g_running && g_current >= 0 &&
-        priority < g_tasks[g_current].priority) {
+    bool should_preempt = g_running && g_current >= 0 &&
+                          priority < g_tasks[g_current].priority;
+    eos_port_exit_critical(crit);
+    if (should_preempt) {
         eos_port_yield();
     }
 
@@ -322,7 +339,7 @@ int eos_task_create(const char *name, eos_task_func_t entry, void *arg,
 
 int eos_task_delete(eos_task_handle_t h)
 {
-    if (h >= EOS_MAX_TASKS) return EOS_KERN_INVALID;
+    if (h == 0 || h >= EOS_MAX_TASKS) return EOS_KERN_INVALID;
     if (g_tasks[h].state == EOS_TASK_DELETED || g_tasks[h].entry == NULL)
         return EOS_KERN_INVALID;
     g_tasks[h].state = EOS_TASK_DELETED;
@@ -337,7 +354,8 @@ int eos_task_delete(eos_task_handle_t h)
 
 int eos_task_suspend(eos_task_handle_t h)
 {
-    if (h >= EOS_MAX_TASKS || g_tasks[h].entry == NULL) return EOS_KERN_INVALID;
+    if (h == 0 || h >= EOS_MAX_TASKS || g_tasks[h].entry == NULL)
+        return EOS_KERN_INVALID;
     g_tasks[h].state = EOS_TASK_SUSPENDED;
     if (h == (eos_task_handle_t)g_current) {
         eos_port_yield();
@@ -572,5 +590,3 @@ int eos_task_get_all_stats(eos_task_stats_t *out, int max_entries, int *count)
     *count = n;
     return EOS_KERN_OK;
 }
-
-

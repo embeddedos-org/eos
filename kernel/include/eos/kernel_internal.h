@@ -23,6 +23,19 @@ extern volatile uint32_t g_tick;
 /* Task array — accessible to sync.c and ipc.c for priority inheritance */
 extern eos_task_t g_tasks[EOS_MAX_TASKS];
 
+/* Stack-pointer slots shared with the architecture context-switch handler. */
+extern uint32_t **g_current_sp;
+extern uint32_t **g_next_sp;
+
+/**
+ * @brief Select the next runnable task during a context switch.
+ *
+ * The port saves the outgoing CPU stack pointer through g_current_sp before
+ * calling this function. On return, both stack-pointer slots identify the
+ * newly running task so the port can restore it and save it on the next switch.
+ */
+void eos_schedule(void);
+
 /**
  * @brief True once @p now has reached or passed @p deadline.
  *
