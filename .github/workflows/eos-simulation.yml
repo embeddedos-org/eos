@@ -328,7 +328,16 @@ jobs:
     needs: [build-kernel, simulate-qemu, test-middleware, test-cad-pipeline]
     if: always()
     steps:
+      # The gate rule lives in .github/scripts/ci-gate-check.sh, so this job
+      # needs the repository in its workspace. Without the checkout the step
+      # exits 127 on a missing file -- red for a reason that has nothing to do
+      # with its dependencies, and never green, so requiring this name would
+      # make master permanently unmergeable.
+      - uses: actions/checkout@v4
       - name: Report final status
+        env:
+          RESULTS: ${{ toJSON(needs) }}
+          GATE_NAME: "Full-stack integration summary"
         run: |
           echo "╔══════════════════════════════════════════════════════╗"
           echo "║   EoS CI Full-Stack Integration Summary              ║"
@@ -338,7 +347,11 @@ jobs:
           echo "║  Middleware Python tests             ${{ needs.test-middleware.result == 'success' && 'PASS' || 'FAIL' }}          ║"
           echo "║  CAD pipeline validation             ${{ needs.test-cad-pipeline.result == 'success' && 'PASS' || 'FAIL' }}          ║"
           echo "╚══════════════════════════════════════════════════════╝"
-          if [[ "${{ needs.simulate-qemu.result }}" != "success" ]]; then
-            echo "::error::QEMU simulation failed — EoS kernel did not boot or test cases failed"
-            exit 1
-          fi
+          # This job already had the shape of a gate -- the right `needs`, `if:
+          # always()`, and a printed PASS/FAIL per dependency -- but it only
+          # exited non-zero for simulate-qemu. The other three could fail while
+          # it reported success, so a maintainer requiring this check would
+          # believe the ARM64 kernel build, the middleware tests and the CAD
+          # pipeline were gated when they were not. Now any non-success fails
+          # it, using the same rule as every other gate.
+          printf '%s' "$RESULTS" | .github/scripts/ci-gate-check.sh

@@ -39,7 +39,8 @@ jobs:
             cmake ninja-build gcc-12 g++-12 \
             gcc-arm-none-eabi binutils-arm-none-eabi \
             lcov gcovr python3-pip
-          pip3 install pytest pytest-cov
+          # pyyaml: tests/unit/test_ci_gate.py parses .github/workflows/ci.yml
+          pip3 install pytest pytest-cov pyyaml
 
       - name: Configure (host)
         run: |
@@ -209,3 +210,32 @@ jobs:
           generate_release_notes: true
           draft: false
           prerelease: false
+
+  # ── Required check ────────────────────────────────────────────────────────
+  # One job that succeeds only if every other job in this workflow did, so
+  # branch protection has a single stable name to require. #92 stays open until
+  # master has a required check; this is the name to point it at.
+  #
+  # `release` is deliberately outside the gate: it only runs on tags, so on a
+  # pull request it is skipped, and a required check that is skipped never
+  # reports -- the pull request would wait for a status that never arrives.
+  #
+  # `if: always()` for the same reason in reverse: without it the gate is
+  # skipped whenever an earlier job fails, so a real failure would present as a
+  # pull request that hangs rather than one that goes red.
+  #
+  # A non-success result of any kind fails the gate, `skipped` included. A job
+  # that did not run did not verify anything, and treating that as a pass is
+  # the fail-open shape this repository has spent #75, #82 and #84 removing.
+  ci-gate:
+    name: CI Gate
+    runs-on: ubuntu-22.04
+    needs: [test, default-config, build-arm, static-analysis]
+    if: always()
+    steps:
+      - uses: actions/checkout@v4
+      - name: Every job in this workflow must have succeeded
+        env:
+          RESULTS: ${{ toJSON(needs) }}
+          GATE_NAME: "CI Gate"
+        run: printf '%s' "$RESULTS" | .github/scripts/ci-gate-check.sh
