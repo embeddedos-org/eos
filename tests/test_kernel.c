@@ -9,7 +9,14 @@
 #include "eos/kernel_internal.h"
 
 static int g_task_ran = 0;
+static uint32_t g_critical_depth = 0;
+static void (*g_stack_init_hook)(void) = NULL;
 static void test_entry(void *arg) { g_task_ran = 1; (void)arg; }
+
+static void schedule_during_stack_init(void) {
+    assert(g_critical_depth > 0);
+    eos_schedule();
+}
 
 static void test_kernel_init(void) {
     assert(eos_kernel_init() == EOS_KERN_OK);
@@ -30,6 +37,74 @@ static void test_task_create_invalid(void) {
     eos_kernel_init();
     assert(eos_task_create("t", NULL, NULL, 5, 1024) == EOS_KERN_INVALID);
     printf("[PASS] task create invalid\n");
+}
+
+static void test_idle_task_is_permanent(void) {
+    eos_kernel_init();
+
+    assert(eos_task_get_state(0) == EOS_TASK_READY);
+    assert(strcmp(eos_task_get_name(0), "idle") == 0);
+    assert(eos_task_delete(0) == EOS_KERN_INVALID);
+    assert(eos_task_suspend(0) == EOS_KERN_INVALID);
+    assert(eos_task_get_state(0) == EOS_TASK_READY);
+    assert(strcmp(eos_task_get_name(0), "idle") == 0);
+
+    printf("[PASS] idle task cannot be deleted or suspended\n");
+}
+
+static void test_scheduler_selects_valid_task_and_tracks_stack(void) {
+    eos_kernel_init();
+
+    int first = eos_task_create("first", test_entry, NULL, 2, 512);
+    assert(first >= 0);
+
+    eos_task_set_current_internal((eos_task_handle_t)first);
+    g_current_sp = &g_tasks[first].stack_ptr;
+    g_next_sp = g_current_sp;
+    uint32_t *first_sp = g_tasks[first].stack_ptr;
+
+    /* Simulate a scheduling attempt during runtime task initialization. */
+    g_stack_init_hook = schedule_during_stack_init;
+    int second = eos_task_create("second", test_entry, NULL, 1, 512);
+    g_stack_init_hook = NULL;
+    assert(second >= 0);
+    assert(eos_task_get_current() == (eos_task_handle_t)first);
+    assert(eos_task_get_state((eos_task_handle_t)second) == EOS_TASK_READY);
+
+    eos_schedule();
+    assert(eos_task_get_state((eos_task_handle_t)first) == EOS_TASK_READY);
+    assert(eos_task_get_state((eos_task_handle_t)second) == EOS_TASK_RUNNING);
+    assert(g_current_sp == &g_tasks[second].stack_ptr);
+    assert(g_next_sp == &g_tasks[second].stack_ptr);
+
+    /* Simulate PendSV saving the current task's PSP before the next switch. */
+    uint32_t *second_sp = g_tasks[second].stack_ptr - 1;
+    *g_current_sp = second_sp;
+    assert(g_tasks[second].stack_ptr == second_sp);
+    assert(g_tasks[first].stack_ptr == first_sp);
+
+    /* A tick must not displace the highest-priority runnable task. */
+    eos_schedule();
+    assert(eos_task_get_state((eos_task_handle_t)first) == EOS_TASK_READY);
+    assert(eos_task_get_state((eos_task_handle_t)second) == EOS_TASK_RUNNING);
+    assert(g_current_sp == &g_tasks[second].stack_ptr);
+    assert(g_next_sp == &g_tasks[second].stack_ptr);
+
+    assert(eos_task_suspend((eos_task_handle_t)second) == EOS_KERN_OK);
+    eos_schedule();
+    assert(eos_task_get_state((eos_task_handle_t)first) == EOS_TASK_RUNNING);
+    assert(g_current_sp == &g_tasks[first].stack_ptr);
+    assert(g_next_sp == &g_tasks[first].stack_ptr);
+
+    /* Priority 255 is valid and must allow the idle fallback to run. */
+    assert(eos_task_suspend((eos_task_handle_t)first) == EOS_KERN_OK);
+    assert(eos_task_delete((eos_task_handle_t)second) == EOS_KERN_OK);
+    eos_schedule();
+    assert(eos_task_get_state(0) == EOS_TASK_RUNNING);
+    assert(g_current_sp == &g_tasks[0].stack_ptr);
+    assert(g_next_sp == &g_tasks[0].stack_ptr);
+
+    printf("[PASS] scheduler selects valid task and tracks its stack\n");
 }
 
 static void test_task_delete(void) {
@@ -261,8 +336,15 @@ static void test_tick_overflow(void) {
 }
 
 /* Mock port functions for host-based simulation/testing */
-uint32_t eos_port_enter_critical(void) { return 0; }
-void eos_port_exit_critical(uint32_t state) { (void)state; }
+uint32_t eos_port_enter_critical(void) {
+    uint32_t previous = g_critical_depth;
+    g_critical_depth++;
+    return previous;
+}
+void eos_port_exit_critical(uint32_t state) {
+    assert(g_critical_depth > 0);
+    g_critical_depth = state;
+}
 
 /* Captures owner priority at yield so tests can observe PI boost mid-lock. */
 static int g_yield_owner = -1;
@@ -274,7 +356,12 @@ void eos_port_yield(void)
     if (q7_yield_hook) q7_yield_hook();
 }
 void eos_port_start_scheduler(void) {}
-uint32_t *eos_port_init_stack(uint32_t *s, void (*e)(void*), void *a) { (void)e; (void)a; return s - 17; }
+uint32_t *eos_port_init_stack(uint32_t *s, void (*e)(void*), void *a) {
+    (void)e;
+    (void)a;
+    if (g_stack_init_hook) g_stack_init_hook();
+    return s - 17;
+}
 void eos_port_start_first_task(void) {}
 
 static void test_mutex_pi_timeout_restores_priority(void) {
@@ -311,6 +398,8 @@ int main(void) {
     test_kernel_init();
     test_task_create();
     test_task_create_invalid();
+    test_idle_task_is_permanent();
+    test_scheduler_selects_valid_task_and_tracks_stack();
     test_task_delete();
     test_task_suspend_resume();
     test_mutex();
@@ -320,6 +409,6 @@ int main(void) {
     test_queue_full();
     test_task_stats();
     test_tick_overflow();
-    printf("=== ALL KERNEL TESTS PASSED (12/12) ===\n");
+    printf("=== ALL KERNEL TESTS PASSED (14/14) ===\n");
     return 0;
 }

@@ -45,9 +45,9 @@ PendSV_Handler:
     str     r0, [r1]            /* Save PSP */
 
     /* ---- Select next task ---- */
-    push    {lr}
+    push    {r3, lr}            /* Preserve 8-byte AAPCS stack alignment */
     bl      eos_schedule        /* Updates g_current_sp and g_next_sp */
-    pop     {lr}
+    pop     {r3, lr}
 
     /* ---- Restore next context ---- */
     ldr     r1, =g_next_sp
