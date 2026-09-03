@@ -306,20 +306,28 @@ static void test_mutex_pi_timeout_restores_priority(void) {
     printf("[PASS] mutex PI timeout restores owner priority\n");
 }
 
+static int kernel_tests_run = 0;
+#define RUN(fn) do { fn(); kernel_tests_run++; } while (0)
+
 int main(void) {
     printf("=== EoS Kernel Tests ===\n");
-    test_kernel_init();
-    test_task_create();
-    test_task_create_invalid();
-    test_task_delete();
-    test_task_suspend_resume();
-    test_mutex();
-    test_mutex_pi_timeout_restores_priority();
-    test_semaphore();
-    test_queue();
-    test_queue_full();
-    test_task_stats();
-    test_tick_overflow();
-    printf("=== ALL KERNEL TESTS PASSED (12/12) ===\n");
+    RUN(test_kernel_init);
+    RUN(test_task_create);
+    RUN(test_task_create_invalid);
+    RUN(test_task_delete);
+    RUN(test_task_suspend_resume);
+    RUN(test_mutex);
+    RUN(test_mutex_pi_timeout_restores_priority);
+    RUN(test_semaphore);
+    RUN(test_queue);
+    RUN(test_queue_full);
+    RUN(test_queue_send_waiter_overflow);
+    RUN(test_task_stats);
+    RUN(test_tick_overflow);
+    /* Counted rather than written out: the literal said 12/12 while a
+     * thirteenth test sat in this file uncalled, so the number agreed
+     * with the omission instead of exposing it. */
+    printf("=== ALL KERNEL TESTS PASSED (%d/%d) ===\n",
+           kernel_tests_run, kernel_tests_run);
     return 0;
 }
