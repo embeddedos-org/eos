@@ -260,6 +260,42 @@ static void test_tick_overflow(void) {
     printf("[PASS] tick overflow wraparound\n");
 }
 
+static void test_wake_tick_zero(void) {
+    eos_kernel_init();
+
+    /* g_tick + 1 wraps to 0. wake_armed must still mark that deadline live. */
+    g_tick = 0xFFFFFFFFU;
+    int timed = eos_task_create("wrap0", test_entry, NULL, 5, 1024);
+    assert(timed >= 0);
+    eos_task_block_with_timeout((eos_task_handle_t)timed, 1);
+    assert(eos_task_get_state((eos_task_handle_t)timed) == EOS_TASK_BLOCKED);
+    assert(g_tasks[timed].wake_tick == 0);
+    assert(g_tasks[timed].wake_armed == 1);
+
+    /* One tick before wrap: not expired */
+    eos_task_wake_check(0xFFFFFFFFU);
+    assert(eos_task_get_state((eos_task_handle_t)timed) == EOS_TASK_BLOCKED);
+
+    /* Tick 0 is the deadline — must wake even though wake_tick is 0 */
+    eos_task_wake_check(0);
+    assert(eos_task_get_state((eos_task_handle_t)timed) == EOS_TASK_READY);
+
+    /* WAIT_FOREVER also stores wake_tick = 0, but wake_armed stays 0 */
+    int forever = eos_task_create("forever", test_entry, NULL, 5, 1024);
+    assert(forever >= 0);
+    eos_task_block_with_timeout((eos_task_handle_t)forever, EOS_WAIT_FOREVER);
+    assert(eos_task_get_state((eos_task_handle_t)forever) == EOS_TASK_BLOCKED);
+    assert(g_tasks[forever].wake_tick == 0);
+    assert(g_tasks[forever].wake_armed == 0);
+
+    eos_task_wake_check(0);
+    assert(eos_task_get_state((eos_task_handle_t)forever) == EOS_TASK_BLOCKED);
+    eos_task_wake_check(1);
+    assert(eos_task_get_state((eos_task_handle_t)forever) == EOS_TASK_BLOCKED);
+
+    printf("[PASS] wake_tick wrap to zero\n");
+}
+
 /* Mock port functions for host-based simulation/testing */
 uint32_t eos_port_enter_critical(void) { return 0; }
 void eos_port_exit_critical(uint32_t state) { (void)state; }
@@ -320,6 +356,7 @@ int main(void) {
     test_queue_full();
     test_task_stats();
     test_tick_overflow();
-    printf("=== ALL KERNEL TESTS PASSED (12/12) ===\n");
+    test_wake_tick_zero();
+    printf("=== ALL KERNEL TESTS PASSED (13/13) ===\n");
     return 0;
 }

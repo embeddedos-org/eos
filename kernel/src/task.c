@@ -174,7 +174,9 @@ void eos_task_wake_check(uint32_t current_tick)
 {
     for (int i = 0; i < EOS_MAX_TASKS; i++) {
         eos_task_t *t = &g_tasks[i];
-        if (t->state == EOS_TASK_BLOCKED && t->wake_tick > 0 &&
+        /* wake_armed, not wake_tick > 0: a deadline of 0 is valid when
+         * g_tick + timeout wraps. WAIT_FOREVER leaves wake_armed clear. */
+        if (t->state == EOS_TASK_BLOCKED && t->wake_armed &&
             tick_expired(current_tick, t->wake_tick)) {
             t->state = EOS_TASK_READY;
             t->wake_armed = 0;
