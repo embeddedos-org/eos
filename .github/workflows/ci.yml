@@ -79,6 +79,39 @@ jobs:
             --cov-fail-under=0
         continue-on-error: false
 
+  # ── Default configuration ─────────────────────────────────────────────────
+  # The `test` job above builds with -DEOS_BUILD_TESTS=ON -DEOS_PRODUCT=vbox_test,
+  # and both of those turn optional features on. Nothing in CI built the
+  # configuration a new user actually gets: the README quick start, which sets
+  # neither. That gap let a translation unit that only compiles under
+  # EOS_ENABLE_NET reach master. This job is that missing coverage — it is the
+  # README's own two commands, plus two product profiles that leave eNet off.
+  default-config:
+    name: Default configuration (no tests, no product)
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - name: Install dependencies
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y --no-install-recommends cmake ninja-build
+
+      - name: Build the README quick start
+        run: |
+          cmake -B build/host -DCMAKE_BUILD_TYPE=$BUILD_TYPE
+          cmake --build build/host --parallel $(nproc)
+
+      - name: Build product profiles that leave eNet off
+        run: |
+          for product in medical aerospace; do
+            cmake -B "build/$product" -DCMAKE_BUILD_TYPE=$BUILD_TYPE \
+              -DEOS_PRODUCT="$product"
+            cmake --build "build/$product" --parallel $(nproc)
+          done
+
   # ── Cross-compile ARM Cortex-M4 ───────────────────────────────────────────
   build-arm:
     name: Cross-compile ARM Cortex-M4

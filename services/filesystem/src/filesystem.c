@@ -133,7 +133,7 @@ int eos_fs_write(eos_file_t fd, const void *data, size_t len) {
      * pos <= cap, but if that ever slipped, `n->cap - p` would wrap (both are
      * unsigned) and hand memcpy a huge length. */
     if (p > n->cap) return -1;
-    if (p + len > n->cap) len = n->cap - p;
+    if (len > n->cap - p) len = n->cap - p;
     if (len == 0) return 0;
     if (p > n->size) memset(n->data + n->size, 0, p - n->size);
     memcpy(n->data + p, data, len); g_fds[fd].pos += (uint32_t)len;

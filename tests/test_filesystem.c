@@ -313,6 +313,41 @@ static void test_fs_open_does_not_leak_inode_when_fds_exhausted(void) {
     printf("[PASS] fs open does not leak inode when fds exhausted\n");
 }
 
+/*
+ * Regression: p + len was compared against cap. When pos > 0 and len is
+ * near SIZE_MAX, that add wraps and the clamp is skipped, so memcpy is
+ * handed an unbounded length. Compare remaining capacity instead.
+ */
+static void test_fs_write_clamps_wrapping_length(void) {
+    eos_fs_init(NULL);
+    eos_file_t fd = eos_fs_open("/wrap.txt", EOS_O_CREATE | EOS_O_WRITE | EOS_O_READ);
+    assert(fd != EOS_FILE_INVALID);
+
+    /* Discover inode capacity without using the private BLOCK_SIZE. A
+     * merely-oversized (non-wrapping) write already clamps on master. */
+    char src[65536];
+    memset(src, 'Z', sizeof(src));
+    int cap = eos_fs_write(fd, src, sizeof(src));
+    assert(cap > 0);
+    assert(cap < (int)sizeof(src));
+
+    assert(eos_fs_seek(fd, 2, EOS_SEEK_SET) == 0);
+    int n = eos_fs_write(fd, src, (size_t)-1);
+    assert(n == cap - 2);
+
+    uint32_t pos;
+    assert(eos_fs_tell(fd, &pos) == 0);
+    assert(pos == (uint32_t)cap);
+
+    eos_fs_stat_t st;
+    assert(eos_fs_stat(&st) == 0);
+    assert(st.used_bytes == (uint32_t)cap);
+
+    assert(eos_fs_close(fd) == 0);
+    eos_fs_deinit();
+    printf("[PASS] fs write clamps wrapping length\n");
+}
+
 int main(void) {
     printf("=== EoS Filesystem Tests ===\n");
     test_fs_init();
@@ -329,7 +364,9 @@ int main(void) {
     test_fs_used_bytes_never_underflows();
     test_fs_rename_replaces_existing_target();
     test_fs_rename_onto_itself_is_a_noop();
+    test_fs_write_clamps_wrapping_length();
+
     test_fs_open_does_not_leak_inode_when_fds_exhausted();
-    printf("=== ALL FS TESTS PASSED (15/15) ===\n");
+    printf("=== ALL FS TESTS PASSED (14/14) ===\n");
     return 0;
 }

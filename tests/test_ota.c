@@ -4,6 +4,8 @@
 
 #include <stdio.h>
 #include <string.h>
+#include <stddef.h>
+#include <stdint.h>
 #include <assert.h>
 #include "eos/ota.h"
 #include "eos/crypto.h"
@@ -130,7 +132,6 @@ static void test_ota_status(void) {
     printf("[PASS] ota status\n");
 }
 
-
 /* expected_sha256 arrives with the update, so an attacker who swaps the image
  * swaps the digest too. Passing eos_ota_verify() must not be enough to install. */
 static void test_ota_apply_refuses_without_authenticator(void) {
@@ -200,6 +201,43 @@ static void test_ota_unapplied_slot_is_not_a_rollback_target(void) {
     printf("[PASS] ota unapplied slot is not a rollback target\n");
 }
 
+static void test_ota_write_chunk_overflow(void) {
+    eos_ota_init();
+    uint8_t fw[64];
+    memset(fw, 0xAA, sizeof(fw));
+    eos_ota_source_t src;
+    memset(&src, 0, sizeof(src));
+    src.expected_size = sizeof(fw);
+    assert(eos_ota_begin(&src) == 0);
+    assert(eos_ota_write_chunk(fw, 32) == 0);
+    assert(eos_ota_write_chunk(fw, 33) == -1);
+
+    eos_ota_status_t st;
+    assert(eos_ota_get_status(&st) == 0);
+    assert(st.bytes_received == 32);
+    eos_ota_deinit();
+    printf("[PASS] ota write chunk overflow\n");
+}
+
+static void test_ota_write_chunk_wrap(void) {
+    eos_ota_init();
+    uint8_t fw[64];
+    memset(fw, 0xAA, sizeof(fw));
+    eos_ota_source_t src;
+    memset(&src, 0, sizeof(src));
+    src.expected_size = sizeof(fw);
+    assert(eos_ota_begin(&src) == 0);
+    /* One accepted byte so bytes_written + SIZE_MAX wraps on the old add. */
+    assert(eos_ota_write_chunk(fw, 1) == 0);
+    assert(eos_ota_write_chunk(fw, SIZE_MAX) == -1);
+
+    eos_ota_status_t st;
+    assert(eos_ota_get_status(&st) == 0);
+    assert(st.bytes_received == 1);
+    eos_ota_deinit();
+    printf("[PASS] ota write chunk wrap\n");
+}
+
 int main(void) {
     printf("=== EoS OTA Tests ===\n");
     test_ota_init();
@@ -211,6 +249,8 @@ int main(void) {
     test_ota_apply_honours_a_rejecting_authenticator();
     test_ota_authenticator_sees_the_computed_digest();
     test_ota_unapplied_slot_is_not_a_rollback_target();
-    printf("=== ALL OTA TESTS PASSED (9/9) ===\n");
+    test_ota_write_chunk_overflow();
+    test_ota_write_chunk_wrap();
+    printf("=== ALL OTA TESTS PASSED (11/11) ===\n");
     return 0;
 }

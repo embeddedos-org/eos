@@ -27,6 +27,11 @@ int ED25519_DECLSPEC ed25519_create_seed(unsigned char *seed);
 void ED25519_DECLSPEC ed25519_create_keypair(unsigned char *public_key, unsigned char *private_key, const unsigned char *seed);
 void ED25519_DECLSPEC ed25519_sign(unsigned char *signature, const unsigned char *message, size_t message_len, const unsigned char *public_key, const unsigned char *private_key);
 int ED25519_DECLSPEC ed25519_verify(const unsigned char *signature, const unsigned char *message, size_t message_len, const unsigned char *public_key);
+
+/* Non-zero if public_key decodes to a point of prime order, i.e. if it can
+ * authenticate anything. Use it to validate a stored trust anchor when it is
+ * configured; ed25519_verify() applies the same rule per signature. */
+int ED25519_DECLSPEC ed25519_public_key_is_usable(const unsigned char *public_key);
 void ED25519_DECLSPEC ed25519_add_scalar(unsigned char *public_key, unsigned char *private_key, const unsigned char *scalar);
 void ED25519_DECLSPEC ed25519_key_exchange(unsigned char *shared_secret, const unsigned char *public_key, const unsigned char *private_key);
 

@@ -34,6 +34,15 @@
 #include <sys/time.h>
 #include <unistd.h>
 
+/* net.h wraps its declarations in #if EOS_ENABLE_NET, but CMake adds this
+ * file to eos_net on every non-cross build regardless of that flag. With no
+ * product profile and no test build nothing sets it, so the header expanded to
+ * nothing while this file still defined the API against it -- `unknown type
+ * name 'eos_net_addr_t'`, and the default configuration stopped compiling.
+ * net.c already carries this guard; the POSIX mapping needs the same one so
+ * both translation units appear and disappear together. */
+#if EOS_ENABLE_NET
+
 /* eos_socket_t is an int and EOS_SOCKET_INVALID is -1, which is exactly what
  * socket(2) returns on failure, so the fd is the handle. No table, no
  * translation, and no way for the two to drift. */
@@ -203,3 +212,5 @@ int eos_net_resolve(const char *hostname, uint32_t *ip)
     freeaddrinfo(res);
     return 0;
 }
+
+#endif /* EOS_ENABLE_NET */

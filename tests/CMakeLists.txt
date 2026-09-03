@@ -1,3 +1,22 @@
+# ---------------------------------------------------------------------------
+# Assertions must be live in test binaries.
+#
+# These suites express nearly every check as assert(). CI configures
+# -DCMAKE_BUILD_TYPE=Release, Release defines NDEBUG, and NDEBUG deletes
+# assert() together with the expression inside it -- so 684 assertions across
+# 16 files compiled to nothing and every one of those tests passed by
+# reaching the end of main().
+#
+# That is not theoretical: test_net wrapped its connect/send calls in
+# assert(), so under Release no client ever connected, the echo thread blocked
+# in accept() forever, and the suite hung until ctest killed it.
+#
+# Stripping NDEBUG from test targets only -- not from the libraries under
+# test, which stay exactly as CI builds them for release -- keeps every
+# existing assert() meaningful without rewriting 684 call sites.
+# ---------------------------------------------------------------------------
+add_compile_options(-UNDEBUG)
+
 # EoS Unit Tests
 # --- test_board_configs: Board YAML schema shape ---
 add_executable(test_board_configs test_board_configs.c)
@@ -75,6 +94,31 @@ add_test(NAME test_crypto_rsa COMMAND test_crypto_rsa)
 add_executable(test_crypto_sha512 test_crypto_sha512.c)
 target_link_libraries(test_crypto_sha512 PRIVATE eos_crypto)
 add_test(NAME test_crypto_sha512 COMMAND test_crypto_sha512)
+
+# --- test_mpu_validate: MPU region programmability ---
+# Landed with the fix it guards (#109) and lost its registration to a merge,
+# so the six cases stopped being compiled while the file stayed in the tree.
+add_executable(test_mpu_validate test_mpu_validate.c)
+target_link_libraries(test_mpu_validate PRIVATE eos_rtos_security)
+add_test(NAME test_mpu_validate COMMAND test_mpu_validate)
+
+# --- test_e2e: kernel boot-to-task end-to-end path ---
+add_executable(test_e2e test_e2e.c)
+target_link_libraries(test_e2e PRIVATE eos_kernel)
+add_test(NAME test_e2e COMMAND test_e2e)
+
+# --- test_net_mock: eNet socket API against a mock transport ---
+add_executable(test_net_mock test_net_mock.c)
+add_test(NAME test_net_mock COMMAND test_net_mock)
+
+# --- test_hal_stm32f4: STM32F4 peripheral register behaviour ---
+# Builds on the host against the simulated register block; it needed only the
+# board header directory on the include path, which is why it never ran.
+add_executable(test_hal_stm32f4 test_hal_stm32f4.c)
+target_include_directories(test_hal_stm32f4 PRIVATE
+    ${CMAKE_SOURCE_DIR}/boards/stm32f407_discovery)
+target_link_libraries(test_hal_stm32f4 PRIVATE eos_hal)
+add_test(NAME test_hal_stm32f4 COMMAND test_hal_stm32f4)
 
 # --- test_security: Keystore, ACL ---
 add_executable(test_security test_security.c)
@@ -168,6 +212,15 @@ if(UNIX AND NOT APPLE)
 endif()
 add_test(NAME test_motor_ctrl COMMAND test_motor_ctrl)
 
+# --- test_pkg_trust_anchor: eos_pkg refuses to verify without a real key ---
+# eos_eapp exists only in a host build; see the comment on services/pkg in the
+# top-level CMakeLists.txt.
+if(NOT CMAKE_CROSSCOMPILING)
+    add_executable(test_pkg_trust_anchor test_pkg_trust_anchor.c)
+    target_link_libraries(test_pkg_trust_anchor PRIVATE eos_eapp eos_crypto)
+    add_test(NAME test_pkg_trust_anchor COMMAND test_pkg_trust_anchor)
+endif()
+
 # --- test_package: Package management ---
 add_executable(test_package test_package.c)
 target_include_directories(test_package PRIVATE
@@ -181,6 +234,47 @@ add_test(NAME test_package COMMAND test_package)
 add_executable(test_devicetree test_devicetree.c)
 target_link_libraries(test_devicetree PRIVATE eos_devicetree)
 add_test(NAME test_devicetree COMMAND test_devicetree)
+
+
+# ---------------------------------------------------------------------------
+# Suites that existed in tests/ but were never registered.
+#
+# Each of these has a main() and compiles; none was in any add_executable(),
+# so CI never built or ran them. test_crypto_failclosed.c is the one that
+# matters most -- it asserts that the stub RSA/ECC routines refuse to run,
+# written after a 256-byte file with the right trailing bytes made secure
+# boot report VERIFIED for an arbitrary image. A regression guard that is
+# never executed is exactly the failure it was written to prevent.
+# ---------------------------------------------------------------------------
+add_executable(test_crypto_failclosed test_crypto_failclosed.c)
+target_link_libraries(test_crypto_failclosed PRIVATE eos_crypto)
+add_test(NAME test_crypto_failclosed COMMAND test_crypto_failclosed)
+
+add_executable(test_crc test_crc.c)
+target_link_libraries(test_crc PRIVATE eos_crypto)
+add_test(NAME test_crc COMMAND test_crc)
+
+add_executable(test_driver_recovery test_driver_recovery.c)
+target_link_libraries(test_driver_recovery PRIVATE eos_drivers)
+add_test(NAME test_driver_recovery COMMAND test_driver_recovery)
+
+# test_net_integration.c is deliberately NOT registered. It hangs.
+#
+# test_accept_no_client() asserts that eos_net_accept() returns
+# EOS_SOCKET_INVALID with no client pending -- its own comment says
+# "No connection pending in stub". That was true of the net.c stub, which
+# returned INVALID unconditionally. Since the POSIX implementation landed,
+# accept() on a blocking listening socket waits for a connection that
+# never arrives, so the suite never returns.
+#
+# eos_net_accept() takes no timeout and there is no non-blocking option in
+# the API, so the test cannot simply be retimed: either it grows a client
+# to accept, or the API grows a way to poll. That is a design decision,
+# not a registration, so it is left out here rather than bundled in.
+
+add_executable(test_stress test_stress.c)
+target_link_libraries(test_stress PRIVATE eos_kernel)
+add_test(NAME test_stress COMMAND test_stress)
 
 # --- Fuzz targets ---
 # Opt-in (-DEOS_ENABLE_FUZZING=ON, Clang only); the subdirectory guards itself.
