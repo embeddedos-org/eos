@@ -197,7 +197,7 @@ add_library(eos_net STATIC
 # it, so that condition is true even for a Cortex-M build. hal_linux.c happens
 # to survive that because it uses only portable headers; net_posix.c needs
 # <netdb.h> and <sys/socket.h>, which bare-metal newlib does not have.
-if(NOT CMAKE_CROSSCOMPILING)
+if(NOT CMAKE_CROSSCOMPILING AND NOT WIN32)
     target_sources(eos_net PRIVATE net/src/net_posix.c)
     target_compile_definitions(eos_net PRIVATE EOS_NET_POSIX=1)
 endif()
