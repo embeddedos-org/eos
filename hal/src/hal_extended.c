@@ -13,7 +13,7 @@
 
 #if defined(EOS_MCU_STM32F4)
 
-#define REG32(addr) (*(volatile uint32_t *)(addr))
+#include "hal_stm32f4_regs.h"
 
 /* ================================================================
  * Flash — STM32F4 Internal Flash (FLASH_CR/SR at 0x40023C00)
@@ -207,7 +207,6 @@ int eos_wdt_set_callback(eos_wdt_callback_t cb, void *ctx) {
 #define RTC_CR    REG32(0x40002808U)
 #define RTC_ISR   REG32(0x4000280CU)
 #define RTC_WPR   REG32(0x40002824U)
-#define RCC_APB1ENR_REG REG32(0x40023840U)
 #define RCC_BDCR  REG32(0x40023870U)
 
 static uint8_t bcd_to_bin(uint8_t bcd) { return (bcd >> 4) * 10 + (bcd & 0xF); }
