@@ -24,6 +24,12 @@ ADD_TEST_RE = re.compile(r"add_test\(\s*NAME\s+(\w+)\s+COMMAND\s+(\w+)")
 #: Suites that are deliberately not built, and why. A name may only sit here
 #: with a reason that is about the suite itself -- "it is broken" is not one,
 #: because a broken suite is exactly what these tests exist to surface.
+#:
+#: What this guard checks is that every suite is built and registered. It does
+#: NOT check that a suite reaches the code it is named after: a file that
+#: links nothing and asserts against its own fixtures satisfies it completely.
+#: test_net_mock.c is exactly that, which is why it is listed here rather than
+#: registered -- being built would have made it look covered.
 NOT_BUILT = {
     "test_net_integration.c":
         "asserts stub semantics: test_accept_no_client() expects "
@@ -38,6 +44,14 @@ NOT_BUILT = {
         '"products", "./products" and "../products", and products/ holds '
         "headers, not the *.yaml the scan looks for -- it reports 0/0 and "
         "exits 0, which is a pass that tested nothing",
+    "test_net_mock.c":
+        "tests its own mocks and nothing else: it includes no EmbeddedOS "
+        "header, links no library, and its mock_net_* functions are called "
+        "directly rather than standing in for eos_net_*, so no change to "
+        "net/ can make it fail -- registering it would add a green ctest "
+        "entry covering nothing. Rewriting it to drive the real eos_net_* "
+        "API against the mock transport, which is what its own docblock "
+        "claims it does, would make it worth building",
     "test_performance_benchmarks.c":
         "asserts a wall-clock threshold (latency_ns < 100.0) measured by a "
         "busy loop, which is a property of the runner rather than of the code",
