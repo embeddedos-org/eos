@@ -90,6 +90,46 @@ add_executable(test_crypto_rsa test_crypto_rsa.c)
 target_link_libraries(test_crypto_rsa PRIVATE eos_crypto)
 add_test(NAME test_crypto_rsa COMMAND test_crypto_rsa)
 
+# --- test_crypto_ed25519_loworder: reject keys outside the prime-order subgroup ---
+add_executable(test_crypto_ed25519_loworder test_crypto_ed25519_loworder.c)
+target_link_libraries(test_crypto_ed25519_loworder PRIVATE eos_crypto)
+add_test(NAME test_crypto_ed25519_loworder COMMAND test_crypto_ed25519_loworder)
+
+# --- test_ed25519_canonical_s: the [0, L) boundary, reached directly ---
+# The corpus cannot reach this boundary: through the public API, S == L and
+# a failed group equation are both simply 0.
+# The test #includes ed25519_verify.c to reach its static, so that source is
+# not listed here. eos_crypto is still linked for the ge_*/sha512 helpers the
+# included unit calls: a static archive contributes only the objects needed
+# for still-undefined symbols, and ed25519_verify.c.o is not one of them
+# because the test object already defines everything in it.
+add_executable(test_ed25519_canonical_s test_ed25519_canonical_s.c)
+target_include_directories(test_ed25519_canonical_s PRIVATE
+    ${CMAKE_SOURCE_DIR}/services/crypto/include
+    ${CMAKE_SOURCE_DIR}/services/crypto/src)
+target_link_libraries(test_ed25519_canonical_s PRIVATE eos_crypto)
+add_test(NAME test_ed25519_canonical_s COMMAND test_ed25519_canonical_s)
+
+# --- test_ed25519_contract: the corpus shared byte-for-byte with eBoot ---
+# tests/vectors/ed25519_contract_vectors.h is committed, not generated at
+# build time. What the signature verifier was tested against belongs in the
+# repository: from a tag you should be able to see which 76 vectors ran.
+#
+# Generating it also created a shadowing hazard -- CMAKE_CURRENT_SOURCE_DIR
+# came first on the include path, so a stale tests/vectors/ copy in the
+# working tree silently won over the generated one, and the PR body's own
+# re-derivation command wrote to exactly that path. And it made Python 3 a
+# hard configure-time dependency of a pure-C test suite.
+#
+# The reason it was generated -- two repos holding the same file and keeping
+# it in step by hand -- is what the digest pinned in test_ed25519_contract.c
+# now handles: neither copy can change without failing.
+add_executable(test_ed25519_contract test_ed25519_contract.c)
+target_link_libraries(test_ed25519_contract PRIVATE eos_crypto)
+target_include_directories(test_ed25519_contract PRIVATE
+    ${CMAKE_CURRENT_SOURCE_DIR})
+add_test(NAME test_ed25519_contract COMMAND test_ed25519_contract)
+
 # --- test_crypto_sha512: SHA-512 against NIST vectors ---
 add_executable(test_crypto_sha512 test_crypto_sha512.c)
 target_link_libraries(test_crypto_sha512 PRIVATE eos_crypto)
