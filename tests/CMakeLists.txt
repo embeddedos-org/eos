@@ -222,11 +222,17 @@ if(NOT CMAKE_CROSSCOMPILING)
 endif()
 
 # --- test_pkg_trust_anchor_cross: cross-target test for anchor validation ---
-# This tests the same logic as test_pkg_trust_anchor but links only eos_crypto,
-# so it runs on both host and cross-compile targets. Issue #133.
+# Calls eos_pkg_set_trust_anchor()/eos_pkg_trust_anchor() themselves (the
+# eos_pkg_trust_anchor library, #133), not just the crypto predicate they
+# call into, so it builds on both host and cross-compile targets. Registered
+# unconditionally like the other suites in this file; only the *test* is
+# conditional -- there is no CMAKE_CROSSCOMPILING_EMULATOR in this repository,
+# so ctest cannot run a cross-compiled binary, only build it.
 add_executable(test_pkg_trust_anchor_cross test_pkg_trust_anchor_cross.c)
-target_link_libraries(test_pkg_trust_anchor_cross PRIVATE eos_crypto)
-add_test(NAME test_pkg_trust_anchor_cross COMMAND test_pkg_trust_anchor_cross)
+target_link_libraries(test_pkg_trust_anchor_cross PRIVATE eos_pkg_trust_anchor)
+if(NOT CMAKE_CROSSCOMPILING)
+    add_test(NAME test_pkg_trust_anchor_cross COMMAND test_pkg_trust_anchor_cross)
+endif()
 
 # --- test_package: Package management ---
 add_executable(test_package test_package.c)

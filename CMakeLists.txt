@@ -144,13 +144,14 @@ add_subdirectory(systems)
 # Services — crypto, security, os, linux, rtos, sensor, motor, ota, fs
 # ====================================================================
 add_subdirectory(services)
-# services/pkg is the host-side .eapp package manager: it lists directories,
-# spawns processes and waits on them, so it needs <dirent.h>, <unistd.h> and
-# <sys/wait.h>. Bare-metal newlib has none of those -- <dirent.h> is a hard
-# #error there -- so it is host-only, gated the same way net_posix.c is.
-if(NOT CMAKE_CROSSCOMPILING)
-    add_subdirectory(services/pkg)
-endif()
+# services/pkg/eos_pkg.c is the host-side .eapp package manager: it lists
+# directories, spawns processes and waits on them, so it needs <dirent.h>,
+# <unistd.h> and <sys/wait.h>. Bare-metal newlib has none of those --
+# <dirent.h> is a hard #error there -- so that part is host-only, gated
+# inside services/pkg/CMakeLists.txt the same way net_posix.c is gated here.
+# The subdirectory itself is added unconditionally because
+# eos_pkg_trust_anchor.c (#133) has no such dependency and builds everywhere.
+add_subdirectory(services/pkg)
 add_subdirectory(pkg)
 
 
