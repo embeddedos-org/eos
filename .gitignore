@@ -21,3 +21,10 @@ target/
 build_coverage/
 build_qemu_arm64/
 build_sim/ 
+
+# Sanitizer build trees. bsan/ and bsan2/ reached master in #110 -- 1441
+# files, 12.2 MB, four object files and a CMakeCache.txt full of absolute
+# paths from one contributor's machine. Every other build directory listed
+# above is here because it was committed once; this is the same mistake
+# under a name none of those patterns matched.
+bsan*/
