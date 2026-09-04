@@ -138,6 +138,27 @@ add_subdirectory(toolchains)
 # ====================================================================
 # Systems — rootfs, image, firmware assembly
 # ====================================================================
+# The backend registry. firmware.c calls eos_backend_find() and
+# eos_backend_find_by_type(), so eos_systems cannot link without it.
+add_subdirectory(backends)
+# The eos command-line tool. It links eos_backends and calls
+# eos_backend_registry_init() plus each eos_backend_*_init(), so it could not
+# be built until the registry was: cmd/ was in no add_subdirectory() either,
+# and the binary the README tells users to run did not exist.
+#
+# Host-only, gated the same way services/pkg is. It is a build-system driver
+# that runs on the developer's machine, and it is an *executable*: the
+# Cortex-M4 toolchain file puts -specs=nosys.specs in CMAKE_C_FLAGS_INIT while
+# the board file adds it to the link flags too, which is harmless for static
+# libraries and fatal the moment something is linked --
+#
+#   arm-none-eabi-gcc: fatal error: nosys.specs: attempt to rename spec
+#   'link_gcc_c_sequence' to already defined spec 'nosys_link_gcc_c_sequence'
+#
+# so a cross build must not try to link it.
+if(NOT CMAKE_CROSSCOMPILING)
+    add_subdirectory(cmd/eos)
+endif()
 add_subdirectory(systems)
 
 # ====================================================================

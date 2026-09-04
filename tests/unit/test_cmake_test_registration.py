@@ -29,10 +29,6 @@ NOT_BUILT = {
         "asserts stub semantics: test_accept_no_client() expects "
         "eos_net_accept() to return EOS_SOCKET_INVALID, but the POSIX "
         "implementation blocks, so the suite hangs rather than fails",
-    "test_firmware.c":
-        "links eos_systems, whose firmware.c calls eos_backend_find(); "
-        "backends/ is in no add_subdirectory() and its 12 sources no longer "
-        "compile against the current headers, so nothing can resolve it",
     "test_profiles.c":
         "cannot run a case: main() accepts only the literal strings "
         '"products", "./products" and "../products", and products/ holds '

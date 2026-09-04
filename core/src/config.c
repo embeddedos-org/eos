@@ -183,6 +183,43 @@ EosResult eos_config_load(EosConfig *cfg, const char *path) {
             if (strcmp(key, "docs") == 0)           { section = SEC_DOCS; continue; }
         }
 
+        /* A key at system's own child indent belongs to system, not to
+         * whichever sub-section was descended into last. Without this,
+         * `system.linux` swallowed the sibling `rtos:` in every hybrid
+         * config: SEC_SYSTEM_LINUX handles only `provider`, `kernel` and
+         * `rootfs`, so the RTOS list was never entered, rtos_count stayed 0,
+         * and a hybrid build produced no RTOS firmware without saying so.
+         * SEC_SYSTEM_KERNEL already popped back for one specific sibling;
+         * this does it for all of them, which is what the indentation means.
+         *
+         * The guard is structural rather than a list of the seven keys that
+         * `case SEC_SYSTEM:` happens to handle today. A key list here is a
+         * second authority on what a system child key is, kept in step with
+         * the switch below by hand and by nothing else -- add an eighth key
+         * there and the swallow returns for it, silently, with no test that
+         * fails. Every descendant of a system sub-section sits at indent >= 2
+         * (system.linux.provider at 2, rtos entry keys at 3) and list items
+         * `continue` before reaching here, so indent <= 1 is exactly the
+         * "back at system's own child level" condition. */
+        if (indent <= 1 &&
+            (section == SEC_SYSTEM_LINUX || section == SEC_SYSTEM_KERNEL ||
+             section == SEC_SYSTEM_ROOTFS || section == SEC_SYSTEM_RTOS ||
+             section == SEC_SYSTEM_RTOS_ENTRY)) {
+            section = SEC_SYSTEM;
+        }
+
+        /* Same shape, one section up. SEC_TOOLCHAIN_LINUX popped back for
+         * exactly one sibling and SEC_TOOLCHAIN_RTOS for none, so a `target:`
+         * written at toolchain's own indent after the linux:/rtos: blocks
+         * landed in toolchain.rtos_target instead of toolchain.target --
+         * silently, exactly as rtos_count stayed 0. No config under examples/
+         * is ordered that way today, which is the only reason it has not
+         * bitten. */
+        if (indent <= 1 &&
+            (section == SEC_TOOLCHAIN_LINUX || section == SEC_TOOLCHAIN_RTOS)) {
+            section = SEC_TOOLCHAIN;
+        }
+
         /* sub-sections */
         switch (section) {
         case SEC_PROJECT:
@@ -201,7 +238,6 @@ EosResult eos_config_load(EosConfig *cfg, const char *path) {
             break;
         case SEC_TOOLCHAIN_LINUX:
             if (strcmp(key, "target") == 0) strncpy(cfg->toolchain.target, val, EOS_MAX_NAME - 1);
-            if (indent <= 1 && strcmp(key, "rtos") == 0) { section = SEC_TOOLCHAIN_RTOS; continue; }
             break;
         case SEC_TOOLCHAIN_RTOS:
             if (strcmp(key, "target") == 0) strncpy(cfg->toolchain.rtos_target, val, EOS_MAX_NAME - 1);
