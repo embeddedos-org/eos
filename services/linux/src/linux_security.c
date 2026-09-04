@@ -3,10 +3,12 @@
 // ISO/IEC 25000 | ISO/IEC/IEEE 15288:2023
 
 #include "eos/linux_security.h"
+#include "eos/log.h"
 #include <stdio.h>
 #include <string.h>
 #include <stdlib.h>
 #include <sys/stat.h>
+#include <ctype.h>
 
 #ifdef _WIN32
 #include <direct.h>
@@ -43,14 +45,63 @@ int eos_selinux_set_policy(EosSelinux *se, const char *policy_dir,
     return -1;
 }
 
+/* Reject anything a shell reads as syntax rather than as text.
+ *
+ * The previous list -- ;|&><$()\"' -- missed two that matter. A backtick is
+ * command substitution in every POSIX shell, so /tmp/`id` passed as safe and
+ * ran id. A newline ends one command and starts another, so a path could
+ * append a whole second command. Both were reported SAFE. Control characters
+ * and backslash are rejected for the same reason.
+ *
+ * A NULL path returned 1 -- "safe" -- which is the wrong default for a
+ * predicate guarding command construction. It returns 0 now; every caller
+ * here treats 0 as refuse. */
 static int is_path_safe(const char *path) {
-    if (!path) return 1;
-    if (strpbrk(path, ";|&><$()\"'")) return 0;
+    const unsigned char *p;
+    if (!path) return 0;
+    for (p = (const unsigned char *)path; *p; p++) {
+        if (*p < 0x20 || *p == 0x7f) return 0;
+        if (strchr(";|&><$()\"'`\\", (char)*p)) return 0;
+    }
+    return 1;
+}
+
+/* Two busybox call sites interpolate without surrounding quotes
+ * (`make -C "%s" %s` and ` CROSS_COMPILE=%s`), where a single space is
+ * already enough to turn one argument into two. Those use this instead.
+ *
+ * This was a second denylist -- space, tab, *, ?, ~ -- and it had the same
+ * shape of hole as the first one: it missed [ and ] (a glob character class)
+ * and { } (brace expansion, which /bin/sh performs when it is bash), all of
+ * which reach make unquoted. Answering an incomplete denylist with another
+ * denylist just moves the next gap further out.
+ *
+ * "One shell word" has a small positive definition, so it is written as one.
+ * isalnum() plus ._/+=:- covers every defconfig target, cross-compile prefix,
+ * hash algorithm name and hex root hash this tree uses, and an allowlist
+ * cannot be incomplete.
+ *
+ * A leading '-' is refused separately: it is built from allowed characters
+ * but turns `make -C dir <defconfig>` into an option rather than a target.
+ *
+ * The empty string is a word. An unset cross_compile is the ordinary case,
+ * and every caller checks the field for content before interpolating it. */
+static int is_word_safe(const char *word) {
+    const unsigned char *p;
+    if (!word) return 0;
+    if (word[0] == '-') return 0;
+    for (p = (const unsigned char *)word; *p; p++) {
+        if (isalnum(*p)) continue;
+        if (strchr("._/+=:-", (char)*p)) continue;
+        return 0;
+    }
     return 1;
 }
 
 int eos_selinux_install_to_rootfs(const EosSelinux *se, const char *rootfs_dir) {
-    if (!is_path_safe(se->policy_dir) || !is_path_safe(se->policy_name)) {
+    /* rootfs_dir reaches the cp below through `path`; it was unchecked. */
+    if (!is_path_safe(se->policy_dir) || !is_path_safe(se->policy_name) ||
+        !is_path_safe(rootfs_dir)) {
         return -1;
     }
     char path[1024];
@@ -77,9 +128,25 @@ int eos_selinux_install_to_rootfs(const EosSelinux *se, const char *rootfs_dir) 
         MKDIR(path);
 #ifndef _WIN32
         char cmd[2048];
-        snprintf(cmd, sizeof(cmd), "cp -r \"%s/\"* \"%s/\" 2>/dev/null || true",
+        /* The `|| true` hid the copy's exit status and system()'s result was
+         * discarded on top of it, so a failed copy left /etc/selinux/config
+         * naming a policy the rootfs does not contain -- and reported that
+         * with a 0. .ai/security.md, Never: "Report a check as passing
+         * without running it." */
+        snprintf(cmd, sizeof(cmd), "cp -r \"%s/\"* \"%s/\" 2>/dev/null",
                  se->policy_dir, path);
-        system(cmd);
+        if (system(cmd) != 0) {
+            EOS_ERROR("SELinux policy copy failed (%s -> %s); the rootfs "
+                      "config names a policy that is NOT installed.",
+                      se->policy_dir, path);
+            return -1;
+        }
+#else
+        /* No cp here, so the policy is not installed. Returning 0 would be
+         * the same untrue answer the `|| true` gave. */
+        EOS_ERROR("SELinux policy files cannot be installed on this platform; "
+                  "the rootfs config names a policy that is NOT installed.");
+        return -1;
 #endif
     }
     return 0;
@@ -90,22 +157,35 @@ int eos_selinux_label_rootfs(const EosSelinux *se, const char *rootfs_dir) {
     if (!is_path_safe(rootfs_dir) || !is_path_safe(se->file_contexts)) {
         return -1;
     }
+    /* Labeling needs file_contexts. Without it this used to echo a line
+     * about skipping and return 0 -- an unlabeled rootfs reported as a
+     * labeled one. SELinux enforcing over unlabeled files is exactly the
+     * state a caller has to be told about. */
+    if (!se->file_contexts[0]) {
+        EOS_ERROR("SELinux is enabled but no file_contexts is set; the rootfs "
+                  "at %s is NOT labeled.", rootfs_dir);
+        return -1;
+    }
 #ifndef _WIN32
     char cmd[2048];
-    if (se->file_contexts[0]) {
-        snprintf(cmd, sizeof(cmd),
-                 "setfiles -r \"%s\" \"%s\" \"%s\" 2>/dev/null || "
-                 "echo 'setfiles not available — skipping labeling'",
-                 rootfs_dir, se->file_contexts, rootfs_dir);
-    } else {
-        snprintf(cmd, sizeof(cmd),
-                 "echo 'No file_contexts specified — skipping SELinux labeling'");
+    /* The `|| echo` tail masked setfiles' exit status and system()'s result
+     * was discarded on top of it, so on any host without setfiles this
+     * labeled nothing and returned 0. Absent tool and failed tool are both
+     * "not labeled", and neither is a 0. */
+    snprintf(cmd, sizeof(cmd),
+             "setfiles -r \"%s\" \"%s\" \"%s\" 2>/dev/null",
+             rootfs_dir, se->file_contexts, rootfs_dir);
+    if (system(cmd) != 0) {
+        EOS_ERROR("setfiles failed or is not installed; the rootfs at %s is "
+                  "NOT labeled.", rootfs_dir);
+        return -1;
     }
-    system(cmd);
-#else
-    (void)rootfs_dir;
-#endif
     return 0;
+#else
+    EOS_ERROR("SELinux labeling cannot run on this platform; the rootfs at %s "
+              "is NOT labeled.", rootfs_dir);
+    return -1;
+#endif
 }
 
 void eos_selinux_dump(const EosSelinux *se) {
@@ -137,6 +217,7 @@ int eos_ima_set_key(EosIma *ima, const char *key_file) {
 }
 
 int eos_ima_install_to_rootfs(const EosIma *ima, const char *rootfs_dir) {
+    if (!is_path_safe(rootfs_dir) || !is_path_safe(ima->key_file)) return -1;
     if (ima->mode == EOS_IMA_OFF) return 0;
 
     char path[1024];
@@ -150,12 +231,19 @@ int eos_ima_install_to_rootfs(const EosIma *ima, const char *rootfs_dir) {
     if (!fp) return -1;
 
     if (ima->policy_file[0]) {
+        /* A named policy file that cannot be opened used to leave an empty
+         * /etc/ima/policy behind and return 0 -- IMA configured to measure
+         * nothing, reported as installed. */
         FILE *src = fopen(ima->policy_file, "r");
-        if (src) {
-            char buf[1024];
-            while (fgets(buf, sizeof(buf), src)) fputs(buf, fp);
-            fclose(src);
+        if (!src) {
+            fclose(fp);
+            EOS_ERROR("IMA policy file %s cannot be read; /etc/ima/policy "
+                      "would be empty.", ima->policy_file);
+            return -1;
         }
+        char buf[1024];
+        while (fgets(buf, sizeof(buf), src)) fputs(buf, fp);
+        fclose(src);
     } else {
         if (ima->measure_files)
             fprintf(fp, "measure func=FILE_CHECK mask=MAY_EXEC\n");
@@ -172,9 +260,20 @@ int eos_ima_install_to_rootfs(const EosIma *ima, const char *rootfs_dir) {
         char cmd[2048];
         snprintf(path, sizeof(path), "%s%setc%skeys", rootfs_dir, PATH_SEP, PATH_SEP);
         MKDIR(path);
-        snprintf(cmd, sizeof(cmd), "cp \"%s\" \"%s/ima-key.pub\" 2>/dev/null || true",
+        /* Same `|| true` + discarded result as the SELinux copy above. An
+         * appraise policy with no key installed is a rootfs that will refuse
+         * to run its own executables, and it returned 0. */
+        snprintf(cmd, sizeof(cmd), "cp \"%s\" \"%s/ima-key.pub\" 2>/dev/null",
                  ima->key_file, path);
-        system(cmd);
+        if (system(cmd) != 0) {
+            EOS_ERROR("IMA key copy failed (%s -> %s/ima-key.pub); the policy "
+                      "is installed but the key is NOT.", ima->key_file, path);
+            return -1;
+        }
+#else
+        EOS_ERROR("The IMA key cannot be installed on this platform; the "
+                  "policy is installed but the key is NOT.");
+        return -1;
 #endif
     }
     return 0;
@@ -182,17 +281,30 @@ int eos_ima_install_to_rootfs(const EosIma *ima, const char *rootfs_dir) {
 
 int eos_ima_sign_file(const EosIma *ima, const char *file_path) {
     if (!ima->key_file[0]) return -1;
+    if (!is_path_safe(file_path) || !is_path_safe(ima->key_file) ||
+        !is_word_safe(ima->algo)) return -1;
 #ifndef _WIN32
     char cmd[2048];
+    /* The `|| echo 'evmctl not available'` tail masked the shell's exit
+     * status, and the result of system() was discarded on top of that -- so
+     * on any host without evmctl this function signed nothing and told its
+     * caller it had signed. .ai/security.md: a verification step that cannot
+     * run must fail, not pass. Follows eos_dmverity_verify(), which already
+     * gets this right. */
     snprintf(cmd, sizeof(cmd),
-             "evmctl sign --key \"%s\" --hashalgo %s \"%s\" 2>/dev/null || "
-             "echo 'evmctl not available'",
+             "evmctl sign --key \"%s\" --hashalgo %s \"%s\" 2>/dev/null",
              ima->key_file, ima->algo, file_path);
-    system(cmd);
+    int rc = system(cmd);
+    if (rc != 0) {
+        EOS_ERROR("IMA signing failed for %s (evmctl missing or refused); "
+                  "the file is NOT signed.", file_path);
+        return -1;
+    }
+    return 0;
 #else
     (void)file_path;
+    return -1;
 #endif
-    return 0;
 }
 
 int eos_ima_generate_kernel_params(const EosIma *ima, char *params, size_t params_sz) {
@@ -226,6 +338,8 @@ void eos_dmverity_init(EosDmVerity *dv) {
 
 int eos_dmverity_create(EosDmVerity *dv, const char *image_path,
                         const char *hash_output) {
+    if (!is_path_safe(image_path) || !is_path_safe(hash_output) ||
+        !is_word_safe(dv->hash_algo)) return -1;
     strncpy(dv->data_device, image_path, sizeof(dv->data_device) - 1);
     strncpy(dv->hash_device, hash_output, sizeof(dv->hash_device) - 1);
 
@@ -301,6 +415,11 @@ int eos_dmverity_generate_kernel_params(const EosDmVerity *dv,
 }
 
 int eos_dmverity_verify(EosDmVerity *dv, const char *image_path) {
+    if (!is_path_safe(image_path) || !is_path_safe(dv->hash_device) ||
+        !is_word_safe(dv->root_hash)) {
+        dv->verified = 0;
+        return -1;
+    }
 #ifndef _WIN32
     char cmd[2048];
     snprintf(cmd, sizeof(cmd),
@@ -440,7 +559,15 @@ void eos_busybox_init(EosBusybox *bb) {
 }
 
 int eos_busybox_set_version(EosBusybox *bb, const char *version) {
+    /* version is interpolated into source_dir, which is then interpolated
+     * into `make -C "%s"`. Inside those double quotes a backtick is command
+     * substitution, so this was an injection site with no check on it at all
+     * -- and it was the *default* path, taken whenever a caller does not set
+     * source_dir itself. Refuse at the boundary rather than relying on the
+     * check further down, which the caller can reach around. */
+    if (!bb || !is_word_safe(version)) return -1;
     strncpy(bb->version, version, sizeof(bb->version) - 1);
+    bb->version[sizeof(bb->version) - 1] = '\0';
     return 0;
 }
 
@@ -479,21 +606,42 @@ int eos_busybox_add_network_set(EosBusybox *bb) {
 }
 
 int eos_busybox_configure(EosBusybox *bb) {
+    if (!bb) return -1;
+    if (!is_word_safe(bb->defconfig) || !is_word_safe(bb->cross_compile))
+        return -1;
+
+    /* Fill the default BEFORE validating it. The check used to run first, so
+     * on the default path -- source_dir empty, which is what eos_busybox_init
+     * leaves -- is_path_safe("") returned 1 because the loop body never ran,
+     * the guard passed, and the string built from bb->version below went
+     * straight into system(). Validating the value that is actually used is
+     * the whole point of the guard. */
     if (!bb->source_dir[0]) {
         snprintf(bb->source_dir, sizeof(bb->source_dir),
                  ".eos/build/src/busybox-%s", bb->version);
     }
+    if (!is_path_safe(bb->source_dir)) return -1;
 #ifndef _WIN32
     char cmd[2048];
+    int n;
+    /* offset accumulated snprintf's *would-be* length, so a truncating
+     * segment pushed it past sizeof(cmd): cmd + offset out of bounds and
+     * sizeof(cmd) - offset underflowing to a huge size_t. Unreachable at the
+     * current field widths (512 + 128 + 128 against 2048) and nothing ties
+     * the two together, so it is checked rather than reasoned about. */
     int offset = snprintf(cmd, sizeof(cmd), "make -C \"%s\" %s",
                           bb->source_dir, bb->defconfig);
+    if (offset < 0 || (size_t)offset >= sizeof(cmd)) return -1;
     if (bb->cross_compile[0]) {
-        offset += snprintf(cmd + offset, sizeof(cmd) - (size_t)offset,
-                          " CROSS_COMPILE=%s", bb->cross_compile);
+        n = snprintf(cmd + offset, sizeof(cmd) - (size_t)offset,
+                     " CROSS_COMPILE=%s", bb->cross_compile);
+        if (n < 0 || (size_t)n >= sizeof(cmd) - (size_t)offset) return -1;
+        offset += n;
     }
     if (bb->use_static) {
-        snprintf(cmd + offset, sizeof(cmd) - (size_t)offset,
-                " CONFIG_STATIC=y");
+        n = snprintf(cmd + offset, sizeof(cmd) - (size_t)offset,
+                     " CONFIG_STATIC=y");
+        if (n < 0 || (size_t)n >= sizeof(cmd) - (size_t)offset) return -1;
     }
     return system(cmd) == 0 ? 0 : -1;
 #else
@@ -503,12 +651,16 @@ int eos_busybox_configure(EosBusybox *bb) {
 }
 
 int eos_busybox_build(EosBusybox *bb) {
+    if (!is_path_safe(bb->source_dir) || !is_word_safe(bb->cross_compile)) return -1;
 #ifndef _WIN32
     char cmd[2048];
+    /* Same accumulate-the-would-be-length hazard as configure(). */
     int offset = snprintf(cmd, sizeof(cmd), "make -C \"%s\" -j4", bb->source_dir);
+    if (offset < 0 || (size_t)offset >= sizeof(cmd)) return -1;
     if (bb->cross_compile[0]) {
-        snprintf(cmd + offset, sizeof(cmd) - (size_t)offset,
-                " CROSS_COMPILE=%s", bb->cross_compile);
+        int n = snprintf(cmd + offset, sizeof(cmd) - (size_t)offset,
+                         " CROSS_COMPILE=%s", bb->cross_compile);
+        if (n < 0 || (size_t)n >= sizeof(cmd) - (size_t)offset) return -1;
     }
     return system(cmd) == 0 ? 0 : -1;
 #else
@@ -518,13 +670,27 @@ int eos_busybox_build(EosBusybox *bb) {
 }
 
 int eos_busybox_install_to_rootfs(const EosBusybox *bb, const char *rootfs_dir) {
+    if (!is_path_safe(bb->source_dir) || !is_path_safe(rootfs_dir)) return -1;
 #ifndef _WIN32
     char cmd[2048];
     if (bb->source_dir[0]) {
+        /* system()'s result was discarded here, so a rootfs with no busybox
+         * in it -- no source tree, no make, a failed build -- came back 0. */
         snprintf(cmd, sizeof(cmd),
                  "make -C \"%s\" install CONFIG_PREFIX=\"%s\"",
                  bb->source_dir, rootfs_dir);
-        system(cmd);
+        if (system(cmd) != 0) {
+            EOS_ERROR("busybox install failed (%s -> %s); the rootfs has no "
+                      "busybox and its /init would not run.",
+                      bb->source_dir, rootfs_dir);
+            return -1;
+        }
+    }
+#else
+    if (bb->source_dir[0]) {
+        EOS_ERROR("busybox cannot be installed on this platform; the rootfs "
+                  "would have no busybox.");
+        return -1;
     }
 #endif
 
@@ -532,15 +698,18 @@ int eos_busybox_install_to_rootfs(const EosBusybox *bb, const char *rootfs_dir) 
     char path[1024];
     snprintf(path, sizeof(path), "%s%sinit", rootfs_dir, PATH_SEP);
     FILE *fp = fopen(path, "w");
-    if (fp) {
-        fprintf(fp, "#!/bin/busybox sh\n");
-        fprintf(fp, "/bin/busybox --install -s\n");
-        fprintf(fp, "mount -t proc proc /proc\n");
-        fprintf(fp, "mount -t sysfs sysfs /sys\n");
-        fprintf(fp, "mount -t devtmpfs devtmpfs /dev\n");
-        fprintf(fp, "exec /sbin/init\n");
-        fclose(fp);
+    /* An unwritable /init is an initramfs that cannot boot; it was silent. */
+    if (!fp) {
+        EOS_ERROR("cannot write %s; the initramfs has no /init.", path);
+        return -1;
     }
+    fprintf(fp, "#!/bin/busybox sh\n");
+    fprintf(fp, "/bin/busybox --install -s\n");
+    fprintf(fp, "mount -t proc proc /proc\n");
+    fprintf(fp, "mount -t sysfs sysfs /sys\n");
+    fprintf(fp, "mount -t devtmpfs devtmpfs /dev\n");
+    fprintf(fp, "exec /sbin/init\n");
+    fclose(fp);
     return 0;
 }
 
