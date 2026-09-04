@@ -221,6 +221,13 @@ if(NOT CMAKE_CROSSCOMPILING)
     add_test(NAME test_pkg_trust_anchor COMMAND test_pkg_trust_anchor)
 endif()
 
+# --- test_pkg_trust_anchor_cross: cross-target test for anchor validation ---
+# This tests the same logic as test_pkg_trust_anchor but links only eos_crypto,
+# so it runs on both host and cross-compile targets. Issue #133.
+add_executable(test_pkg_trust_anchor_cross test_pkg_trust_anchor_cross.c)
+target_link_libraries(test_pkg_trust_anchor_cross PRIVATE eos_crypto)
+add_test(NAME test_pkg_trust_anchor_cross COMMAND test_pkg_trust_anchor_cross)
+
 # --- test_package: Package management ---
 add_executable(test_package test_package.c)
 target_include_directories(test_package PRIVATE
