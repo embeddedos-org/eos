@@ -187,6 +187,68 @@ static void test_queue_send_waiter_overflow(void) {
     printf("[PASS] queue send waiter overflow\n");
 }
 
+/* ---- Stale send-waiter after a timeout/wakeup race ---- */
+
+static eos_queue_handle_t q8_q;
+static eos_task_handle_t q8_a, q8_b, q8_r;
+static int q8_depth;
+
+static void q8_hook(void)
+{
+    q8_depth++;
+    if (q8_depth == 1) {
+        /* A is blocked in send_waiters. B piles in behind it. */
+        eos_task_set_current_internal(q8_b);
+        int item = 2;
+        assert(eos_queue_send(q8_q, &item, 10) == EOS_KERN_OK);
+    } else if (q8_depth == 2) {
+        /* Both A and B are queued as send waiters. A receiver drains one
+         * item: that pops A (head of the wait list) and frees the slot,
+         * which B's retry then consumes. B must leave the wait list on
+         * that success path — otherwise a stale entry for B remains. */
+        eos_task_set_current_internal(q8_r);
+        int out = 0;
+        assert(eos_queue_receive(q8_q, &out, EOS_NO_WAIT) == EOS_KERN_OK);
+        assert(out == 42);
+    }
+}
+
+static void test_queue_no_stale_send_waiter(void) {
+    eos_kernel_init();
+    assert(eos_queue_create(&q8_q, sizeof(int), 1) == EOS_KERN_OK);
+
+    int filler = 42;
+    assert(eos_queue_send(q8_q, &filler, EOS_NO_WAIT) == EOS_KERN_OK);
+
+    q8_a = (eos_task_handle_t)eos_task_create("q8a", test_entry, NULL, 5, 512);
+    q8_b = (eos_task_handle_t)eos_task_create("q8b", test_entry, NULL, 6, 512);
+    q8_r = (eos_task_handle_t)eos_task_create("q8r", test_entry, NULL, 7, 512);
+    q8_depth = 0;
+
+    q7_yield_hook = q8_hook;
+    eos_task_set_current_internal(q8_a);
+    int item = 1;
+    /* B stole the slot A was woken for, so A legitimately times out. */
+    assert(eos_queue_send(q8_q, &item, 10) == EOS_KERN_TIMEOUT);
+    q7_yield_hook = NULL;
+
+    /* B's send already succeeded; it is now blocked on something else
+     * entirely (here: a plain sleep). */
+    eos_task_block_with_timeout(q8_b, 1000);
+    assert(eos_task_get_state(q8_b) == EOS_TASK_BLOCKED);
+
+    /* Drain B's item. If B's entry went stale in send_waiters, this
+     * spuriously unblocks B from its unrelated sleep. */
+    eos_task_set_current_internal(q8_r);
+    int out = 0;
+    assert(eos_queue_receive(q8_q, &out, EOS_NO_WAIT) == EOS_KERN_OK);
+    assert(out == 2);
+    assert(eos_task_get_state(q8_b) == EOS_TASK_BLOCKED);
+
+    assert(eos_queue_delete(q8_q) == EOS_KERN_OK);
+    printf("[PASS] queue send success clears wait-list entry\n");
+}
+
 static void test_task_stats(void) {
     eos_kernel_init();
     int h = eos_task_create("stats_task", test_entry, NULL, 3, 1024);
@@ -318,8 +380,9 @@ int main(void) {
     test_semaphore();
     test_queue();
     test_queue_full();
+    test_queue_no_stale_send_waiter();
     test_task_stats();
     test_tick_overflow();
-    printf("=== ALL KERNEL TESTS PASSED (12/12) ===\n");
+    printf("=== ALL KERNEL TESTS PASSED (13/13) ===\n");
     return 0;
 }
