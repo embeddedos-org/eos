@@ -1,0 +1,61 @@
+name: Install EoSim
+description: >
+  Clone EoSim at a pinned commit, install it, stage its platform data, and
+  assert the installed dist version. One home for a recipe that was previously
+  copy-pasted at seven sites across two workflows -- each of its three past
+  fixes (-e dropped, runner.temp, shell: bash) had to be applied per site,
+  which is how the sites drifted. This is also the one place to delete the
+  platforms/ workaround from when EoSim fixes its packaging.
+
+inputs:
+  commit:
+    description: Full SHA of the EoSim commit to install.
+    required: true
+  expected-dist:
+    description: >
+      The version that commit's pyproject.toml declares to pip. Asserted via
+      importlib.metadata -- the CLI's own --version is a hardcoded literal in
+      EoSim (eosim/cli/main.py) and prints 2.0.0 from every tag, so it cannot
+      detect a wrong install. Dist metadata is the only version the pin
+      controls.
+    required: true
+
+runs:
+  using: composite
+  steps:
+    - name: Clone and install EoSim at the pinned commit
+      shell: bash
+      run: |
+        set -euo pipefail
+        git clone --filter=blob:none https://github.com/embeddedos-org/EoSim.git "${RUNNER_TEMP}/EoSim"
+        git -C "${RUNNER_TEMP}/EoSim" checkout --detach "${{ inputs.commit }}"
+        pip install "${RUNNER_TEMP}/EoSim"
+
+    - name: Stage platform data
+      shell: bash
+      run: |
+        set -euo pipefail
+        # platforms/ is data, not package data: eosim resolves PLATFORMS_DIR
+        # to <site-packages>/platforms while the package ships only
+        # eosim/platforms/__init__.py. Without this copy every `eosim run`
+        # fails with FileNotFoundError -- found on the first execution these
+        # workflows ever had.
+        #
+        # sysconfig, not dirname(dirname(eosim.__file__)): purelib needs no
+        # import and cannot be shadowed by a same-named directory on
+        # sys.path. Matches eBoot's copy of this workaround.
+        SITE_PACKAGES=$(python -c 'import sysconfig; print(sysconfig.get_paths()["purelib"])')
+        cp -r "${RUNNER_TEMP}/EoSim/platforms" "$SITE_PACKAGES/"
+
+    - name: Assert the installed dist version
+      shell: bash
+      run: |
+        set -euo pipefail
+        python - <<'PYEOF'
+        import importlib.metadata as m
+        import sys
+        got = m.version("eosim")
+        want = "${{ inputs.expected-dist }}"
+        print(f"eosim dist version: {got}")
+        sys.exit(0 if got == want else f"expected {want}, got {got}")
+        PYEOF

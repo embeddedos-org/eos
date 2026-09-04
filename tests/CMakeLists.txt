@@ -90,6 +90,11 @@ add_executable(test_crypto_rsa test_crypto_rsa.c)
 target_link_libraries(test_crypto_rsa PRIVATE eos_crypto)
 add_test(NAME test_crypto_rsa COMMAND test_crypto_rsa)
 
+# --- test_crypto_ed25519_loworder: reject keys outside the prime-order subgroup ---
+add_executable(test_crypto_ed25519_loworder test_crypto_ed25519_loworder.c)
+target_link_libraries(test_crypto_ed25519_loworder PRIVATE eos_crypto)
+add_test(NAME test_crypto_ed25519_loworder COMMAND test_crypto_ed25519_loworder)
+
 # --- test_crypto_sha512: SHA-512 against NIST vectors ---
 add_executable(test_crypto_sha512 test_crypto_sha512.c)
 target_link_libraries(test_crypto_sha512 PRIVATE eos_crypto)
