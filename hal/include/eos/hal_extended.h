@@ -970,6 +970,15 @@ typedef struct {
     int  (*gpu_alloc)(uint8_t id, size_t size, void **ptr);
     int  (*gpu_free)(uint8_t id, void *ptr);
 #endif
+
+#if EOS_ENABLE_PWM
+    int  (*pwm_init)(const eos_pwm_config_t *cfg);
+    void (*pwm_deinit)(uint8_t channel);
+    int  (*pwm_set_duty)(uint8_t channel, uint16_t duty_pct_x10);
+    int  (*pwm_set_freq)(uint8_t channel, uint32_t frequency_hz);
+    int  (*pwm_start)(uint8_t channel);
+    int  (*pwm_stop)(uint8_t channel);
+#endif
 } eos_hal_ext_backend_t;
 
 /**

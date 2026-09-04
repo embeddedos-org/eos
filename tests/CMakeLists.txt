@@ -45,6 +45,11 @@ add_executable(test_hal test_hal.c)
 target_link_libraries(test_hal PRIVATE eos_hal)
 add_test(NAME test_hal COMMAND test_hal)
 
+# --- test_pwm: PWM peripheral ---
+add_executable(test_pwm test_pwm.c)
+target_link_libraries(test_pwm PRIVATE eos_hal)
+add_test(NAME test_pwm COMMAND test_pwm)
+
 # --- test_kernel: RTOS kernel (tasks, sync, IPC) ---
 add_executable(test_kernel test_kernel.c)
 target_link_libraries(test_kernel PRIVATE eos_kernel)

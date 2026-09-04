@@ -89,42 +89,9 @@ int eos_dac_write_mv(uint8_t channel, uint32_t millivolts)
 
 /* ---- PWM ---- */
 #if EOS_ENABLE_PWM
-
-int eos_pwm_init(const eos_pwm_config_t *cfg)
-{
-    (void)cfg;
-    return -1;
-}
-
-void eos_pwm_deinit(uint8_t channel)
-{
-    (void)channel;
-}
-
-int eos_pwm_set_duty(uint8_t channel, uint16_t duty_pct_x10)
-{
-    (void)channel; (void)duty_pct_x10;
-    return -1;
-}
-
-int eos_pwm_set_freq(uint8_t channel, uint32_t frequency_hz)
-{
-    (void)channel; (void)frequency_hz;
-    return -1;
-}
-
-int eos_pwm_start(uint8_t channel)
-{
-    (void)channel;
-    return -1;
-}
-
-int eos_pwm_stop(uint8_t channel)
-{
-    (void)channel;
-    return -1;
-}
-
+/* PWM implementation moved to hal_pwm.c - platform-specific implementations
+ * for STM32F4 and Linux are provided there
+ */
 #endif /* EOS_ENABLE_PWM */
 
 /* ---- CAN ---- */

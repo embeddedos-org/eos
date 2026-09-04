@@ -54,8 +54,9 @@ if(EOS_BUILD_TESTS AND NOT EOS_PRODUCT)
         EOS_ENABLE_SENSOR=1
         EOS_ENABLE_FILESYSTEM=1
         EOS_ENABLE_MOTOR_CTRL=1
+        EOS_ENABLE_PWM=1
     )
-    message(STATUS "  Test features: multicore net power ota sensor filesystem motor_ctrl")
+    message(STATUS "  Test features: multicore net power ota sensor filesystem motor_ctrl pwm")
 endif()
 
 # Global include for eos_config.h and product profiles
@@ -70,6 +71,7 @@ include_directories(
 add_library(eos_hal STATIC
     hal/src/hal_common.c
     hal/src/hal_extended_stubs.c
+    hal/src/hal_pwm.c
 )
 
 # Which backend source is compiled, and which one eos_hal_init() falls back to,

@@ -11,6 +11,7 @@
 #define EOS_ENABLE_SPI       1
 #define EOS_ENABLE_I2C       1
 #define EOS_ENABLE_TIMER     1
+#define EOS_ENABLE_PWM       1
 #define EOS_ENABLE_USB       1
 #define EOS_ENABLE_ETHERNET  1
 #define EOS_ENABLE_DISPLAY   1
