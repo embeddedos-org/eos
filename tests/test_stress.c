@@ -316,7 +316,11 @@ static void test_semaphore_flood(void)
  * 7. Heap Fragmentation — random alloc/free pattern
  * ============================================================ */
 
+#if defined(_MSC_VER)
+__declspec(align(8)) static uint8_t stress_heap[8192];
+#else
 static uint8_t stress_heap[8192] __attribute__((aligned(8)));
+#endif
 
 static void test_heap_fragmentation(void)
 {

@@ -79,6 +79,39 @@ jobs:
             --cov-fail-under=0
         continue-on-error: false
 
+  # MSVC is a required merge gate for the hosted Windows backend and the
+  # compiler-specific test/assertion paths. Keep this separate from the Linux
+  # job because the dependency and command-line tools differ by platform.
+  windows-test:
+    name: Build & Test (Windows MSVC)
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - name: Set up MSVC
+        uses: ilammy/msvc-dev-cmd@v1
+
+      - name: Check MSVC
+        run: cl
+
+      - name: Configure (MSVC)
+        run: cmake -B build -G "Visual Studio 18 2026" -A x64 -DEOS_BUILD_TESTS=ON -DEOS_PRODUCT=vbox_test
+
+      - name: Build
+        run: cmake --build build --config Release --parallel
+
+      - name: Run C unit tests
+        shell: pwsh
+        run: |
+          ctest --test-dir build `
+            -C Release `
+            --output-on-failure `
+            --no-tests=error `
+            --timeout 120 `
+            --parallel $env:NUMBER_OF_PROCESSORS
+
   # ── Default configuration ─────────────────────────────────────────────────
   # The `test` job above builds with -DEOS_BUILD_TESTS=ON -DEOS_PRODUCT=vbox_test,
   # and both of those turn optional features on. Nothing in CI built the

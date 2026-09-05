@@ -526,6 +526,8 @@ int eos_busybox_install_to_rootfs(const EosBusybox *bb, const char *rootfs_dir) 
                  bb->source_dir, rootfs_dir);
         system(cmd);
     }
+#else
+    (void)bb;
 #endif
 
     /* Create /init symlink for initramfs boot */

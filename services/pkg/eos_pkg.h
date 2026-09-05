@@ -3,6 +3,7 @@
 
 #include <stdint.h>
 #include <stdbool.h>
+#include <stddef.h>
 
 /* .eapp package format constants */
 #define EAPP_MAGIC          0x45415050  /* "EAPP" */
@@ -88,7 +89,13 @@ typedef enum {
 } eapp_arch_t;
 
 /* .eapp file header (at offset 0 of the .eapp ZIP archive manifest) */
-typedef struct __attribute__((packed)) {
+#if defined(_MSC_VER)
+#pragma pack(push, 1)
+#define EOS_EAPP_PACKED
+#else
+#define EOS_EAPP_PACKED __attribute__((packed))
+#endif
+typedef struct EOS_EAPP_PACKED {
     uint32_t magic;             /* EAPP_MAGIC */
     uint8_t  version;           /* EAPP_VERSION */
     char     name[EAPP_MAX_NAME];
@@ -108,6 +115,25 @@ typedef struct __attribute__((packed)) {
     bool     has_gui;           /* true if app has GUI mode */
     bool     has_cli;           /* true if app has CLI mode */
 } eapp_header_t;
+#if defined(_MSC_VER)
+#pragma pack(pop)
+#endif
+#undef EOS_EAPP_PACKED
+
+/* This header is written to and read from .eapp files verbatim. Keep this
+ * contract in lockstep across every compiler that can produce a package. */
+_Static_assert(EAPP_ARCH_COUNT == 48, "eapp header layout requires 48 architectures");
+_Static_assert(sizeof(bool) == 1, "eapp header wire format requires one-byte bool");
+_Static_assert(sizeof(eapp_header_t) == 303, "eapp header wire size changed");
+_Static_assert(offsetof(eapp_header_t, magic) == 0, "eapp magic offset changed");
+_Static_assert(offsetof(eapp_header_t, name) == 5, "eapp name offset changed");
+_Static_assert(offsetof(eapp_header_t, package_id) == 69, "eapp package_id offset changed");
+_Static_assert(offsetof(eapp_header_t, capabilities) == 136, "eapp capabilities offset changed");
+_Static_assert(offsetof(eapp_header_t, binary_offset) == 189, "eapp binary offset changed");
+_Static_assert(offsetof(eapp_header_t, signature) == 205, "eapp signature offset changed");
+_Static_assert(offsetof(eapp_header_t, hash) == 269, "eapp hash offset changed");
+_Static_assert(offsetof(eapp_header_t, has_gui) == 301, "eapp has_gui offset changed");
+_Static_assert(offsetof(eapp_header_t, has_cli) == 302, "eapp has_cli offset changed");
 
 /* Installed package record */
 typedef struct {

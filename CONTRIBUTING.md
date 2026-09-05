@@ -26,10 +26,20 @@ Thank you for your interest in contributing to the Embedded Operating System!
 ```bash
 git clone https://github.com/embeddedos-org/eos.git
 cd eos
+python -m venv .venv
+# Windows PowerShell: .venv\Scripts\Activate.ps1
+# Linux/macOS: source .venv/bin/activate
+python -m pip install -r requirements-dev.txt
 cmake -B build -DEOS_BUILD_TESTS=ON -DEOS_PRODUCT=vbox_test
 cmake --build build
 ctest --test-dir build --output-on-failure
+python -m pytest tests/ -v
 ```
+
+The development requirements install `pytest` and `pytest-cov`. Doxygen is
+optional for API documentation; on Windows it can be installed with
+`winget install --id DimitriVanHeesch.Doxygen --exact`, or through the package
+manager provided by the host operating system.
 
 `EOS_PRODUCT=vbox_test` is required alongside `EOS_BUILD_TESTS=ON`: the OTA,
 sensor, motor, and power tests only compile against a product profile that
