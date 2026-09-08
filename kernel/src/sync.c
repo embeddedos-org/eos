@@ -171,7 +171,8 @@ int eos_mutex_lock(eos_mutex_handle_t h, uint32_t timeout_ms)
     }
 
     /* Refuse rather than block: a task that is not enqueued is never granted
-     * the mutex, so with EOS_WAIT_FOREVER it would sleep forever. */
+     * the mutex, so with EOS_WAIT_FOREVER it would sleep forever. Refusing
+     * also avoids boosting the owner on behalf of a caller that never waits. */
     if (g_mtx[h].waiter_count >= MTX_MAX_WAITERS) {
         eos_port_exit_critical(crit);
         return EOS_KERN_NO_MEMORY;
@@ -197,7 +198,8 @@ int eos_mutex_lock(eos_mutex_handle_t h, uint32_t timeout_ms)
         return EOS_KERN_OK;
     }
 
-    /* Timeout — leave the queue and drop the boost we were causing. */
+    /* Timeout — leave the queue and drop the boost we were causing, so a
+     * waiter that gave up no longer keeps the owner running elevated. */
     uint8_t owner = g_mtx[h].owner;
     mtx_remove_waiter(&g_mtx[h], caller);
     pi_propagate(owner);

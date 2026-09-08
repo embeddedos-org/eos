@@ -10,7 +10,7 @@
 #include <time.h>
 
 #ifdef _WIN32
-#include <windows.h>
+#include <eos/eos_windows.h>
 #endif
 
 static EosLogLevel g_log_level = EOS_LOG_INFO;
