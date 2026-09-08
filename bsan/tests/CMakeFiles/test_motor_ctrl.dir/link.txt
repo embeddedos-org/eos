@@ -1,0 +1,1 @@
+/usr/bin/cc -fsanitize=address,undefined -fno-omit-frame-pointer -g -arch arm64 -Wl,-search_paths_first -Wl,-headerpad_max_install_names -fsanitize=address,undefined CMakeFiles/test_motor_ctrl.dir/test_motor_ctrl.c.o -o test_motor_ctrl  ../services/motor/libeos_motor_ctrl.a ../libeos_hal.a

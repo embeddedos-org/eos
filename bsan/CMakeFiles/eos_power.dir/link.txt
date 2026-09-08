@@ -1,0 +1,2 @@
+/usr/bin/ar qc libeos_power.a CMakeFiles/eos_power.dir/power/src/power.c.o
+/usr/bin/ranlib libeos_power.a
