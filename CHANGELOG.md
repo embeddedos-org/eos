@@ -3,21 +3,12 @@
 ## [Unreleased]
 
 ### Fixed
-- **`eos_pkg` trust anchor:** Package signatures were checked against `eos_pkg_public_key[32] = {0}`. #99 stopped that all-zero key accepting every package, which left it rejecting every package -- including correctly signed ones -- while reporting `signature verification failed`, blaming the package for a key that was never provisioned. The key now comes from `eos_pkg_set_trust_anchor()` or from `EOS_PKG_TRUST_ANCHOR_HEX` at build time; with neither, verification refuses and says so, unless the build defines `EOS_ALLOW_UNSIGNED_PKG`. Closes the second half of #98.
-- **`services/pkg` is compiled.** `services/pkg/eos_pkg.c` was in no `CMakeLists.txt`, so no target built it and no test could reach it -- which is how the all-zero anchor survived. It is now the `eos_eapp` library, with `tests/test_pkg_trust_anchor.c` covering it.
-- **`ed25519_public_key_is_usable()`:** #99's subgroup and identity checks are exported, so a stored trust anchor can be rejected when it is configured rather than once per package as an apparent signature failure.
-- **`eos_queue_send` / `eos_queue_receive`:** A full send/recv waiter table now returns `EOS_KERN_NO_MEMORY` instead of blocking a task that can never be woken, matching mutex and semaphore behavior.
+- **Build:** `cmake -B build/host -DEOS_BUILD_TESTS=ON` failed at configure time. `tests/CMakeLists.txt` declared `test_crypto_aes` and `test_crypto_sha512` twice each, and a duplicate `add_executable`/`add_test` name is a hard CMake error, so no test target could be generated at all.
+- **Build:** `kernel/src/sync.c` and `kernel/src/task.c` did not compile. A merge left `sync.c` referencing both halves of two different priority-inheritance designs: `mtx_recompute_owner_priority()` read a `mtx_t::original_prio` field that no longer exists, while `eos_mutex_lock`/`_unlock`/`_delete` called `task_valid()`, `pi_propagate()` and `g_blocked_on[]`, none of which were defined. `eos_task_set_current_internal()` was defined twice in `task.c` and declared twice in `kernel_internal.h`. The recompute-from-invariant design the kernel documentation describes is restored, which also covers the waiter-timeout case the `original_prio` variant was added for.
 - **`eos_queue_create`:** Size check now uses division so `item_size * capacity` cannot wrap `size_t` on 32-bit targets and overflow the 1024-byte queue store.
 - **`eos_sem_create`:** Reject `initial > max` and `max` values that do not fit in `int32_t`, so the counting-semaphore invariant cannot be created already broken.
 - **`eos_mutex_lock`:** Recursive lock returns `EOS_KERN_FULL` at `uint8_t` saturation instead of wrapping `rec_count` to 0 and leaving the mutex stuck.
-- **`eos_mutex_lock`:** A waiter that times out no longer leaves the mutex owner permanently boosted. The owner's effective priority is recomputed from its base priority and the remaining waiters, so the boost propagates transitively along the blocking chain and is withdrawn when a waiter leaves. A full waiter table returns `EOS_KERN_NO_MEMORY` without applying a boost.
-- **`eos_dt_parse`:** Bounds-check the flattened device tree blob before dereferencing it. A malformed DTB could previously read outside the buffer four different ways: `off_struct` past the end of the blob (the `size - off_struct` bound wrapped), a node name with no terminator (unbounded `strlen`), a property name offset outside the strings block, and nesting deeper than the 32-entry node stack. All are now rejected.
-- **`eos_dt_find_compatible`:** Search within `prop->len` instead of calling `strstr()` on a property value that is not guaranteed to be NUL-terminated.
-- **`eos_dt_get_irq`:** Reject a negative index, and one large enough that `index * 4` overflows, before it is used as an offset.
-
-### Added
-- `tests/test_devicetree.c` — device tree parser suite: happy path, malformed-blob rejection, a sweep over every truncation of a valid blob, and a single-byte corruption sweep.
-- `tests/fuzz/` is now wired into the build. The directory was never added by any `add_subdirectory`, so no fuzz target could be built. `fuzz_devicetree` is enabled and calls the real `eos_dt_parse()` API — it previously declared a non-existent `eos_dtb_parse()` and was commented out.
+- **`eos_mutex_lock`:** A waiter that times out no longer leaves the mutex owner permanently boosted. The owner's effective priority is recomputed from its base priority and the waiters that remain. A full waiter table returns `EOS_KERN_NO_MEMORY` without applying a boost, since a caller that is never enqueued is never granted the mutex.
 
 ## [3.0.1] - 2026-05-16
 
