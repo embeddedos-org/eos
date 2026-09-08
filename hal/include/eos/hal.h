@@ -51,7 +51,8 @@ int eos_hal_init(void);
  * that is never referenced costs nothing.
  */
 /* EOS_HAL_HOSTED: this translation unit is being compiled against a hosted
- * POSIX environment (Linux, macOS, BSDs), as opposed to bare metal. The ARM
+ * POSIX environment (Linux, macOS, BSDs), as opposed to Windows or bare
+ * metal. The ARM
  * Cortex-M cross build also compiles hal_linux.c -- EOS_PLATFORM defaults to
  * "linux" there -- and relies on this evaluating to 0 so that file stays an
  * empty translation unit; arm-none-eabi defines none of these macros. */
@@ -62,6 +63,7 @@ int eos_hal_init(void);
 #endif
 
 void eos_hal_linux_register(void);
+void eos_hal_win32_register(void);
 void eos_hal_rtos_register(void);
 
 /**

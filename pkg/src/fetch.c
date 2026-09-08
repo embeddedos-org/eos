@@ -13,9 +13,16 @@
 #ifdef _WIN32
 #include <direct.h>
 #define MKDIR(d) _mkdir(d)
+#define POPEN(c, m) _popen((c), (m))
+#define PCLOSE(f) _pclose(f)
+#define STRCASECMP(a, b) _stricmp((a), (b))
 #else
 #include <sys/types.h>
+#include <strings.h>
 #define MKDIR(d) mkdir(d, 0755)
+#define POPEN(c, m) popen((c), (m))
+#define PCLOSE(f) pclose(f)
+#define STRCASECMP(a, b) strcasecmp((a), (b))
 #endif
 
 /*
@@ -121,10 +128,24 @@ static EosResult compute_file_sha256(const char *path, char *hex_out) {
     return EOS_OK;
 }
 
+/* ".git" as a substring matched far more than git repositories: any host
+ * under *.github.io, and any tarball whose path happened to contain it --
+ * https://example.com/.github/release.tar.gz took the git branch and skipped
+ * the tarball digest check entirely. Anchor it: a git URL ends in ".git", or
+ * has ".git" immediately before the fragment or query, or carries a git
+ * scheme. */
 static int is_git_url(const char *url) {
-    return (strstr(url, ".git") != NULL ||
-            strncmp(url, "git://", 6) == 0 ||
-            strncmp(url, "git@", 4) == 0);
+    if (strncmp(url, "git://", 6) == 0 || strncmp(url, "git@", 4) == 0)
+        return 1;
+
+    const char *dotgit = strstr(url, ".git");
+    while (dotgit) {
+        char next = dotgit[4];
+        if (next == '\0' || next == '/' || next == '#' || next == '?')
+            return 1;
+        dotgit = strstr(dotgit + 1, ".git");
+    }
+    return 0;
 }
 
 static int is_tarball(const char *url) {
@@ -140,7 +161,29 @@ static int is_url_safe(const char *url) {
     return 1;
 }
 
-static EosResult fetch_git(const char *url, const char *dest) {
+/* Read the commit the clone actually landed on. */
+static EosResult git_head_commit(const char *dest, char *out, size_t out_len) {
+    char cmd[2048];
+    snprintf(cmd, sizeof(cmd),
+             "git -C \"%s\" rev-parse HEAD", dest);
+
+    FILE *fp = POPEN(cmd, "r");
+    if (!fp) return EOS_ERR_FETCH;
+
+    char buf[128] = {0};
+    char *got = fgets(buf, sizeof(buf), fp);
+    int rc = PCLOSE(fp);
+    if (!got || rc != 0) return EOS_ERR_FETCH;
+
+    size_t n = strcspn(buf, " \t\r\n");
+    if (n == 0 || n >= out_len) return EOS_ERR_FETCH;
+    memcpy(out, buf, n);
+    out[n] = '\0';
+    return EOS_OK;
+}
+
+static EosResult fetch_git(const char *url, const char *dest,
+                           const char *expected_commit) {
     if (!is_url_safe(url)) {
         EOS_ERROR("Potentially unsafe git URL detected: %s", url);
         return EOS_ERR_FETCH;
@@ -149,7 +192,28 @@ static EosResult fetch_git(const char *url, const char *dest) {
     snprintf(cmd, sizeof(cmd), "git clone --depth 1 \"%s\" \"%s\"", url, dest);
     EOS_INFO("Fetching (git): %s", url);
     int rc = system(cmd);
-    return (rc == 0) ? EOS_OK : EOS_ERR_FETCH;
+    if (rc != 0) return EOS_ERR_FETCH;
+
+    /* The clone is of whatever the default branch points at right now, which
+     * is not a fixed input -- "a clone carries its own object hashes" says
+     * the transfer was not corrupted, not that the content is the content
+     * that was reviewed. Compare against the pinned commit. */
+    char head[128];
+    if (git_head_commit(dest, head, sizeof(head)) != EOS_OK) {
+        EOS_ERROR("Refusing %s: cloned, but the checked-out commit could not "
+                  "be read, so it cannot be compared to the pin.", url);
+        return EOS_ERR_CHECKSUM;
+    }
+
+    if (STRCASECMP(head, expected_commit) != 0) {
+        EOS_ERROR("Commit mismatch for %s\n  expected %s\n  got      %s\n"
+                  "  The branch has moved since this revision was pinned.",
+                  url, expected_commit, head);
+        return EOS_ERR_CHECKSUM;
+    }
+
+    EOS_INFO("Verified git commit: %s", head);
+    return EOS_OK;
 }
 
 static EosResult fetch_tarball(const char *url, const char *dest) {
@@ -209,6 +273,28 @@ EosResult eos_fetch_source(const char *url, const char *dest_dir,
         return EOS_ERR_FETCH;
     }
 
+    /* A download with no expected digest is an unverified download. The
+     * check below ran only "if (expected_hash && expected_hash[0])", so
+     * omitting one argument bought a download that was extracted with
+     * nothing compared against it -- and the caller cannot tell that apart
+     * from a verified fetch, because both return EOS_OK. Refuse here,
+     * before the network is touched.
+     *
+     * This applies to git as well. The earlier exemption said "a clone
+     * carries its own object hashes", which is true and does not support it:
+     * object hashes prove the transfer was not corrupted, not that the
+     * content is the content that was reviewed. `git clone --depth 1` takes
+     * whatever the default branch points at when it runs, so an unpinned
+     * git source is exactly the moving input this function exists to refuse.
+     * For a git URL the pin is the commit object name, not a SHA-256 of an
+     * archive; fetch_git() compares it against the checked-out HEAD. */
+    if (!(expected_hash && expected_hash[0])) {
+        EOS_ERROR("Refusing to fetch %s: no expected %s was given, so the "
+                  "download cannot be verified against anything.",
+                  url, is_git_url(url) ? "commit" : "SHA-256");
+        return EOS_ERR_CHECKSUM;
+    }
+
     /* Determine archive path for checksum verification */
     char archive_path[EOS_MAX_PATH] = {0};
     if (is_tarball(url)) {
@@ -220,7 +306,7 @@ EosResult eos_fetch_source(const char *url, const char *dest_dir,
 
     EosResult res;
     if (is_git_url(url)) {
-        res = fetch_git(url, dest_dir);
+        res = fetch_git(url, dest_dir, expected_hash);
     } else if (is_tarball(url)) {
         /* Download first (before extraction) for checksum */
         MKDIR(dest_dir);

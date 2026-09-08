@@ -24,6 +24,12 @@ ADD_TEST_RE = re.compile(r"add_test\(\s*NAME\s+(\w+)\s+COMMAND\s+(\w+)")
 #: Suites that are deliberately not built, and why. A name may only sit here
 #: with a reason that is about the suite itself -- "it is broken" is not one,
 #: because a broken suite is exactly what these tests exist to surface.
+#:
+#: What this guard checks is that every suite is built and registered. It does
+#: NOT check that a suite reaches the code it is named after: a file that
+#: links nothing and asserts against its own fixtures satisfies it completely.
+#: test_net_mock.c is exactly that, which is why it is listed here rather than
+#: registered -- being built would have made it look covered.
 NOT_BUILT = {
     "test_net_integration.c":
         "asserts stub semantics: test_accept_no_client() expects "
@@ -34,6 +40,14 @@ NOT_BUILT = {
         '"products", "./products" and "../products", and products/ holds '
         "headers, not the *.yaml the scan looks for -- it reports 0/0 and "
         "exits 0, which is a pass that tested nothing",
+    "test_net_mock.c":
+        "tests its own mocks and nothing else: it includes no EmbeddedOS "
+        "header, links no library, and its mock_net_* functions are called "
+        "directly rather than standing in for eos_net_*, so no change to "
+        "net/ can make it fail -- registering it would add a green ctest "
+        "entry covering nothing. Rewriting it to drive the real eos_net_* "
+        "API against the mock transport, which is what its own docblock "
+        "claims it does, would make it worth building",
     "test_performance_benchmarks.c":
         "asserts a wall-clock threshold (latency_ns < 100.0) measured by a "
         "busy loop, which is a property of the runner rather than of the code",
@@ -109,4 +123,87 @@ def test_mpu_validate_suite_is_registered():
     assert "test_mpu_validate.c" in _registered_sources(), (
         "test_mpu_validate.c is not built by tests/CMakeLists.txt -- the MPU "
         "region-programmability regression suite would silently stop running"
+    )
+
+
+# ---------------------------------------------------------------------------
+# A suite can be built and registered and still not run what it contains.
+#
+# The checks above answer "is this file compiled?". They cannot answer "is this
+# test called?", because a test function that nothing invokes is valid C. It
+# compiles, it links, ctest runs its suite, and the suite passes -- having
+# skipped it.
+#
+# tests/test_kernel.c:159 test_queue_send_waiter_overflow is the live instance:
+# defined, never called from main(), so the waiter-table overflow fix it guards
+# has had no executing test since it landed. eBoot had the same thing in
+# tests/unit/test_ed25519.c, where a merge kept a test function and dropped its
+# run_ call.
+#
+# Two declaration styles are in use here, and both are handled:
+#   static void test_x(void) { ... }   called as test_x();
+#   TEST(test_x) { ... }               called as run_test_x();
+# ---------------------------------------------------------------------------
+
+#: Test functions that are deliberately never called, and why.
+UNCALLED_OK: dict = {}
+
+TEST_MACRO_RE = re.compile(r"^TEST\(\s*(\w+)\s*\)", re.M)
+TEST_FUNC_RE = re.compile(r"^static\s+void\s+(test_\w+)\s*\(\s*void\s*\)", re.M)
+
+
+def _strip_comments(text: str) -> str:
+    """Drop comments so a name mentioned only in prose does not read as a call."""
+    text = re.sub(r"/\*.*?\*/", " ", text, flags=re.S)
+    return re.sub(r"//[^\n]*", " ", text)
+
+
+def _uncalled_in(path: Path):
+    """Return test functions defined in `path` that nothing in it references.
+
+    Counts bare identifier occurrences rather than `name(` so a function passed
+    by address -- a callback, a task entry point -- is not reported as dead.
+    """
+    src = _strip_comments(path.read_text(encoding="utf-8", errors="replace"))
+    dead = []
+    for name in TEST_MACRO_RE.findall(src):
+        # TEST(x) also defines run_x(); main() is expected to call that.
+        if len(re.findall(rf"\brun_{re.escape(name)}\b", src)) == 0:
+            dead.append(name)
+    for name in TEST_FUNC_RE.findall(src):
+        # One occurrence is the definition itself; a call adds a second.
+        if len(re.findall(rf"\b{re.escape(name)}\b", src)) < 2:
+            dead.append(name)
+    return dead
+
+
+def test_every_test_function_is_called():
+    """A test that is compiled but never invoked is a silent gap in coverage."""
+    findings = []
+    for name in sorted(_registered_sources()):
+        path = TESTS_DIR / name
+        if not path.exists():
+            continue
+        for fn in _uncalled_in(path):
+            if fn not in UNCALLED_OK:
+                findings.append(f"{name}::{fn}")
+
+    assert not findings, (
+        "these test functions are defined in a suite that is built and "
+        "registered, but nothing calls them, so they do not run and cannot "
+        f"fail: {sorted(findings)}. Call them from main(), delete them, or "
+        "add each to UNCALLED_OK with a reason."
+    )
+
+
+def test_uncalled_ok_has_no_stale_entries():
+    """An exemption for a test that is now called hides the next real gap."""
+    still_dead = set()
+    for name in sorted(_registered_sources()):
+        path = TESTS_DIR / name
+        if path.exists():
+            still_dead.update(_uncalled_in(path))
+    stale = sorted(n for n in UNCALLED_OK if n not in still_dead)
+    assert not stale, (
+        f"these are called now and should leave UNCALLED_OK: {stale}"
     )

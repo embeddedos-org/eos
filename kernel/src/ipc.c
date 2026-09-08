@@ -102,6 +102,16 @@ int eos_queue_send(eos_queue_handle_t h, const void *item, uint32_t timeout_ms)
         memcpy(g_q[h].buf + g_q[h].head * g_q[h].item_size, item, g_q[h].item_size);
         g_q[h].head = (g_q[h].head + 1) % g_q[h].capacity;
         g_q[h].count++;
+        /* Remove from wait queue if still there (woken by timeout, not by a
+         * receiver) — a stale entry would later steal another waiter's wakeup. */
+        for (int i = 0; i < g_q[h].send_waiter_count; i++) {
+            if (g_q[h].send_waiters[i] == caller) {
+                for (int j = i; j < g_q[h].send_waiter_count - 1; j++)
+                    g_q[h].send_waiters[j] = g_q[h].send_waiters[j + 1];
+                g_q[h].send_waiter_count--;
+                break;
+            }
+        }
         eos_port_exit_critical(crit);
         return EOS_KERN_OK;
     }
@@ -166,6 +176,16 @@ int eos_queue_receive(eos_queue_handle_t h, void *item, uint32_t timeout_ms)
         memcpy(item, g_q[h].buf + g_q[h].tail * g_q[h].item_size, g_q[h].item_size);
         g_q[h].tail = (g_q[h].tail + 1) % g_q[h].capacity;
         g_q[h].count--;
+        /* Remove from wait queue if still there (woken by timeout, not by a
+         * sender) — a stale entry would later steal another waiter's wakeup. */
+        for (int i = 0; i < g_q[h].recv_waiter_count; i++) {
+            if (g_q[h].recv_waiters[i] == caller) {
+                for (int j = i; j < g_q[h].recv_waiter_count - 1; j++)
+                    g_q[h].recv_waiters[j] = g_q[h].recv_waiters[j + 1];
+                g_q[h].recv_waiter_count--;
+                break;
+            }
+        }
         eos_port_exit_critical(crit);
         return EOS_KERN_OK;
     }

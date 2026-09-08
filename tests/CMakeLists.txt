@@ -15,7 +15,36 @@
 # test, which stay exactly as CI builds them for release -- keeps every
 # existing assert() meaningful without rewriting 684 call sites.
 # ---------------------------------------------------------------------------
-add_compile_options(-UNDEBUG)
+if(MSVC)
+    foreach(config RELEASE RELWITHDEBINFO MINSIZEREL)
+        string(REPLACE "/DNDEBUG" "" CMAKE_C_FLAGS_${config}
+               "${CMAKE_C_FLAGS_${config}}")
+    endforeach()
+    add_compile_options("/FI${CMAKE_CURRENT_SOURCE_DIR}/assertions_enabled.h")
+else()
+    add_compile_options(-UNDEBUG)
+    add_compile_options(-include "${CMAKE_CURRENT_SOURCE_DIR}/assertions_enabled.h")
+endif()
+
+# ---------------------------------------------------------------------------
+# A check macro that is not declared is not a check.
+#
+# test_net.c called assert() with no <assert.h>: `assert` became an implicit
+# declaration, so the file did not compile on Clang >= 15 and did not link on
+# any toolchain (undefined reference to `assert`). ctest reported the whole
+# suite as Not Run.
+#
+# gcc-12, which the CI test job uses, only warns about an implicit
+# declaration, so nothing failed at the point the mistake was introduced.
+# Promoting it to an error here catches the next one at the same place.
+#
+# Test targets only, and only for the compiler families that spell the flag
+# this way -- MSVC uses /we4013 and nightly.yml builds these tests on
+# windows-latest. Mirrors the guard at CMakeLists.txt:14.
+# ---------------------------------------------------------------------------
+if(CMAKE_C_COMPILER_ID MATCHES "GNU|Clang")
+    add_compile_options(-Werror=implicit-function-declaration)
+endif()
 
 # EoS Unit Tests
 # --- test_board_configs: Board YAML schema shape ---
@@ -112,10 +141,6 @@ add_executable(test_e2e test_e2e.c)
 target_link_libraries(test_e2e PRIVATE eos_kernel)
 add_test(NAME test_e2e COMMAND test_e2e)
 
-# --- test_net_mock: eNet socket API against a mock transport ---
-add_executable(test_net_mock test_net_mock.c)
-add_test(NAME test_net_mock COMMAND test_net_mock)
-
 # --- test_hal_stm32f4: STM32F4 peripheral register behaviour ---
 # Builds on the host against the simulated register block; it needed only the
 # board header directory on the include path, which is why it never ran.
@@ -208,7 +233,7 @@ add_executable(test_net test_net.c)
 target_link_libraries(test_net PRIVATE eos_net)
 # The POSIX round-trip cases need the same switch the library was built with,
 # plus pthreads for the listener they connect to.
-if(NOT CMAKE_CROSSCOMPILING)
+if(NOT CMAKE_CROSSCOMPILING AND UNIX)
     target_compile_definitions(test_net PRIVATE EOS_NET_POSIX=1)
     find_package(Threads REQUIRED)
     target_link_libraries(test_net PRIVATE Threads::Threads)
