@@ -2,7 +2,6 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
-#include <assert.h>
 #define EOS_ENABLE_NET 1
 #include "eos/eos_config.h"
 #include "eos/net.h"
