@@ -6,7 +6,6 @@
 #include <string.h>
 #include <fcntl.h>
 #include <sys/stat.h>
-#include <unistd.h>
 #include "eos/config.h"
 #include "eos/lockfile.h"
 #include "eos/log.h"

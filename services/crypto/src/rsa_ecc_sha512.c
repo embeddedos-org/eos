@@ -51,8 +51,9 @@
 int eos_rsa_sign_sha256(const EosRsaKey *key, const uint8_t hash[32],
                         uint8_t *sig, size_t *sig_len) {
     if (!key || !key->has_private || !hash || !sig || !sig_len) return -1;
+#ifndef EOS_ALLOW_STUB_CRYPTO
     EOS_STUB_CRYPTO_REFUSE("eos_rsa_sign_sha256");
-
+#else
     /* Stub: produce a deterministic fake signature for testing.
      * Replace with real PKCS#1 v1.5 or PSS signing. */
     size_t len = (size_t)(key->key_bits / 8);
@@ -64,11 +65,15 @@ int eos_rsa_sign_sha256(const EosRsaKey *key, const uint8_t hash[32],
     memcpy(sig + len - 32, hash, 32);
     *sig_len = len;
     return 0;
+#endif
 }
 
 int eos_rsa_verify_sha256(const EosRsaKey *key, const uint8_t hash[32],
                           const uint8_t *sig, size_t sig_len) {
+#ifndef EOS_ALLOW_STUB_CRYPTO
+    (void)key; (void)hash; (void)sig; (void)sig_len;
     EOS_STUB_CRYPTO_REFUSE("eos_rsa_verify_sha256");
+#else
     if (!key) return -1;
     size_t len = (size_t)(key->key_bits / 8);
     if (len == 0) len = 256;
@@ -77,12 +82,15 @@ int eos_rsa_verify_sha256(const EosRsaKey *key, const uint8_t hash[32],
     /* Stub: check if signature ends with the hash (matches our stub signing) */
     if (memcmp(sig + len - 32, hash, 32) != 0) return -1;
     return 0;
+#endif
 }
 
 int eos_ecc_sign(const EosEccKey *key, const uint8_t *hash, size_t hash_len,
                  uint8_t *sig, size_t *sig_len) {
     if (!key || !hash || hash_len == 0 || !sig || !sig_len) return -1;
+#ifndef EOS_ALLOW_STUB_CRYPTO
     EOS_STUB_CRYPTO_REFUSE("eos_ecc_sign");
+#else
     /* Stub: produce a fake 64-byte signature (r||s) */
     size_t len = 64;
     if (hash_len < 32) len = 64;
@@ -90,19 +98,21 @@ int eos_ecc_sign(const EosEccKey *key, const uint8_t *hash, size_t hash_len,
     memset(sig + 32, 0xBB, 32);
     *sig_len = len;
     return 0;
+#endif
 }
 
 int eos_ecc_verify(const EosEccKey *key, const uint8_t *hash, size_t hash_len,
                    const uint8_t *sig, size_t sig_len) {
-    /* Marked used before the guard: without the opt-in this function returns
-     * immediately and every parameter is otherwise unread. */
+#ifndef EOS_ALLOW_STUB_CRYPTO
     (void)key; (void)hash; (void)hash_len; (void)sig; (void)sig_len;
     EOS_STUB_CRYPTO_REFUSE("eos_ecc_verify");
+#else
     if (!key || sig_len < 64) return -1;
     (void)hash;
     (void)hash_len;
     /* Stub: accept any 64-byte signature */
     return 0;
+#endif
 }
 
 /* SHA-512 implementation */
