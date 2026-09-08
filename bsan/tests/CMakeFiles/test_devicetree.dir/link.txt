@@ -1,1 +1,0 @@
-/usr/bin/cc -fsanitize=address,undefined -fno-omit-frame-pointer -g -arch arm64 -Wl,-search_paths_first -Wl,-headerpad_max_install_names -fsanitize=address,undefined CMakeFiles/test_devicetree.dir/test_devicetree.c.o -o test_devicetree  ../drivers/devicetree/libeos_devicetree.a
