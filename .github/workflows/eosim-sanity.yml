@@ -4,7 +4,14 @@ on:
   schedule:
     - cron: '0 4 * * *'
   workflow_dispatch:
-
+  # A change to this file tests itself. Without this the workflow was
+  # schedule- and dispatch-only, so a pull request editing it produced no run
+  # of it at all -- every green check on such a PR was some other workflow,
+  # and the only evidence for the change was whatever the author did locally.
+  pull_request:
+    paths:
+      - '.github/workflows/eosim-sanity.yml'
+      - '.github/workflows/simulation-test.yml'
 permissions:
   contents: read
 
@@ -13,13 +20,88 @@ concurrency:
   cancel-in-progress: false
 
 env:
-  # v0.1.0 has never existed. embeddedos-org/EoSim tags v1.0.0 through
-  # v3.0.1, so `git clone --branch v0.1.0` fails with "Remote branch
+  # Pinned by commit, not by tag name.
+  #
+  # v0.1.0 has never existed -- embeddedos-org/EoSim tags v1.0.0 through
+  # v3.0.1 -- so `git clone --branch v0.1.0` failed with "Remote branch
   # v0.1.0 not found in upstream origin" and this workflow has never had a
-  # green run. v1.5.0 is the release marked Latest and installs from source.
-  EOSIM_VERSION: "1.5.0"
-
+  # green run.
+  #
+  # The obvious replacement, v1.5.0, is a label rather than a version. Checked
+  # against the remote on 2026-09-03:
+  #
+  #   tag      commit    committed     commit subject          pyproject  __init__
+  #   v1.5.0   7dec3460  2026-05-27    "production-ready v1.4.0"   3.0.1     3.0.1
+  #   v3.0.1   b297ec26  2026-05-16    "v3.0.1 — unified ..."      3.0.1     2.0.0
+  #
+  # v1.5.0 is the release GitHub marks Latest, is the newest tag by commit
+  # date, tags a commit whose own message claims v1.4.0, and installs a dist
+  # declaring 3.0.1. The tag namespace is neither ordered nor descriptive of
+  # its contents, so `EOSIM_VERSION: "1.5.0"` would tell a reader that eos is
+  # simulated against EoSim 1.5.0 -- which is not true, and which no amount of
+  # re-reading this file would reveal.
+  #
+  # A SHA says exactly what is installed and cannot be moved under us. Switch
+  # back to a tag once EoSim's tags mean something; see the EoSim issue linked
+  # from the PR.
+  EOSIM_COMMIT: "7dec3460cba76083b6645eb4a867e39aa2af97df"   # v1.5.0 as of 2026-09-03
+  # The version that commit's pyproject.toml declares to pip. Asserted after
+  # install, because the CLI's own version flag cannot detect a wrong install:
+  # EoSim hardcodes it (eosim/cli/main.py:49,
+  # @click.version_option(version="2.0.0")), so it prints 2.0.0 from every
+  # tag. Dist metadata is the only version the commit pin actually controls.
+  EOSIM_EXPECTED_DIST: "3.0.1"
 jobs:
+  # Every install in this workflow is now `git clone` + `pip install <path>`,
+  # because no EoSim release ships a Python artifact. Verified against the
+  # remote on 2026-09-03: 13 releases, assets are promo .mp4 files, a
+  # manifest.json and EoSim-guide.pdf -- no wheel, no sdist at any tag -- and
+  # https://pypi.org/pypi/eosim/json returns 404.
+  #
+  # That means this workflow no longer exercises the path a developer outside
+  # the org would take. Master design §17 makes EoSim an adoption primitive
+  # ("Discover -> Install -> ebuild run --sim", "in minutes, not hours") and
+  # §10 says repositories should not be the dependency API; today a git URL is
+  # the only route that exists.
+  #
+  # Converting to a clone is the right immediate move -- a permanent 404 is
+  # not a useful red -- but it would also make the gap green and invisible.
+  # This job keeps it visible: it does not fail the workflow, and it says out
+  # loud, on every run, that the packaging debt is still open. It starts
+  # failing the day EoSim publishes something, which is when it should be
+  # deleted and the installs pointed at the artifact.
+  published-artifact-watch:
+    name: EoSim artifact publication (informational)
+    # Neither branch of this job can fail -- it is a notice, not a check --
+    # so it sits outside sanity-gate's needs and runs only on the schedule
+    # and on manual dispatch: a permanently-green status named for a
+    # deficiency on every pull request helps nobody.
+    if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Look for a wheel or sdist on any release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          assets=$(gh api repos/embeddedos-org/EoSim/releases --paginate \
+                     --jq '[.[].assets[].name] | map(select(test("\\.(whl|tar\\.gz)$"))) | join(" ")')
+          pypi=$(curl -s -o /dev/null -w '%{http_code}' https://pypi.org/pypi/eosim/json)
+
+          echo "release assets matching *.whl / *.tar.gz: ${assets:-<none>}"
+          echo "pypi.org/pypi/eosim/json: HTTP $pypi"
+
+          if [ -n "$assets" ] || [ "$pypi" = "200" ]; then
+            echo "::notice::EoSim now publishes an installable artifact."
+            echo "The clone-and-install steps in this workflow should be"
+            echo "switched to it, and this job deleted."
+          else
+            echo "::warning::EoSim publishes no wheel or sdist, and is not on"
+            echo "PyPI. Every job here installs from a git clone, so the"
+            echo "published-artifact path is untested across the org. Tracked"
+            echo "against EoSim; see the note in this workflow's env block."
+          fi
+
   install-validate:
     name: Install & Validate (${{ matrix.os }}, Python ${{ matrix.python-version }})
     runs-on: ${{ matrix.os }}
@@ -33,15 +115,29 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: ${{ matrix.python-version }}
-      - name: Install EoSim from source
-        run: |
-          git clone --depth 1 --branch v${{ env.EOSIM_VERSION }} https://github.com/embeddedos-org/EoSim.git /tmp/EoSim
-          pip install -e /tmp/EoSim
+      - name: Install EoSim (pinned)
+        uses: ./.github/actions/install-eosim
+        with:
+          commit: ${{ env.EOSIM_COMMIT }}
+          expected-dist: ${{ env.EOSIM_EXPECTED_DIST }}
       - name: Verify installation
+        # shell: bash -- this job also runs on windows-latest, where the
+        # runner default is pwsh. `VAR=$(...)`, `cp -r` and a leading `#`
+        # comment are all invalid there, which is how the first real run
+        # of this workflow failed on all three Windows legs while ubuntu
+        # and macOS passed.
+        shell: bash
         run: |
           eosim --version
+          # dist-version assert lives in the install-eosim composite action
           eosim list
       - name: Validate all platform configs
+        # shell: bash -- this job also runs on windows-latest, where the
+        # runner default is pwsh. `VAR=$(...)`, `cp -r` and a leading `#`
+        # comment are all invalid there, which is how the first real run
+        # of this workflow failed on all three Windows legs while ubuntu
+        # and macOS passed.
+        shell: bash
         run: eosim list && eosim doctor
 
   nested-simulation:
@@ -64,10 +160,11 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: "3.12"
-      - name: Install EoSim from source
-        run: |
-          git clone --depth 1 --branch v${{ env.EOSIM_VERSION }} https://github.com/embeddedos-org/EoSim.git /tmp/EoSim
-          pip install -e /tmp/EoSim
+      - name: Install EoSim (pinned)
+        uses: ./.github/actions/install-eosim
+        with:
+          commit: ${{ env.EOSIM_COMMIT }}
+          expected-dist: ${{ env.EOSIM_EXPECTED_DIST }}
       - name: Simulate ${{ matrix.platform }}
         run: |
           eosim run ${{ matrix.platform }} --headless --timeout 10
@@ -92,10 +189,11 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: "3.12"
-      - name: Install EoSim from source
-        run: |
-          git clone --depth 1 --branch v${{ env.EOSIM_VERSION }} https://github.com/embeddedos-org/EoSim.git /tmp/EoSim
-          pip install -e /tmp/EoSim
+      - name: Install EoSim (pinned)
+        uses: ./.github/actions/install-eosim
+        with:
+          commit: ${{ env.EOSIM_COMMIT }}
+          expected-dist: ${{ env.EOSIM_EXPECTED_DIST }}
       - name: Boot guest and test EoSim inside
         run: |
           echo "=== Nested Guest: ${{ matrix.guest }} ==="
@@ -111,10 +209,31 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: "3.12"
+      - name: Install EoSim (pinned)
+        uses: ./.github/actions/install-eosim
+        with:
+          commit: ${{ env.EOSIM_COMMIT }}
+          expected-dist: ${{ env.EOSIM_EXPECTED_DIST }}
       - name: Test EoSim on Windows
+        # shell: bash -- this job also runs on windows-latest, where the
+        # runner default is pwsh. `VAR=$(...)`, `cp -r` and a leading `#`
+        # comment are all invalid there, which is how the first real run
+        # of this workflow failed on all three Windows legs while ubuntu
+        # and macOS passed.
+        shell: bash
         run: |
-          pip install "eosim @ https://github.com/embeddedos-org/EoSim/releases/download/v${{ env.EOSIM_VERSION }}/eosim-${{ env.EOSIM_VERSION }}-py3-none-any.whl"
+          # No EoSim release ships a wheel, so this URL 404s. The other jobs
+          # in this workflow already install from a clone; these two were
+          # missed.
+          # platforms/ is data, not package data: eosim/cli/main.py sets
+          # PLATFORMS_DIR to <site-packages>/platforms, while the package
+          # ships only eosim/platforms/__init__.py. Without this copy every
+          # `eosim run` fails with
+          #   FileNotFoundError: .../site-packages/platforms
+          # which is what the first real run of this workflow showed -- the
+          # missing v0.1.0 tag was the first blocker, not the only one.
           eosim --version
+          # dist-version assert lives in the install-eosim composite action
           eosim list && eosim doctor
           eosim list
 
@@ -127,31 +246,65 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: "3.12"
+      - name: Install EoSim (pinned)
+        uses: ./.github/actions/install-eosim
+        with:
+          commit: ${{ env.EOSIM_COMMIT }}
+          expected-dist: ${{ env.EOSIM_EXPECTED_DIST }}
       - name: Test EoSim on macOS
         run: |
-          pip install "eosim @ https://github.com/embeddedos-org/EoSim/releases/download/v${{ env.EOSIM_VERSION }}/eosim-${{ env.EOSIM_VERSION }}-py3-none-any.whl"
+          # No EoSim release ships a wheel, so this URL 404s. The other jobs
+          # in this workflow already install from a clone; these two were
+          # missed.
+          # platforms/ is data, not package data: eosim/cli/main.py sets
+          # PLATFORMS_DIR to <site-packages>/platforms, while the package
+          # ships only eosim/platforms/__init__.py. Without this copy every
+          # `eosim run` fails with
+          #   FileNotFoundError: .../site-packages/platforms
+          # which is what the first real run of this workflow showed -- the
+          # missing v0.1.0 tag was the first blocker, not the only one.
           eosim --version
+          # dist-version assert lives in the install-eosim composite action
           eosim list && eosim doctor
           eosim list
 
   sanity-gate:
     name: EoSim Sanity Gate
     if: always()
-    needs: [install-validate, nested-simulation, nested-guest-install, windows-sanity, macos-sanity]
+    needs: [install-validate, nested-simulation,
+            nested-guest-install, windows-sanity, macos-sanity]
     runs-on: ubuntu-latest
     steps:
-      - name: Results
+      # Iterates toJSON(needs) rather than naming one dependency. The previous
+      # body tested install-validate alone and then printed "All EoSim sanity
+      # checks passed" -- which it would do with the other four jobs red. This
+      # workflow has never had a green run, so the gate is about to start
+      # mattering for the first time; a summary that asserts more than it
+      # checked is the wrong thing to start with. This form cannot fall out of
+      # step with `needs:`.
+      - name: Every job in this workflow must have succeeded
+        env:
+          RESULTS: ${{ toJSON(needs) }}
         run: |
-          echo "════════════════════════════════════════════════"
-          echo "  EoSim Sanity Results"
-          echo "════════════════════════════════════════════════"
-          echo "Install & Validate (3 OS × 3 Py):  ${{ needs.install-validate.result }}"
-          echo "Nested Simulation (7 platforms):    ${{ needs.nested-simulation.result }}"
-          echo "Nested Guest Install (3 guests):    ${{ needs.nested-guest-install.result }}"
-          echo "Windows Sanity:                     ${{ needs.windows-sanity.result }}"
-          echo "macOS Sanity:                       ${{ needs.macos-sanity.result }}"
-          echo "════════════════════════════════════════════════"
-          if [ "${{ needs.install-validate.result }}" != "success" ]; then
-            echo "❌ Install/validate failed"; exit 1
+          set -euo pipefail
+          # Refuse to conclude anything from nothing. An empty or null
+          # RESULTS previously printed "all succeeded" and exited 0 here,
+          # where eos#121's extracted ci-gate-check.sh refuses -- measured
+          # side by side. Once #121's script is on master this body should
+          # become a call to it; until then the guards are replicated inline
+          # so the two cannot disagree on the inputs that matter.
+          if [ -z "${RESULTS:-}" ] || [ "$RESULTS" = "null" ]; then
+            echo "::error::gate received no results to check"
+            exit 1
           fi
-          echo "✅ All EoSim sanity checks passed"
+          printf '%s\n' "$RESULTS"
+          bad=$(printf '%s' "$RESULTS" | jq -r '
+            to_entries[]
+            | select(.value.result != "success")
+            | "  \(.key): \(.value.result)"')
+          if [ -n "$bad" ]; then
+            echo "::error::EoSim Sanity Gate failed. These jobs did not succeed:"
+            printf '%s\n' "$bad"
+            exit 1
+          fi
+          echo "All EoSim sanity jobs succeeded."
