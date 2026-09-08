@@ -9,6 +9,15 @@ on:
 
 env:
   EOS_VERSION: "0.6.0"
+  # The kernel job compiles eBoot and checks out ebuild. Those used to float on
+  # `ref: master`, so the moment either repo's master stopped compiling, every
+  # open eos PR went red for a reason no eos change caused and no eos change
+  # could fix (2026-09-03: eBoot master's eos_image.h asserts a member that no
+  # longer exists, and its ed25519_verify.c has a redefined helper -- eBoot #94
+  # repairs it). A dependency is pinned and bumped deliberately; when eBoot #94
+  # lands, bump EBOOT_COMMIT to that merge and CI will say whether it holds.
+  EBOOT_COMMIT: "a172a6d6e1e66877413ed546401a65ee4f4f90db"
+  EBUILD_COMMIT: "e5d8052f3e2cfdcb1c91bab8300087aa07e02679"
   CROSS_COMPILE: "aarch64-linux-gnu-"
   QEMU_MACHINE: "virt"
   QEMU_CPU: "cortex-a57"
@@ -29,14 +38,14 @@ jobs:
         uses: actions/checkout@v4
         with:
           repository: embeddedos-org/eBoot
-          ref: master
+          ref: ${{ env.EBOOT_COMMIT }}
           path: eBoot
 
       - name: Checkout ebuild
         uses: actions/checkout@v4
         with:
           repository: embeddedos-org/ebuild
-          ref: master
+          ref: ${{ env.EBUILD_COMMIT }}
           path: ebuild
 
       # embeddedos-org/eFab does not exist -- the checkout 404s and takes this
@@ -276,7 +285,7 @@ jobs:
         uses: actions/checkout@v4
         with:
           repository: embeddedos-org/ebuild
-          ref: master
+          ref: ${{ env.EBUILD_COMMIT }}
 
       # Same missing repository as in build-kernel.
       # - name: Checkout eFab
@@ -328,7 +337,16 @@ jobs:
     needs: [build-kernel, simulate-qemu, test-middleware, test-cad-pipeline]
     if: always()
     steps:
+      # The gate rule lives in .github/scripts/ci-gate-check.sh, so this job
+      # needs the repository in its workspace. Without the checkout the step
+      # exits 127 on a missing file -- red for a reason that has nothing to do
+      # with its dependencies, and never green, so requiring this name would
+      # make master permanently unmergeable.
+      - uses: actions/checkout@v4
       - name: Report final status
+        env:
+          RESULTS: ${{ toJSON(needs) }}
+          GATE_NAME: "Full-stack integration summary"
         run: |
           echo "╔══════════════════════════════════════════════════════╗"
           echo "║   EoS CI Full-Stack Integration Summary              ║"
@@ -338,7 +356,11 @@ jobs:
           echo "║  Middleware Python tests             ${{ needs.test-middleware.result == 'success' && 'PASS' || 'FAIL' }}          ║"
           echo "║  CAD pipeline validation             ${{ needs.test-cad-pipeline.result == 'success' && 'PASS' || 'FAIL' }}          ║"
           echo "╚══════════════════════════════════════════════════════╝"
-          if [[ "${{ needs.simulate-qemu.result }}" != "success" ]]; then
-            echo "::error::QEMU simulation failed — EoS kernel did not boot or test cases failed"
-            exit 1
-          fi
+          # This job already had the shape of a gate -- the right `needs`, `if:
+          # always()`, and a printed PASS/FAIL per dependency -- but it only
+          # exited non-zero for simulate-qemu. The other three could fail while
+          # it reported success, so a maintainer requiring this check would
+          # believe the ARM64 kernel build, the middleware tests and the CAD
+          # pipeline were gated when they were not. Now any non-success fails
+          # it, using the same rule as every other gate.
+          printf '%s' "$RESULTS" | .github/scripts/ci-gate-check.sh

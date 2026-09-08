@@ -81,9 +81,12 @@ add_library(eos_hal STATIC
 #   Undefined symbols: "_eos_hal_rtos_register", referenced from _eos_hal_init
 #
 # The build system knows which file it compiled, so it says so.
-if(EOS_PLATFORM STREQUAL "linux" OR NOT CMAKE_CROSSCOMPILING)
+if((EOS_PLATFORM STREQUAL "linux" OR NOT CMAKE_CROSSCOMPILING) AND UNIX)
     target_sources(eos_hal PRIVATE hal/src/hal_linux.c)
     target_compile_definitions(eos_hal PRIVATE EOS_HAL_BACKEND_HOST)
+elseif(WIN32)
+    target_sources(eos_hal PRIVATE hal/src/hal_win32.c)
+    target_compile_definitions(eos_hal PRIVATE EOS_HAL_BACKEND_WIN32)
 else()
     target_sources(eos_hal PRIVATE hal/src/hal_rtos.c)
     target_compile_definitions(eos_hal PRIVATE EOS_HAL_BACKEND_RTOS)
@@ -138,6 +141,27 @@ add_subdirectory(toolchains)
 # ====================================================================
 # Systems — rootfs, image, firmware assembly
 # ====================================================================
+# The backend registry. firmware.c calls eos_backend_find() and
+# eos_backend_find_by_type(), so eos_systems cannot link without it.
+add_subdirectory(backends)
+# The eos command-line tool. It links eos_backends and calls
+# eos_backend_registry_init() plus each eos_backend_*_init(), so it could not
+# be built until the registry was: cmd/ was in no add_subdirectory() either,
+# and the binary the README tells users to run did not exist.
+#
+# Host-only, gated the same way services/pkg is. It is a build-system driver
+# that runs on the developer's machine, and it is an *executable*: the
+# Cortex-M4 toolchain file puts -specs=nosys.specs in CMAKE_C_FLAGS_INIT while
+# the board file adds it to the link flags too, which is harmless for static
+# libraries and fatal the moment something is linked --
+#
+#   arm-none-eabi-gcc: fatal error: nosys.specs: attempt to rename spec
+#   'link_gcc_c_sequence' to already defined spec 'nosys_link_gcc_c_sequence'
+#
+# so a cross build must not try to link it.
+if(NOT CMAKE_CROSSCOMPILING)
+    add_subdirectory(cmd/eos)
+endif()
 add_subdirectory(systems)
 
 # ====================================================================
@@ -197,7 +221,7 @@ add_library(eos_net STATIC
 # it, so that condition is true even for a Cortex-M build. hal_linux.c happens
 # to survive that because it uses only portable headers; net_posix.c needs
 # <netdb.h> and <sys/socket.h>, which bare-metal newlib does not have.
-if(NOT CMAKE_CROSSCOMPILING)
+if(NOT CMAKE_CROSSCOMPILING AND UNIX)
     target_sources(eos_net PRIVATE net/src/net_posix.c)
     target_compile_definitions(eos_net PRIVATE EOS_NET_POSIX=1)
 endif()
