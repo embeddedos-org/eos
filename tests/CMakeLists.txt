@@ -150,10 +150,14 @@ target_include_directories(test_hal_stm32f4 PRIVATE
 target_link_libraries(test_hal_stm32f4 PRIVATE eos_hal)
 add_test(NAME test_hal_stm32f4 COMMAND test_hal_stm32f4)
 
-# --- test_pkg_fetch: source fetch refuses an unverifiable download ---
-add_executable(test_pkg_fetch test_pkg_fetch.c)
-target_link_libraries(test_pkg_fetch PRIVATE eos_pkg eos_core)
-add_test(NAME test_pkg_fetch COMMAND test_pkg_fetch)
+# --- test_firmware: firmware build graph over the backend registry ---
+# Could not link while backends/ was outside the build: eos_systems
+# calls eos_backend_find() and nothing defined it. eos_backends is not
+# named here -- eos_systems declares that dependency itself now, so it
+# arrives transitively.
+add_executable(test_firmware test_firmware.c)
+target_link_libraries(test_firmware PRIVATE eos_systems eos_core)
+add_test(NAME test_firmware COMMAND test_firmware)
 
 # --- test_security: Keystore, ACL ---
 add_executable(test_security test_security.c)

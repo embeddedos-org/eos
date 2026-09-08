@@ -13,10 +13,6 @@ add_library(eos_backends STATIC
     src/cargo_backend.c
 )
 
-target_include_directories(eos_backends PUBLIC
-    ${CMAKE_CURRENT_SOURCE_DIR}/include
-)
-
 target_link_libraries(eos_backends PRIVATE eos_core)
 
 target_compile_options(eos_backends PRIVATE
