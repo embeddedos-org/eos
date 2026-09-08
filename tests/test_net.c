@@ -2,7 +2,6 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
-#include <assert.h>
 #define EOS_ENABLE_NET 1
 #include "eos/eos_config.h"
 #include "eos/net.h"
@@ -10,9 +9,9 @@
 static int passed = 0;
 #define PASS(name) do { printf("[PASS] %s\n", name); passed++; } while(0)
 
-/* Not CHECK(): CI builds Release, and NDEBUG deletes CHECK() together with
+/* Not assert(): CI builds Release, and NDEBUG deletes assert() together with
  * the expression inside it. Half these checks wrap the call under test --
- * CHECK(eos_net_connect(...) == 0) stopped connecting at all, the echo
+ * assert(eos_net_connect(...) == 0) stopped connecting at all, the echo
  * thread blocked in accept() forever, and pthread_join() hung the suite. A
  * check macro must always evaluate its expression. */
 #define CHECK(cond) do { \

@@ -9,6 +9,15 @@ on:
 
 env:
   EOS_VERSION: "0.6.0"
+  # The kernel job compiles eBoot and checks out ebuild. Those used to float on
+  # `ref: master`, so the moment either repo's master stopped compiling, every
+  # open eos PR went red for a reason no eos change caused and no eos change
+  # could fix (2026-09-03: eBoot master's eos_image.h asserts a member that no
+  # longer exists, and its ed25519_verify.c has a redefined helper -- eBoot #94
+  # repairs it). A dependency is pinned and bumped deliberately; when eBoot #94
+  # lands, bump EBOOT_COMMIT to that merge and CI will say whether it holds.
+  EBOOT_COMMIT: "a172a6d6e1e66877413ed546401a65ee4f4f90db"
+  EBUILD_COMMIT: "e5d8052f3e2cfdcb1c91bab8300087aa07e02679"
   CROSS_COMPILE: "aarch64-linux-gnu-"
   QEMU_MACHINE: "virt"
   QEMU_CPU: "cortex-a57"
@@ -29,14 +38,14 @@ jobs:
         uses: actions/checkout@v4
         with:
           repository: embeddedos-org/eBoot
-          ref: master
+          ref: ${{ env.EBOOT_COMMIT }}
           path: eBoot
 
       - name: Checkout ebuild
         uses: actions/checkout@v4
         with:
           repository: embeddedos-org/ebuild
-          ref: master
+          ref: ${{ env.EBUILD_COMMIT }}
           path: ebuild
 
       # embeddedos-org/eFab does not exist -- the checkout 404s and takes this
@@ -276,7 +285,7 @@ jobs:
         uses: actions/checkout@v4
         with:
           repository: embeddedos-org/ebuild
-          ref: master
+          ref: ${{ env.EBUILD_COMMIT }}
 
       # Same missing repository as in build-kernel.
       # - name: Checkout eFab

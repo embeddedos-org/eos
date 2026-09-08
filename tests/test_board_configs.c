@@ -14,7 +14,7 @@
 #include <ctype.h>
 
 #ifdef _WIN32
-#include <windows.h>
+#include <eos/eos_windows.h>
 #include <direct.h>
 #define PATH_LIMIT _MAX_PATH
 #else
