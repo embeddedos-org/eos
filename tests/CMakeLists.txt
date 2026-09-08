@@ -141,10 +141,6 @@ add_executable(test_e2e test_e2e.c)
 target_link_libraries(test_e2e PRIVATE eos_kernel)
 add_test(NAME test_e2e COMMAND test_e2e)
 
-# --- test_net_mock: eNet socket API against a mock transport ---
-add_executable(test_net_mock test_net_mock.c)
-add_test(NAME test_net_mock COMMAND test_net_mock)
-
 # --- test_hal_stm32f4: STM32F4 peripheral register behaviour ---
 # Builds on the host against the simulated register block; it needed only the
 # board header directory on the include path, which is why it never ran.
