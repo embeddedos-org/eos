@@ -1,0 +1,146 @@
+name: Upstream drift
+
+# EoS Full-Stack Simulation compiles eBoot and checks out ebuild at pinned
+# commits rather than at `master`, so that no eos pull request can be turned
+# red by a break it did not cause. That pin has a cost: an eBoot master which
+# stops compiling becomes invisible from here, and the pin itself would sit
+# where it is indefinitely, because nothing would ever ask.
+#
+# This workflow is the other half of that trade. It builds eBoot at master and
+# compares both pins against their master, so an upstream break still surfaces
+# -- loudly, attributed to the repository responsible, and on a run that blocks
+# no pull request.
+#
+# It deliberately does not trigger on `pull_request`, and it lives in its own
+# file rather than as a skipped job inside the simulation workflow: a skipped
+# check still appears on every PR, and a required-check gate that treats any
+# non-success as a failure would then trip on it.
+#
+# It is deliberately not `continue-on-error`. A job that reports success over a
+# failure is the fail-open shape this repository keeps filing against; this one
+# is free to fail honestly precisely because it gates nothing.
+
+on:
+  schedule:
+    - cron: "17 6 * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  drift:
+    name: "Upstream drift (eBoot/ebuild master)"
+    runs-on: ubuntu-22.04
+    steps:
+      - name: Checkout eos
+        uses: actions/checkout@v4
+        with:
+          path: eos
+
+      - name: Checkout eBoot at master
+        uses: actions/checkout@v4
+        with:
+          repository: embeddedos-org/eBoot
+          ref: master
+          path: eBoot
+          fetch-depth: 0
+
+      - name: Checkout ebuild at master
+        uses: actions/checkout@v4
+        with:
+          repository: embeddedos-org/ebuild
+          ref: master
+          path: ebuild
+          fetch-depth: 0
+
+      - name: Read the pins from the simulation workflow
+        id: pins
+        run: |
+          # One source of truth: the pins live in eos-simulation.yml and are
+          # read out of it here. If that ever stops parsing -- renamed key,
+          # moved file, reformatted value -- this fails rather than quietly
+          # checking a pin of "".
+          wf="eos/.github/workflows/eos-simulation.yml"
+          for key in EBOOT_COMMIT EBUILD_COMMIT; do
+            val=$(sed -n "s/^[[:space:]]*${key}:[[:space:]]*\"\([0-9a-f]\{40\}\)\".*/\1/p" "$wf" | head -1)
+            if [ -z "$val" ]; then
+              echo "::error::could not read $key as a 40-character SHA from $wf. The pin may have been renamed or reformatted; this job cannot report drift against a pin it cannot find."
+              exit 1
+            fi
+            echo "${key}=${val}" >> "$GITHUB_OUTPUT"
+            echo "read ${key}=${val}"
+          done
+
+      - name: Report how far each pin is behind master
+        env:
+          EBOOT_COMMIT: ${{ steps.pins.outputs.EBOOT_COMMIT }}
+          EBUILD_COMMIT: ${{ steps.pins.outputs.EBUILD_COMMIT }}
+        run: |
+          {
+            echo "### Pinned dependency drift"
+            echo
+            echo "eBoot is built at master below. ebuild is compared only --"
+            echo "the simulation workflow checks it out but does not build it."
+            echo
+            echo "| repository | pinned | master | commits behind |"
+            echo "| --- | --- | --- | --- |"
+          } >> "$GITHUB_STEP_SUMMARY"
+
+          for repo in eBoot ebuild; do
+            case "$repo" in
+              eBoot)  pin="$EBOOT_COMMIT" ;;
+              ebuild) pin="$EBUILD_COMMIT" ;;
+            esac
+            head=$(git -C "$repo" rev-parse HEAD)
+            if git -C "$repo" cat-file -e "${pin}^{commit}" 2>/dev/null; then
+              behind=$(git -C "$repo" rev-list --count "${pin}..HEAD")
+            else
+              behind="unknown"
+            fi
+            echo "| $repo | ${pin:0:9} | ${head:0:9} | $behind |" >> "$GITHUB_STEP_SUMMARY"
+            if [ "$behind" = "unknown" ]; then
+              echo "::warning::$repo pin ${pin:0:9} is not an ancestor of master -- it may have been force-pushed away. Check it before bumping."
+            elif [ "$behind" != "0" ]; then
+              echo "::warning::$repo is pinned $behind commit(s) behind master. Bump it once this run shows master building."
+            fi
+          done
+
+      - name: Install build dependencies
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y --no-install-recommends \
+            gcc-aarch64-linux-gnu \
+            binutils-aarch64-linux-gnu \
+            libc6-dev-arm64-cross \
+            cmake \
+            ninja-build
+
+      - name: Build eBoot at master
+        id: eboot
+        run: |
+          # The same configuration eos-simulation.yml builds the pin with, so
+          # a pass here means the pin can be bumped to this master.
+          cd eBoot
+          cmake -B build_drift -S . \
+            -DCMAKE_TOOLCHAIN_FILE=toolchains/aarch64-linux-gnu.cmake \
+            -DEBLDR_BOARD=qemu_arm64 \
+            -DEBLDR_VERIFY_STAGE1=OFF \
+            -DCMAKE_BUILD_TYPE=Release
+          cmake --build build_drift --parallel "$(nproc)"
+
+      - name: Say what a failure here means
+        # Scoped to the build step's own outcome. A checkout, apt or pin-read
+        # failure is an infrastructure or configuration problem, and must not
+        # report itself as evidence about eBoot's master.
+        if: failure() && steps.eboot.outcome == 'failure'
+        run: |
+          {
+            echo
+            echo "**embeddedos-org/eBoot@master does not build.**"
+            echo
+            echo "No eos pull request is affected -- the simulation jobs build the"
+            echo "pinned commit, not master. This is a defect in eBoot and has to"
+            echo "be repaired there before the pin can be bumped."
+          } >> "$GITHUB_STEP_SUMMARY"
+          echo "::error::eBoot master does not build. eos PRs are unaffected (they build the pin); fix eBoot, then bump EBOOT_COMMIT in eos-simulation.yml."
