@@ -130,7 +130,11 @@ static int test_lc(void){
     T(eos_task_delete(h)==EOS_KERN_OK,"delete");T(eos_task_get_state(h)==EOS_TASK_DELETED,"DEL");
     T(eos_task_delete(h)==EOS_KERN_INVALID,"double-del guard");
     printf("  [PASS] lifecycle: 7 checks\n");return 0;}
+#if defined(_MSC_VER)
+__declspec(align(8)) static uint8_t ha[2048];
+#else
 static uint8_t ha[2048] __attribute__((aligned(8)));
+#endif
 static int test_heap(void){
     printf("\n-- Heap --\n");T(eos_heap_init(ha,sizeof(ha))==0,"init");
     void*p1=eos_malloc(64);T(p1!=NULL,"m64");T(((uintptr_t)p1&7)==0,"align");
