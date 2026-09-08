@@ -1,0 +1,2 @@
+/usr/bin/ar qc libeos_ota.a CMakeFiles/eos_ota.dir/src/ota.c.o
+/usr/bin/ranlib libeos_ota.a

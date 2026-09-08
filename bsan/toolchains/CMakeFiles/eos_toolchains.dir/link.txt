@@ -1,0 +1,2 @@
+/usr/bin/ar qc libeos_toolchains.a CMakeFiles/eos_toolchains.dir/src/toolchain.c.o
+/usr/bin/ranlib libeos_toolchains.a

@@ -1,0 +1,2 @@
+/usr/bin/ar qc libeos_sensor.a CMakeFiles/eos_sensor.dir/src/sensor.c.o
+/usr/bin/ranlib libeos_sensor.a

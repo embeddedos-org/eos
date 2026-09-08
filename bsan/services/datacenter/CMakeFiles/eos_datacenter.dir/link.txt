@@ -1,0 +1,2 @@
+/usr/bin/ar qc libeos_datacenter.a CMakeFiles/eos_datacenter.dir/src/datacenter.c.o
+/usr/bin/ranlib libeos_datacenter.a

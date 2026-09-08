@@ -1,0 +1,30 @@
+test_board_configs 1 0.660698
+test_os_adapter 0 0
+test_config 1 0.486051
+test_graph 1 0.447809
+test_hal 1 0.508127
+test_kernel 1 0.466794
+test_priority_inherit 1 0.556446
+test_heap 1 0.453652
+test_multicore 1 0.469668
+test_drivers 1 0.488415
+test_crypto 1 0.459688
+test_crypto_aes 1 0.456173
+test_crypto_ecc 1 0.556264
+test_crypto_rsa 1 0.461443
+test_crypto_sha512 1 0.476993
+test_security 1 0.551383
+test_os_services 1 0.479608
+test_ota 1 0.529703
+test_sensor 1 0.460676
+test_filesystem 1 0.473992
+test_service 1 0.497049
+test_debug 1 0.451304
+test_ui_gesture 1 0.525862
+test_power 1 0.477082
+test_net 1 0.526842
+test_motor_ctrl 1 0.469493
+test_package 1 0.483657
+test_devicetree 1 0.53216
+---
+test_os_adapter

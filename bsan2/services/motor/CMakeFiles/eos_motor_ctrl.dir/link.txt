@@ -1,0 +1,2 @@
+/usr/bin/ar qc libeos_motor_ctrl.a CMakeFiles/eos_motor_ctrl.dir/src/motor_ctrl.c.o
+/usr/bin/ranlib libeos_motor_ctrl.a
