@@ -133,6 +133,56 @@ int ed25519_public_key_is_usable(const unsigned char *public_key) {
     }
     return ed25519_key_has_prime_order(&A);
 }
+
+/* Reject a signature whose S is not the canonical representative mod L.
+ *
+ * The check above this one -- signature[63] & 224 -- is ref10's partial test.
+ * It rejects any S with a bit set above 2^252, but L is 2^252 +
+ * 27742317777372353535851937790883648493, so every S in [L, 2^253) passes it
+ * while being non-canonical. Adding L to a valid S lands squarely in that band:
+ * (R, S) and (R, S + L) both verified, which is signature malleability. Anything
+ * that treats a signature as a unique identifier -- deduplication, replay
+ * caches, logging by signature hash -- sees two distinct signatures over one
+ * message and one key.
+ *
+ * RFC 8032 5.1.7 requires "reject the signature if S is not in the range
+ * [0, L)". eBoot's core/ed25519_verify.c already does this; this side did not,
+ * which is precisely the kind of divergence the shared contract corpus in
+ * tests/vectors/ed25519_contract_vectors.h exists to surface -- and it is how
+ * this was found.
+ *
+ * Compared most-significant byte first, which is a comparison against a public
+ * constant and reveals nothing about any secret: S is public.
+ */
+/* Through the public API this boundary is unreachable: a signature with
+ * S == L and one that simply fails the verification equation both return 0,
+ * so the corpus cannot tell an off-by-one here from an ordinary rejection
+ * -- and an off-by-one that refused a valid S = L - 1 would satisfy every
+ * vector in the corpus while rejecting real signatures in the field. It is
+ * a pure function of 32 bytes, so it can be tested directly and without
+ * generating any signatures.
+ *
+ * It stays static. tests/test_ed25519_canonical_s.c includes this translation
+ * unit to reach it, rather than the file being compiled twice with a macro
+ * that changes this symbol's linkage -- that arrangement made the function
+ * look unreachable to static analysis, and a linkage that varies by build is
+ * a poor thing to have in a crypto source file. */
+static int sc_is_canonical(const unsigned char s[32]) {
+    /* L, little-endian. */
+    static const unsigned char L[32] = {
+        0xed, 0xd3, 0xf5, 0x5c, 0x1a, 0x63, 0x12, 0x58,
+        0xd6, 0x9c, 0xf7, 0xa2, 0xde, 0xf9, 0xde, 0x14,
+        0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+        0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x10
+    };
+    int i;
+    for (i = 31; i >= 0; i--) {
+        if (s[i] < L[i]) return 1;
+        if (s[i] > L[i]) return 0;
+    }
+    return 0;   /* S == L is not in [0, L) either */
+}
+
 int ed25519_verify(const unsigned char *signature, const unsigned char *message, size_t message_len, const unsigned char *public_key) {
     unsigned char h[64];
     unsigned char checker[32];
@@ -141,6 +191,12 @@ int ed25519_verify(const unsigned char *signature, const unsigned char *message,
     ge_p2 R;
 
     if (signature[63] & 224) {
+        return 0;
+    }
+
+    /* The full range check RFC 8032 5.1.7 asks for; the test above is only
+     * its top three bits. */
+    if (!sc_is_canonical(signature + 32)) {
         return 0;
     }
 
