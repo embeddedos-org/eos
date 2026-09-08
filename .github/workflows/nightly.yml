@@ -24,13 +24,13 @@ jobs:
       - uses: actions/checkout@v4
 
       - name: Configure
-        run: cmake -B build -DEOS_BUILD_TESTS=ON
+        run: cmake -B build -DEOS_BUILD_TESTS=ON -DEOS_PRODUCT=vbox_test
 
       - name: Build
         run: cmake --build build --config Release
 
       - name: Test
-        run: ctest --test-dir build --output-on-failure -C Release
+        run: ctest --test-dir build --output-on-failure --no-tests=error -C Release
 
   product-builds:
     name: Product (${{ matrix.product }})

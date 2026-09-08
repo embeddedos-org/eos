@@ -3,6 +3,7 @@
 
 #include <stdint.h>
 #include <stdbool.h>
+#include <stddef.h>
 
 /* .eapp package format constants */
 #define EAPP_MAGIC          0x45415050  /* "EAPP" */
@@ -11,6 +12,7 @@
 #define EAPP_MAX_PATH       256
 #define EAPP_MAX_PACKAGES   64
 #define EAPP_SIGNATURE_LEN  64  /* Ed25519 */
+#define EAPP_PUBKEY_LEN     32  /* Ed25519 public key */
 #define EAPP_HASH_LEN       32  /* SHA-256 */
 
 /* Package capabilities */
@@ -87,7 +89,13 @@ typedef enum {
 } eapp_arch_t;
 
 /* .eapp file header (at offset 0 of the .eapp ZIP archive manifest) */
-typedef struct __attribute__((packed)) {
+#if defined(_MSC_VER)
+#pragma pack(push, 1)
+#define EOS_EAPP_PACKED
+#else
+#define EOS_EAPP_PACKED __attribute__((packed))
+#endif
+typedef struct EOS_EAPP_PACKED {
     uint32_t magic;             /* EAPP_MAGIC */
     uint8_t  version;           /* EAPP_VERSION */
     char     name[EAPP_MAX_NAME];
@@ -107,6 +115,25 @@ typedef struct __attribute__((packed)) {
     bool     has_gui;           /* true if app has GUI mode */
     bool     has_cli;           /* true if app has CLI mode */
 } eapp_header_t;
+#if defined(_MSC_VER)
+#pragma pack(pop)
+#endif
+#undef EOS_EAPP_PACKED
+
+/* This header is written to and read from .eapp files verbatim. Keep this
+ * contract in lockstep across every compiler that can produce a package. */
+_Static_assert(EAPP_ARCH_COUNT == 48, "eapp header layout requires 48 architectures");
+_Static_assert(sizeof(bool) == 1, "eapp header wire format requires one-byte bool");
+_Static_assert(sizeof(eapp_header_t) == 303, "eapp header wire size changed");
+_Static_assert(offsetof(eapp_header_t, magic) == 0, "eapp magic offset changed");
+_Static_assert(offsetof(eapp_header_t, name) == 5, "eapp name offset changed");
+_Static_assert(offsetof(eapp_header_t, package_id) == 69, "eapp package_id offset changed");
+_Static_assert(offsetof(eapp_header_t, capabilities) == 136, "eapp capabilities offset changed");
+_Static_assert(offsetof(eapp_header_t, binary_offset) == 189, "eapp binary offset changed");
+_Static_assert(offsetof(eapp_header_t, signature) == 205, "eapp signature offset changed");
+_Static_assert(offsetof(eapp_header_t, hash) == 269, "eapp hash offset changed");
+_Static_assert(offsetof(eapp_header_t, has_gui) == 301, "eapp has_gui offset changed");
+_Static_assert(offsetof(eapp_header_t, has_cli) == 302, "eapp has_cli offset changed");
 
 /* Installed package record */
 typedef struct {
@@ -139,6 +166,32 @@ int  eos_pkg_update(eapp_db_t *db, const char *eapp_path);
 int  eos_pkg_list(const eapp_db_t *db);
 int  eos_pkg_info(const eapp_db_t *db, const char *package_id);
 int  eos_pkg_verify(const char *eapp_path);
+
+/**
+ * @brief Install the Ed25519 public key that package signatures are checked
+ *        against, or NULL to remove it.
+ *
+ * This is the seam a keystore or a provisioning step fills; there is no key
+ * that can honestly be compiled into this repository. The key is validated
+ * here rather than at verification time -- a key outside the prime-order
+ * subgroup authenticates nothing, and reporting that as "signature
+ * verification failed" per package blames the package for a defect in the
+ * installation.
+ *
+ * @return 0 if the key was installed, -1 if it is unusable as an anchor.
+ */
+int  eos_pkg_set_trust_anchor(const uint8_t public_key[EAPP_PUBKEY_LEN]);
+
+/**
+ * @brief The anchor in force: the one set at runtime, else the one the build
+ *        supplied via EOS_PKG_TRUST_ANCHOR_HEX, else NULL.
+ *
+ * With no anchor, eos_pkg_verify() and eos_pkg_install() refuse rather than
+ * appear to verify, unless the build defines EOS_ALLOW_UNSIGNED_PKG. That
+ * mirrors EOS_ALLOW_STUB_CRYPTO in services/crypto and EOS_ALLOW_UNSIGNED_OTA
+ * in services/ota.
+ */
+const uint8_t *eos_pkg_trust_anchor(void);
 int  eos_pkg_run(const eapp_db_t *db, const char *package_id, int argc, char **argv);
 int  eos_pkg_stop(const eapp_db_t *db, const char *package_id);
 int  eos_pkg_enable(eapp_db_t *db, const char *package_id);

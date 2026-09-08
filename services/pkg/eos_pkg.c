@@ -89,9 +89,155 @@ static int eos_rmdir_recursive(const char *path)
 #include <eos/crypto.h>
 #include <ed25519.h>
 
-// Temporary hardcoded public key for package verification.
-// In a real system, this should be loaded from a secure keystore.
-static const uint8_t eos_pkg_public_key[32] = {0};
+/* --------------------------------------------------------------------------
+ * Trust anchor
+ *
+ * This file used to carry
+ *
+ *     static const uint8_t eos_pkg_public_key[32] = {0};
+ *
+ * with a comment saying a real system would load it from a keystore. The
+ * all-zero encoding is one of Ed25519's eight low-order points, so before
+ * services/crypto learned to reject those (#99) every package verified. It
+ * now rejects every package instead -- including correctly signed ones --
+ * and reports "signature verification failed", which blames the package for
+ * a defect in the installation.
+ *
+ * Neither behaviour is a signature check. A key is required, and there is
+ * nowhere in this repository it can honestly be hardcoded from, so it comes
+ * from the platform instead:
+ *
+ *   1. eos_pkg_set_trust_anchor(), which is where a keystore or a
+ *      provisioning step installs the key it holds; or
+ *   2. EOS_PKG_TRUST_ANCHOR_HEX, 64 hex characters set by the build.
+ *
+ * With neither, verification refuses rather than appearing to succeed. That
+ * is the shape services/crypto already uses for its unimplemented RSA/ECC
+ * stubs (EOS_ALLOW_STUB_CRYPTO) and services/ota for an update with no
+ * authenticator installed (EOS_ALLOW_UNSIGNED_OTA); EOS_ALLOW_UNSIGNED_PKG
+ * is the same opt-in, for tests and for bring-up.
+ * -------------------------------------------------------------------------- */
+
+static uint8_t  eos_pkg_anchor[EAPP_PUBKEY_LEN];
+static bool     eos_pkg_anchor_set = false;
+
+#ifdef EOS_PKG_TRUST_ANCHOR_HEX
+static int eos_pkg_hex_nibble(char c)
+{
+    if (c >= '0' && c <= '9') return c - '0';
+    if (c >= 'a' && c <= 'f') return c - 'a' + 10;
+    if (c >= 'A' && c <= 'F') return c - 'A' + 10;
+    return -1;
+}
+
+/* Decode the build-time anchor. A malformed value is a build configuration
+ * error, so it is refused rather than truncated or padded. */
+static bool eos_pkg_anchor_from_build(uint8_t out[EAPP_PUBKEY_LEN])
+{
+    static const char hex[] = EOS_PKG_TRUST_ANCHOR_HEX;
+    size_t i;
+
+    if (sizeof(hex) - 1 != EAPP_PUBKEY_LEN * 2) {
+        fprintf(stderr,
+                "eos-pkg: EOS_PKG_TRUST_ANCHOR_HEX is %zu characters, "
+                "expected %d\n", sizeof(hex) - 1, EAPP_PUBKEY_LEN * 2);
+        return false;
+    }
+    for (i = 0; i < EAPP_PUBKEY_LEN; i++) {
+        int hi = eos_pkg_hex_nibble(hex[i * 2]);
+        int lo = eos_pkg_hex_nibble(hex[i * 2 + 1]);
+        if (hi < 0 || lo < 0) {
+            fprintf(stderr, "eos-pkg: EOS_PKG_TRUST_ANCHOR_HEX is not hex\n");
+            return false;
+        }
+        out[i] = (uint8_t)((hi << 4) | lo);
+    }
+    return true;
+}
+#endif
+
+int eos_pkg_set_trust_anchor(const uint8_t public_key[EAPP_PUBKEY_LEN])
+{
+    if (!public_key) {
+        eos_pkg_anchor_set = false;
+        memset(eos_pkg_anchor, 0, sizeof(eos_pkg_anchor));
+        return 0;
+    }
+
+    /* Refuse the key here, where the caller is configuring it and can act on
+     * the answer. Accepting it and failing later turns a provisioning mistake
+     * into a package that looks forged. */
+    if (!ed25519_public_key_is_usable(public_key)) {
+        fprintf(stderr,
+                "eos-pkg: refusing a trust anchor that is not a prime-order "
+                "Ed25519 point; such a key cannot authenticate anything\n");
+        return -1;
+    }
+
+    memcpy(eos_pkg_anchor, public_key, EAPP_PUBKEY_LEN);
+    eos_pkg_anchor_set = true;
+    return 0;
+}
+
+const uint8_t *eos_pkg_trust_anchor(void)
+{
+    if (eos_pkg_anchor_set) return eos_pkg_anchor;
+
+#ifdef EOS_PKG_TRUST_ANCHOR_HEX
+    {
+        uint8_t built[EAPP_PUBKEY_LEN];
+        if (eos_pkg_anchor_from_build(built) &&
+            ed25519_public_key_is_usable(built)) {
+            memcpy(eos_pkg_anchor, built, EAPP_PUBKEY_LEN);
+            eos_pkg_anchor_set = true;
+            return eos_pkg_anchor;
+        }
+        fprintf(stderr,
+                "eos-pkg: EOS_PKG_TRUST_ANCHOR_HEX does not decode to a "
+                "usable Ed25519 public key\n");
+    }
+#endif
+    return NULL;
+}
+
+/* Check a package signature against the configured anchor.
+ *
+ * Returns 0 when the signature is good, -1 otherwise. The three failures are
+ * reported apart because they call for different actions: fix the
+ * provisioning, fix the build, or reject the package.
+ */
+static int eos_pkg_check_signature(const uint8_t signature[EAPP_SIGNATURE_LEN],
+                                   const uint8_t *binary_data,
+                                   uint32_t binary_size)
+{
+    const uint8_t *anchor = eos_pkg_trust_anchor();
+
+    if (!anchor) {
+#ifdef EOS_ALLOW_UNSIGNED_PKG
+        fprintf(stderr,
+                "eos-pkg: WARNING: no trust anchor configured and this build "
+                "defines EOS_ALLOW_UNSIGNED_PKG; the package is NOT "
+                "authenticated\n");
+        (void)signature; (void)binary_data; (void)binary_size;
+        return 0;
+#else
+        fprintf(stderr,
+                "eos-pkg: refusing to verify: no trust anchor is configured. "
+                "The SHA-256 in the header travels with the package and says "
+                "nothing about its origin. Install a key with "
+                "eos_pkg_set_trust_anchor(), build with "
+                "EOS_PKG_TRUST_ANCHOR_HEX, or -- for tests only -- with "
+                "EOS_ALLOW_UNSIGNED_PKG.\n");
+        return -1;
+#endif
+    }
+
+    if (!ed25519_verify(signature, binary_data, binary_size, anchor)) {
+        fprintf(stderr, "eos-pkg: signature verification failed\n");
+        return -1;
+    }
+    return 0;
+}
 
 static void eos_print_capabilities(uint32_t caps)
 {
@@ -371,8 +517,7 @@ int eos_pkg_verify(const char *eapp_path)
         return -1;
     }
 
-    if (!ed25519_verify(hdr.signature, binary_data, hdr.binary_size, eos_pkg_public_key)) {
-        fprintf(stderr, "eos-pkg: signature verification failed\n");
+    if (eos_pkg_check_signature(hdr.signature, binary_data, hdr.binary_size) != 0) {
         free(binary_data);
         fclose(f);
         return -1;
@@ -484,8 +629,7 @@ int eos_pkg_install(eapp_db_t *db, const char *eapp_path)
         return -1;
     }
 
-    if (!ed25519_verify(hdr.signature, binary_data, hdr.binary_size, eos_pkg_public_key)) {
-        fprintf(stderr, "eos-pkg: signature verification failed\n");
+    if (eos_pkg_check_signature(hdr.signature, binary_data, hdr.binary_size) != 0) {
         free(binary_data);
         fclose(f);
         return -1;

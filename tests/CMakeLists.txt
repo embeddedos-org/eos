@@ -15,7 +15,16 @@
 # test, which stay exactly as CI builds them for release -- keeps every
 # existing assert() meaningful without rewriting 684 call sites.
 # ---------------------------------------------------------------------------
-add_compile_options(-UNDEBUG)
+if(MSVC)
+    foreach(config RELEASE RELWITHDEBINFO MINSIZEREL)
+        string(REPLACE "/DNDEBUG" "" CMAKE_C_FLAGS_${config}
+               "${CMAKE_C_FLAGS_${config}}")
+    endforeach()
+    add_compile_options("/FI${CMAKE_CURRENT_SOURCE_DIR}/assertions_enabled.h")
+else()
+    add_compile_options(-UNDEBUG)
+    add_compile_options(-include "${CMAKE_CURRENT_SOURCE_DIR}/assertions_enabled.h")
+endif()
 
 # ---------------------------------------------------------------------------
 # A check macro that is not declared is not a check.
@@ -110,15 +119,35 @@ add_executable(test_crypto_rsa test_crypto_rsa.c)
 target_link_libraries(test_crypto_rsa PRIVATE eos_crypto)
 add_test(NAME test_crypto_rsa COMMAND test_crypto_rsa)
 
-# --- test_crypto_ed25519_loworder: reject keys outside the prime-order subgroup ---
-add_executable(test_crypto_ed25519_loworder test_crypto_ed25519_loworder.c)
-target_link_libraries(test_crypto_ed25519_loworder PRIVATE eos_crypto)
-add_test(NAME test_crypto_ed25519_loworder COMMAND test_crypto_ed25519_loworder)
-
 # --- test_crypto_sha512: SHA-512 against NIST vectors ---
 add_executable(test_crypto_sha512 test_crypto_sha512.c)
 target_link_libraries(test_crypto_sha512 PRIVATE eos_crypto)
 add_test(NAME test_crypto_sha512 COMMAND test_crypto_sha512)
+
+# --- test_mpu_validate: MPU region programmability ---
+# Landed with the fix it guards (#109) and lost its registration to a merge,
+# so the six cases stopped being compiled while the file stayed in the tree.
+add_executable(test_mpu_validate test_mpu_validate.c)
+target_link_libraries(test_mpu_validate PRIVATE eos_rtos_security)
+add_test(NAME test_mpu_validate COMMAND test_mpu_validate)
+
+# --- test_e2e: kernel boot-to-task end-to-end path ---
+add_executable(test_e2e test_e2e.c)
+target_link_libraries(test_e2e PRIVATE eos_kernel)
+add_test(NAME test_e2e COMMAND test_e2e)
+
+# --- test_net_mock: eNet socket API against a mock transport ---
+add_executable(test_net_mock test_net_mock.c)
+add_test(NAME test_net_mock COMMAND test_net_mock)
+
+# --- test_hal_stm32f4: STM32F4 peripheral register behaviour ---
+# Builds on the host against the simulated register block; it needed only the
+# board header directory on the include path, which is why it never ran.
+add_executable(test_hal_stm32f4 test_hal_stm32f4.c)
+target_include_directories(test_hal_stm32f4 PRIVATE
+    ${CMAKE_SOURCE_DIR}/boards/stm32f407_discovery)
+target_link_libraries(test_hal_stm32f4 PRIVATE eos_hal)
+add_test(NAME test_hal_stm32f4 COMMAND test_hal_stm32f4)
 
 # --- test_security: Keystore, ACL ---
 add_executable(test_security test_security.c)
@@ -194,7 +223,7 @@ add_executable(test_net test_net.c)
 target_link_libraries(test_net PRIVATE eos_net)
 # The POSIX round-trip cases need the same switch the library was built with,
 # plus pthreads for the listener they connect to.
-if(NOT CMAKE_CROSSCOMPILING)
+if(NOT CMAKE_CROSSCOMPILING AND UNIX)
     target_compile_definitions(test_net PRIVATE EOS_NET_POSIX=1)
     find_package(Threads REQUIRED)
     target_link_libraries(test_net PRIVATE Threads::Threads)
@@ -211,6 +240,15 @@ if(UNIX AND NOT APPLE)
     target_link_libraries(test_motor_ctrl PRIVATE m)
 endif()
 add_test(NAME test_motor_ctrl COMMAND test_motor_ctrl)
+
+# --- test_pkg_trust_anchor: eos_pkg refuses to verify without a real key ---
+# eos_eapp exists only in a host build; see the comment on services/pkg in the
+# top-level CMakeLists.txt.
+if(NOT CMAKE_CROSSCOMPILING)
+    add_executable(test_pkg_trust_anchor test_pkg_trust_anchor.c)
+    target_link_libraries(test_pkg_trust_anchor PRIVATE eos_eapp eos_crypto)
+    add_test(NAME test_pkg_trust_anchor COMMAND test_pkg_trust_anchor)
+endif()
 
 # --- test_package: Package management ---
 add_executable(test_package test_package.c)

@@ -112,6 +112,27 @@ static int ed25519_key_has_prime_order(const ge_p3 *A) {
     /* A key of prime order L multiplies to the identity. */
     return ed25519_point_is_identity(packed);
 }
+
+/* Is this encoding usable as a trust anchor?
+ *
+ * ed25519_verify() runs the same two tests, but only once a signature is in
+ * hand, and a failure there is indistinguishable from a bad signature. A
+ * caller that stores a key -- eos_pkg's trust anchor, see #98 -- needs to ask
+ * about the key alone, at the moment it is configured, so an unusable anchor
+ * is reported as an unusable anchor rather than as a stream of packages that
+ * all appear to be forged.
+ */
+int ed25519_public_key_is_usable(const unsigned char *public_key) {
+    ge_p3 A;
+
+    if (public_key == 0) {
+        return 0;
+    }
+    if (ge_frombytes_negate_vartime(&A, public_key) != 0) {
+        return 0;
+    }
+    return ed25519_key_has_prime_order(&A);
+}
 int ed25519_verify(const unsigned char *signature, const unsigned char *message, size_t message_len, const unsigned char *public_key) {
     unsigned char h[64];
     unsigned char checker[32];
