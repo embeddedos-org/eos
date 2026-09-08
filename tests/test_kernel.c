@@ -383,6 +383,7 @@ int main(void) {
     test_queue_no_stale_send_waiter();
     test_task_stats();
     test_tick_overflow();
+    test_queue_send_waiter_overflow();
     printf("=== ALL KERNEL TESTS PASSED (13/13) ===\n");
     return 0;
 }
