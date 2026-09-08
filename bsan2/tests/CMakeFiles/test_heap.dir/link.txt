@@ -1,1 +1,0 @@
-/usr/bin/cc -fsanitize=address,undefined -fno-omit-frame-pointer -g -O3 -DNDEBUG -arch arm64 -Wl,-search_paths_first -Wl,-headerpad_max_install_names -fsanitize=address,undefined CMakeFiles/test_heap.dir/test_heap.c.o -o test_heap  ../libeos_kernel.a ../libeos_hal.a
