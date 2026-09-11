@@ -75,7 +75,7 @@ static void test_arm_cortex_arch(void) {
 }
 
 static void test_firmware_init(void) {
-    EosConfig cfg;
+    static EosConfig cfg;   /* ~4 MB: MSVC's 1 MB default stack cannot hold it */
     memset(&cfg, 0, sizeof(cfg));
     strncpy(cfg.workspace.build_dir, ".eos/build", EOS_MAX_PATH - 1);
     strncpy(cfg.toolchain.rtos_target, "arm-none-eabi", EOS_MAX_NAME - 1);
@@ -100,7 +100,7 @@ static void test_firmware_init(void) {
 }
 
 static void test_firmware_dry_run(void) {
-    EosConfig cfg;
+    static EosConfig cfg;   /* ~4 MB: MSVC's 1 MB default stack cannot hold it */
     memset(&cfg, 0, sizeof(cfg));
     strncpy(cfg.workspace.build_dir, ".eos/build", EOS_MAX_PATH - 1);
 
@@ -119,7 +119,7 @@ static void test_firmware_dry_run(void) {
 }
 
 static void test_hybrid_init(void) {
-    EosConfig cfg;
+    static EosConfig cfg;   /* ~4 MB: MSVC's 1 MB default stack cannot hold it */
     memset(&cfg, 0, sizeof(cfg));
     strncpy(cfg.workspace.build_dir, ".eos/build", EOS_MAX_PATH - 1);
     cfg.system.kind = EOS_SYSTEM_HYBRID;
@@ -154,7 +154,7 @@ static void test_firmware_graph_node(void) {
 }
 
 static void test_config_load_rtos(void) {
-    EosConfig cfg;
+    static EosConfig cfg;   /* ~4 MB: MSVC's 1 MB default stack cannot hold it */
     EosResult res = eos_config_load(&cfg, "examples/motor-controller/eos.yaml");
     if (res != EOS_OK) {
         printf("(skip - example file not found) ");
@@ -168,7 +168,7 @@ static void test_config_load_rtos(void) {
 }
 
 static void test_config_load_hybrid(void) {
-    EosConfig cfg;
+    static EosConfig cfg;   /* ~4 MB: MSVC's 1 MB default stack cannot hold it */
     EosResult res = eos_config_load(&cfg, "examples/industrial-gateway/eos.yaml");
     if (res != EOS_OK) {
         printf("(skip - example file not found) ");
