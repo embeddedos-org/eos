@@ -354,9 +354,15 @@ add_test(NAME test_stress COMMAND test_stress)
 # Registered by #119, replaced by #115's block in a three-way replay, then
 # #118 replaced that; both suites compiled against nothing until
 # test_cmake_test_registration.py named them.
-add_executable(test_linux_security_paths test_linux_security_paths.c)
-target_link_libraries(test_linux_security_paths PRIVATE eos_linux_security)
-add_test(NAME test_linux_security_paths COMMAND test_linux_security_paths)
+# POSIX only: the suite proves refused inputs never reach a shell by probing
+# with access()/open(O_CREAT)/rmdir, and the MSVC leg (#132) has no unistd.h.
+# On Windows the library's own #else arm refuses every install/build call
+# before is_path_safe() matters.
+if(UNIX)
+    add_executable(test_linux_security_paths test_linux_security_paths.c)
+    target_link_libraries(test_linux_security_paths PRIVATE eos_linux_security)
+    add_test(NAME test_linux_security_paths COMMAND test_linux_security_paths)
+endif()
 
 # --- test_pkg_fetch: source fetch refuses an unverifiable download ---
 add_executable(test_pkg_fetch test_pkg_fetch.c)
