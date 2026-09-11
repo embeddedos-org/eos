@@ -497,6 +497,8 @@ static int kernel_tests_run = 0;
 int main(void) {
     printf("=== EoS Kernel Tests ===\n");
     RUN(test_kernel_init);
+    RUN(test_idle_task_is_permanent);
+    RUN(test_scheduler_selects_valid_task_and_tracks_stack);
     RUN(test_task_create);
     RUN(test_task_create_invalid);
     RUN(test_task_delete);
@@ -507,8 +509,10 @@ int main(void) {
     RUN(test_queue);
     RUN(test_queue_full);
     RUN(test_queue_send_waiter_overflow);
+    RUN(test_queue_no_stale_send_waiter);
     RUN(test_task_stats);
     RUN(test_tick_overflow);
+    RUN(test_wake_tick_zero);
     /* Counted rather than written out: the literal said 12/12 while a
      * thirteenth test sat in this file uncalled, so the number agreed
      * with the omission instead of exposing it. */
