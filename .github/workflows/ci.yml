@@ -257,7 +257,7 @@ jobs:
   ci-gate:
     name: CI Gate
     runs-on: ubuntu-22.04
-    needs: [test, default-config, build-arm, static-analysis]
+    needs: [test, windows-test, default-config, build-arm, static-analysis]
     if: always()
     steps:
       - uses: actions/checkout@v4

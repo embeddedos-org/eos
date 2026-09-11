@@ -72,6 +72,13 @@ NOT_REQUIRED = {
         "documentation build; its pull_request trigger is filtered to "
         "paths: ['docs/book/**'], so on a pull request that touches nothing "
         "under that path it reports no status at all",
+    "eosim-sanity.yml":
+        "nightly EoSim install check; its pull_request trigger is filtered to "
+        "the two simulation workflow files themselves (#129), so a pull "
+        "request that touches neither reports no status at all",
+    "simulation-test.yml":
+        "nightly EoSim simulation; same paths filter as eosim-sanity.yml "
+        "(#129), so it reports no status on almost every pull request",
 }
 
 # (workflow, job) pairs excluded from their gate's `needs`, with the reason.
