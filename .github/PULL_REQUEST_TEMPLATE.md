@@ -47,6 +47,11 @@
 <!-- Reference related issues: Closes #XX, Fixes #YY -->
 
 
+## Closing issue
+
+Fixes #<same-repository issue number>
+
+
 ## Screenshots / Logs
 
 <!-- If applicable, add screenshots or relevant log output -->
