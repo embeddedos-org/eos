@@ -1,98 +1,98 @@
-<!-- generated: eos-ai-scaffold -->
-# Agent Responsibilities
+# AGENTS.md — EoS
 
-Each role owns a slice of the work and does only that slice. Full briefs are in
-[.ai/](./.ai/). These are responsibilities, not a required agent count — one
-agent may hold several roles on a small change. Split when the roles need
-genuinely different context, not by default.
+EoS (CMake project `EoS`, v0.5.0) is a multi-platform embedded OS framework
+written in pure C11: a lightweight RTOS kernel, a hardware abstraction layer
+(HAL) with host (Linux) and bare-metal backends, a driver framework, and
+networking, power-management, and runtime-service layers. Board/product
+selection happens at configure time via descriptors in `boards/` and profiles
+in `products/`. (Provenance: `README.md` intro.)
 
-One rule is structural rather than stylistic: **whoever implements does not
-approve.** Review is a separate role because self-review reliably misses the
-thing the implementer already believes is correct.
+## Layout (from `README.md` "What's inside")
 
-## Planner — [.ai/planner.md](./.ai/planner.md)
+- `kernel/` — tasks, sync primitives, IPC, multicore — builds `eos_kernel`
+- `hal/` — HAL platform split (`hal_linux.c` / `hal_rtos.c`, plus `hal_win32.c`)
+  — builds `eos_hal`
+- `drivers/` — driver framework and the `devicetree/` parser — builds
+  `eos_drivers`
+- `net/` — networking abstraction (POSIX backend on host builds; bare-metal
+  `eos_net_connect()` returns `-1`) — builds `eos_net`
+- `power/` — power-management abstraction — builds `eos_power`
+- `core/` — OS config, logging, layer plumbing
+- `services/` — runtime services: `crypto`, `security`, `os`, `linux`, `gps`,
+  `motor`, `ota`, `filesystem`, `sensor`, `ui`, `init`, and more
+- `systems/` — rootfs, image, and firmware assembly
+- `boards/` — board descriptor files (`boards/*.yaml`) plus linker scripts
+- `products/` — product-profile headers selected by `EOS_PRODUCT`
+- `layers/`, `toolchains/`, `cmake/` — layer definitions, cross-compile
+  toolchain files, CMake helpers
+- `backends/`, `sim/`, `pkg/`, `debug/` — backend registry, simulation,
+  packaging, debug (GDB stub, core dump)
+- `examples/` — example apps (`blink-gpio`, `ble-sensor`, …)
+- `tests/` — C unit tests plus `functional/`, `fuzz/`, `performance/`,
+  `simulation/`
+- `docs/` — full documentation set (`mkdocs.yml`); API docs via `Doxyfile`
 
-- Understand the request.
-- Break work into tasks.
-- Assign work.
+## Build (from `README.md` "Build" and `CONTRIBUTING.md` "Development Setup")
 
-## Architect — [.ai/architect.md](./.ai/architect.md)
+Requires CMake ≥ 3.16 and a C11 compiler (GCC/Clang; MSVC on Windows). Native
+host build:
 
-- Design structure.
-- Choose patterns.
-- Own dependencies, scalability and maintainability.
+```bash
+cmake -B build/host -DCMAKE_BUILD_TYPE=Release
+cmake --build build/host --parallel
+```
 
-## Backend — [.ai/backend.md](./.ai/backend.md)
+Build options: `EOS_BUILD_TESTS` (default `OFF`), `EOS_PLATFORM`
+(`linux` | `rtos`, default `linux`), `EOS_PRODUCT` (one of the product
+profiles; empty = full build).
 
-- APIs
-- Database
-- Business logic
+Cross-compile for a target board with a toolchain file:
 
-## Frontend — [.ai/frontend.md](./.ai/frontend.md)
+```bash
+cmake -B build/arm -G Ninja \
+  -DCMAKE_TOOLCHAIN_FILE=toolchains/arm-cortex-m4.cmake \
+  -DEOS_BUILD_TESTS=OFF
+cmake --build build/arm --parallel
+```
 
-- UI
-- Components
-- Accessibility
+## Test (from `README.md` "Test" and `CONTRIBUTING.md` "Development Setup")
 
-## Testing — [.ai/testing.md](./.ai/testing.md)
+`EOS_PRODUCT=vbox_test` is required alongside `EOS_BUILD_TESTS=ON`: the OTA,
+sensor, motor, and power tests only compile against a product profile that
+enables those services, and `vbox_test` is the profile meant for host-side
+testing.
 
-- Unit tests
-- Integration tests
-- Regression tests
+```bash
+cmake -B build/host -DEOS_BUILD_TESTS=ON -DEOS_PRODUCT=vbox_test
+cmake --build build/host --parallel
+ctest --test-dir build/host --output-on-failure
+python run_all_tests.py
+```
 
-## Security — [.ai/security.md](./.ai/security.md)
+Python tooling setup: `pip install -r requirements-dev.txt` (installs `pytest`
+and `pytest-cov`). `run_all_tests.py` runs pytest over `tests/unit`,
+`tests/functional`, `tests/performance`, and `tests/simulation`; direct run:
+`python -m pytest tests/ -v`.
 
-- Authentication and authorization
-- Validation
-- Secrets
-- Dependency review
+## Lint / format
 
-## Performance — [.ai/performance.md](./.ai/performance.md)
+Not defined: no lint or format command is documented in `README.md` or
+`CONTRIBUTING.md`. (A `.clang-format` and a `.clang-tidy` config file exist in
+the tree, and `ci.yml` runs a cppcheck + clang-tidy static-analysis job, but
+the repo documents no command to invoke a formatter or linter locally; C style
+rules — C11, `-Wall -Wextra` clean, `eos_` prefix, Doxygen doc comments — are
+in `CONTRIBUTING.md` "Code Guidelines".)
 
-- Profiling
-- Optimization
-- Scalability
+## Contributing
 
-## Reviewer — [.ai/reviewer.md](./.ai/reviewer.md)
+See `CONTRIBUTING.md`: fork, create a feature branch (`git checkout -b
+feat/my-feature`), run the build and tests locally, then submit a pull request.
+Follow Conventional Commits; the PR checklist requires zero-warning compiles on
+GCC, Clang, and MSVC, passing tests, HAL stubs for new peripherals,
+`#ifdef` platform guards, no GCC-only builtins without portable fallbacks, and
+no hardcoded filesystem paths.
 
-- Final review
-- Verify requirements
-- Merge findings
+## Security
 
-## Documentation — [.ai/docs.md](./.ai/docs.md)
-
-- README
-- API docs
-- Changelog
-- Migration and architecture notes
-
-## Release — [.ai/release.md](./.ai/release.md)
-
-- Release notes
-- Deployment preparation
-- Rollback guidance
-
----
-
-## Switching roles
-
-Switch when the task changes domain, when specialist knowledge is required,
-when independent review is required, or when the context has grown past what
-one agent can hold accurately. Every switch runs the protocol in
-[HANDOFF.md](./HANDOFF.md).
-
-## Finding work that is not yours
-
-You will. The rule is: **record it, do not absorb it, do not drop it.**
-
-| What you found | Do |
-|----------------|-----|
-| A defect unrelated to your task | Note it in [TASKS.md](./TASKS.md) and keep going. |
-| A defect your change would sit on top of | Stop; say it blocks you; propose fixing it as its own task. |
-| A security issue | Report immediately, whatever role you hold. This one never waits for a handoff. |
-| A design decision missing from the plan | Return to the architect rather than deciding it inside an implementation. |
-| Work that belongs to a role nobody assigned | Say so. An unowned task is how requirements go missing. |
-
-Silently fixing something outside your task makes the diff unreviewable.
-Silently ignoring it means nobody ever looks again. Neither is acceptable; the
-note is what makes the difference.
+See `SECURITY.md`. Report vulnerabilities to security@embeddedos.org — do NOT
+open public issues for vulnerabilities. Response within 48 hours.
