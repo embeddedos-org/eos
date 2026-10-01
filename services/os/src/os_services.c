@@ -8,6 +8,16 @@
 #include <stdlib.h>
 #include <string.h>
 #include <time.h>
+#ifdef _WIN32
+#include <process.h>
+#else
+#include <fcntl.h>
+#include <spawn.h>
+#include <sys/stat.h>
+#include <sys/wait.h>
+#include <unistd.h>
+extern char **environ;
+#endif
 
 static uint64_t get_timestamp_ms(void) {
     return (uint64_t)time(NULL) * 1000;
@@ -80,32 +90,112 @@ int eos_ota_set_source(EosOtaUpdate *ota, const char *url,
     return 0;
 }
 
-static int is_url_safe(const char *url) {
+/* ---- OTA: no shell ----
+ *
+ * The download and the install used to be snprintf'd into a line and handed
+ * to system(): `wget -q -O "%s" "%s"` and `cp -f "%s" "%s"`. Each was guarded
+ * by its own denylist, and each denylist had holes -- the URL's omitted the
+ * double quote and the ampersand, so a URL carrying `" & <cmd> & "` left the
+ * quoting and ran the command; the install path's omitted the backtick,
+ * which is command substitution inside double quotes, so a target of
+ * `x\`<cmd>\`` ran the command and then reported EOS_OTA_COMPLETE. Both were
+ * demonstrated by execution in review.
+ *
+ * Neither step needs a shell. The fetch runs the downloader with an argv,
+ * so nothing is parsed as shell syntax whatever the URL holds, and the
+ * install is a file copy in C. What is left to check about the URL is only
+ * what the downloader would do with it: it must be an http(s) URL made of
+ * URL characters, so it cannot be mistaken for an option (`-O ...`) or a
+ * local file, and it cannot smuggle a control character into a log line.
+ */
+
+static int url_is_fetchable(const char *url) {
+    /* RFC 3986: unreserved, reserved (gen-delims and sub-delims), and %. */
+    static const char extra[] = "-._~:/?#[]@!$&'()*+,;=%";
+    const unsigned char *p;
     if (!url) return 0;
-    if (strpbrk(url, ";|><$()`'")) return 0;
+    if (strncmp(url, "https://", 8) != 0 && strncmp(url, "http://", 7) != 0) return 0;
+    for (p = (const unsigned char *)url; *p; p++) {
+        if (*p <= 0x20 || *p >= 0x7F) return 0;
+        if (!((*p >= '0' && *p <= '9') || (*p >= 'a' && *p <= 'z') ||
+              (*p >= 'A' && *p <= 'Z') || strchr(extra, (int)*p)))
+            return 0;
+    }
     return 1;
 }
 
+/* Run argv[0] with argv, no shell in between. 0 when it exited 0. */
+static int run_argv(char *const argv[]) {
+#ifdef _WIN32
+    intptr_t rc = _spawnvp(_P_WAIT, argv[0], (const char *const *)argv);
+    return (rc == 0) ? 0 : -1;
+#else
+    pid_t pid;
+    int status = 0;
+    if (posix_spawnp(&pid, argv[0], NULL, NULL, argv, environ) != 0) return -1;
+    if (waitpid(pid, &status, 0) != pid) return -1;
+    return (WIFEXITED(status) && WEXITSTATUS(status) == 0) ? 0 : -1;
+#endif
+}
+
+/* Create dst for writing, owner read/write only. fopen("wb") creates with
+ * 0666 masked by umask, so on a permissive umask the installed image would
+ * be readable -- and writable -- by every user on the host. The updater is
+ * the one that writes the image and the one that reads it back, so 0600 is
+ * the right mode; a consumer that needs it wider is a policy of its own. */
+static FILE *create_private(const char *dst) {
+#ifdef _WIN32
+    return fopen(dst, "wb");
+#else
+    int fd = open(dst, O_WRONLY | O_CREAT | O_TRUNC | O_CLOEXEC, S_IRUSR | S_IWUSR);
+    FILE *f;
+    if (fd < 0) return NULL;
+    f = fdopen(fd, "wb");
+    if (!f) close(fd);
+    return f;
+#endif
+}
+
+/* Copy src to dst byte for byte. 0 on success; dst is not left half-written
+ * on a read or write error only in the sense that the error is reported. */
+static int copy_file(const char *src, const char *dst) {
+    FILE *in = fopen(src, "rb");
+    FILE *out;
+    unsigned char buf[8192];
+    size_t n;
+    int ok = 1;
+    if (!in) return -1;
+    out = create_private(dst);
+    if (!out) { fclose(in); return -1; }
+    while ((n = fread(buf, 1, sizeof(buf), in)) > 0) {
+        if (fwrite(buf, 1, n, out) != n) { ok = 0; break; }
+    }
+    if (ferror(in)) ok = 0;
+    if (fclose(out) != 0) ok = 0;
+    fclose(in);
+    return ok ? 0 : -1;
+}
+
 int eos_ota_download(EosOtaUpdate *ota) {
-    if (!is_url_safe(ota->url)) {
-        ota->state = EOS_OTA_FAILED;
+    if (!ota || !url_is_fetchable(ota->url)) {
+        if (ota) ota->state = EOS_OTA_FAILED;
         return -1;
     }
     ota->state = EOS_OTA_DOWNLOADING;
-    char cmd[2048];
 #ifdef _WIN32
     snprintf(ota->local_path, sizeof(ota->local_path), "%s\\eos_ota_update.bin",
              getenv("TEMP") ? getenv("TEMP") : ".");
+    {
+        char *const argv[] = { "curl", "-fSL", "-o", ota->local_path, ota->url, NULL };
+        if (run_argv(argv) != 0) { ota->state = EOS_OTA_FAILED; return -1; }
+    }
 #else
     snprintf(ota->local_path, sizeof(ota->local_path), "/tmp/eos_ota_update.bin");
+    {
+        char *const argv[] = { "wget", "-q", "-O", ota->local_path, ota->url, NULL };
+        if (run_argv(argv) != 0) { ota->state = EOS_OTA_FAILED; return -1; }
+    }
 #endif
-#ifdef _WIN32
-    snprintf(cmd, sizeof(cmd), "curl -fSL -o \"%s\" \"%s\"", ota->local_path, ota->url);
-#else
-    snprintf(cmd, sizeof(cmd), "wget -q -O \"%s\" \"%s\"", ota->local_path, ota->url);
-#endif
-    int rc = system(cmd);
-    if (rc != 0) { ota->state = EOS_OTA_FAILED; return -1; }
     ota->state = EOS_OTA_VERIFYING;
     return 0;
 }
@@ -124,20 +214,18 @@ int eos_ota_verify(EosOtaUpdate *ota) {
 }
 
 int eos_ota_install(EosOtaUpdate *ota, const char *target_path) {
-    if (target_path && strpbrk(target_path, ";|&><$()\"'")) {
+    if (!ota) return -1;
+    if (!target_path || !target_path[0] || !ota->local_path[0]) {
         ota->state = EOS_OTA_FAILED;
         return -1;
     }
     ota->state = EOS_OTA_INSTALLING;
-    char cmd[2048];
-#ifdef _WIN32
-    snprintf(cmd, sizeof(cmd), "copy /Y \"%s\" \"%s\"", ota->local_path, target_path);
-#else
-    snprintf(cmd, sizeof(cmd), "cp -f \"%s\" \"%s\"", ota->local_path, target_path);
-#endif
-    int rc = system(cmd);
-    ota->state = (rc == 0) ? EOS_OTA_COMPLETE : EOS_OTA_FAILED;
-    return (rc == 0) ? 0 : -1;
+    if (copy_file(ota->local_path, target_path) != 0) {
+        ota->state = EOS_OTA_FAILED;
+        return -1;
+    }
+    ota->state = EOS_OTA_COMPLETE;
+    return 0;
 }
 
 int eos_ota_rollback(EosOtaUpdate *ota) {
