@@ -18,6 +18,13 @@
 #include <sys/stat.h>
 
 #ifdef _WIN32
+  #ifndef WIN32_LEAN_AND_MEAN
+    #define WIN32_LEAN_AND_MEAN
+  #endif
+  #ifndef NOMINMAX
+    #define NOMINMAX
+  #endif
+  #include <windows.h>
   #include <direct.h>
   #include <io.h>
   #include <process.h>
@@ -42,6 +49,10 @@
   #include <sys/wait.h>
   #include <signal.h>
   #include <dirent.h>
+  #include <errno.h>
+  #include <fcntl.h>
+  #include <spawn.h>
+  extern char **environ;
   #define EOS_PATH_SEP   '/'
   #define eos_mkdir(p)   mkdir(p, 0755)
   #define eos_access(p,m) access(p, m)
@@ -73,18 +84,80 @@ static int eos_mkdir_recursive(const char *path)
     return eos_mkdir(tmp);
 }
 
+/* Remove a directory tree. This used to be `rm -rf "%s"` / `rmdir /s /q "%s"`
+ * through system(), which turned a quote in the path into a shell escape --
+ * and the path came from a db record, so a record written by an earlier
+ * version of this tool ran commands on removal. A walk in C interprets
+ * nothing. Symlinks are unlinked, not followed. */
+#ifdef _WIN32
 static int eos_rmdir_recursive(const char *path)
 {
-#ifdef _WIN32
-    char cmd[EAPP_MAX_PATH + 32];
-    snprintf(cmd, sizeof(cmd), "rmdir /s /q \"%s\"", path);
-    return system(cmd);
-#else
-    char cmd[EAPP_MAX_PATH + 32];
-    snprintf(cmd, sizeof(cmd), "rm -rf \"%s\"", path);
-    return system(cmd);
-#endif
+    char pattern[EAPP_MAX_PATH + 4];
+    WIN32_FIND_DATAA fd;
+    HANDLE h;
+    int rc = 0;
+
+    snprintf(pattern, sizeof(pattern), "%s\\*", path);
+    h = FindFirstFileA(pattern, &fd);
+    if (h == INVALID_HANDLE_VALUE) {
+        return RemoveDirectoryA(path) ? 0 : -1;
+    }
+    do {
+        char child[EAPP_MAX_PATH + 4];
+        if (strcmp(fd.cFileName, ".") == 0 || strcmp(fd.cFileName, "..") == 0) continue;
+        snprintf(child, sizeof(child), "%s\\%s", path, fd.cFileName);
+        if ((fd.dwFileAttributes & FILE_ATTRIBUTE_DIRECTORY) &&
+            !(fd.dwFileAttributes & FILE_ATTRIBUTE_REPARSE_POINT)) {
+            if (eos_rmdir_recursive(child) != 0) rc = -1;
+        } else {
+            if (fd.dwFileAttributes & FILE_ATTRIBUTE_READONLY)
+                SetFileAttributesA(child, fd.dwFileAttributes & ~FILE_ATTRIBUTE_READONLY);
+            if ((fd.dwFileAttributes & FILE_ATTRIBUTE_DIRECTORY)
+                    ? !RemoveDirectoryA(child) : !DeleteFileA(child))
+                rc = -1;
+        }
+    } while (FindNextFileA(h, &fd));
+    FindClose(h);
+    if (!RemoveDirectoryA(path)) rc = -1;
+    return rc;
 }
+#else
+/* Remove everything under an open directory descriptor, then the
+ * descriptor's own entry is removed by the caller. Every entry is acted
+ * on relative to the descriptor, never through a path that was checked
+ * a moment earlier: unlinkat() first, which removes a file or a symlink
+ * (never following it); only when the kernel says the entry is a
+ * directory is it opened with O_NOFOLLOW and descended into. Nothing is
+ * stat'ed and then trusted. Consumes dfd. */
+static int rm_tree_fd(int dfd)
+{
+    DIR *d = fdopendir(dfd);
+    struct dirent *e;
+    int rc = 0;
+
+    if (!d) { close(dfd); return -1; }
+    while ((e = readdir(d)) != NULL) {
+        int cfd;
+        if (strcmp(e->d_name, ".") == 0 || strcmp(e->d_name, "..") == 0) continue;
+        if (unlinkat(dfd, e->d_name, 0) == 0) continue;
+        if (errno != EISDIR && errno != EPERM) { rc = -1; continue; } /* Linux says EISDIR, BSDs EPERM */
+        cfd = openat(dfd, e->d_name, O_RDONLY | O_DIRECTORY | O_NOFOLLOW | O_CLOEXEC);
+        if (cfd < 0) { rc = -1; continue; }
+        if (rm_tree_fd(cfd) != 0) rc = -1;
+        if (unlinkat(dfd, e->d_name, AT_REMOVEDIR) != 0) rc = -1;
+    }
+    closedir(d);
+    return rc;
+}
+
+static int eos_rmdir_recursive(const char *path)
+{
+    int fd = open(path, O_RDONLY | O_DIRECTORY | O_NOFOLLOW | O_CLOEXEC);
+    if (fd < 0) return -1;
+    if (rm_tree_fd(fd) != 0) return -1;
+    return rmdir(path);
+}
+#endif
 
 #include <eos/crypto.h>
 #include <ed25519.h>
@@ -117,6 +190,57 @@ static int eos_rmdir_recursive(const char *path)
  * authenticator installed (EOS_ALLOW_UNSIGNED_OTA); EOS_ALLOW_UNSIGNED_PKG
  * is the same opt-in, for tests and for bring-up.
  * -------------------------------------------------------------------------- */
+
+/* --------------------------------------------------------------------------
+ * Header fields that become paths
+ *
+ * hdr.package_id names the install directory under apps_dir and hdr.name
+ * names the binary inside it. Both come straight from the package file, and
+ * the signature covers the binary alone, so both are attacker-chosen even
+ * for a genuinely signed package: "../../.." in package_id put a 0755 binary
+ * outside apps_dir, and a 64-byte field with no terminator was printed and
+ * joined into paths past the end of the struct. install_path used to be
+ * handed to `rm -rf "..."` through system(), so a quote in package_id
+ * reached a shell as well; removal is a walk in C now and stop() hands the
+ * name to pkill as an argv element, so no field reaches a shell at all.
+ *
+ * Each field is a single path component: terminated, non-empty, made of
+ * [A-Za-z0-9._-] only, and not "." or "..". Nothing else is a name. The
+ * rule is applied where a header is read (verify, install, update) and
+ * where a db record is read (load_db), so a record an earlier version
+ * wrote from an unvalidated header is dropped rather than acted on.
+ * -------------------------------------------------------------------------- */
+static bool eos_pkg_field_is_component(const char *field, size_t field_sz)
+{
+    size_t n = 0;
+    while (n < field_sz && field[n] != '\0') n++;
+    if (n == 0 || n == field_sz) return false;            /* empty, or unterminated */
+    if (field[0] == '.' && (n == 1 || (n == 2 && field[1] == '.'))) return false;
+    for (size_t i = 0; i < n; i++) {
+        unsigned char c = (unsigned char)field[i];
+        bool ok = (c >= '0' && c <= '9') || (c >= 'a' && c <= 'z') ||
+                  (c >= 'A' && c <= 'Z') || c == '.' || c == '_' || c == '-';
+        if (!ok) return false;
+    }
+    return true;
+}
+
+/* Refuse a header whose name or package_id is not a usable path component.
+ * Called before either field is printed, looked up, or joined into a path. */
+static int eos_pkg_check_header_names(const eapp_header_t *hdr)
+{
+    if (!eos_pkg_field_is_component(hdr->package_id, sizeof(hdr->package_id))) {
+        fprintf(stderr, "eos-pkg: package_id is not a valid name "
+                        "(one path component of [A-Za-z0-9._-], terminated)\n");
+        return -1;
+    }
+    if (!eos_pkg_field_is_component(hdr->name, sizeof(hdr->name))) {
+        fprintf(stderr, "eos-pkg: name is not a valid name "
+                        "(one path component of [A-Za-z0-9._-], terminated)\n");
+        return -1;
+    }
+    return 0;
+}
 
 static uint8_t  eos_pkg_anchor[EAPP_PUBKEY_LEN];
 static bool     eos_pkg_anchor_set = false;
@@ -407,14 +531,40 @@ int eos_pkg_load_db(eapp_db_t *db)
         return -1;
     }
 
+    /* Every record is held to the rules install enforces on a header: name
+     * and package_id are single path components, and install_path is the
+     * one install would have built from them. A record that fails is a
+     * record an earlier version of this tool wrote from an unvalidated
+     * header, and remove() and stop() must not act on it; it is dropped
+     * here, with a message, and the next save writes the db without it. */
+    uint32_t kept = 0;
     for (uint32_t i = 0; i < db->count; i++) {
-        if (fread(&db->packages[i], sizeof(eapp_package_t), 1, f) != 1) {
+        eapp_package_t *rec = &db->packages[kept];
+        char expected[EAPP_MAX_PATH];
+        if (fread(rec, sizeof(eapp_package_t), 1, f) != 1) {
             fprintf(stderr, "eos-pkg: truncated database at package %u\n", i);
-            db->count = i;
+            db->count = kept;
             fclose(f);
             return -1;
         }
+        if (!eos_pkg_field_is_component(rec->name, sizeof(rec->name)) ||
+            !eos_pkg_field_is_component(rec->package_id, sizeof(rec->package_id))) {
+            fprintf(stderr, "eos-pkg: dropping database record %u: its name fields are "
+                            "not valid names\n", i);
+            memset(rec, 0, sizeof(*rec));
+            continue;
+        }
+        snprintf(expected, sizeof(expected), "%s%c%s",
+                 db->apps_dir, EOS_PATH_SEP, rec->package_id);
+        if (strncmp(rec->install_path, expected, sizeof(rec->install_path)) != 0) {
+            fprintf(stderr, "eos-pkg: dropping database record '%s': its install path is "
+                            "not %s\n", rec->package_id, expected);
+            memset(rec, 0, sizeof(*rec));
+            continue;
+        }
+        kept++;
     }
+    db->count = kept;
 
     fclose(f);
     return 0;
@@ -523,6 +673,14 @@ int eos_pkg_verify(const char *eapp_path)
         return -1;
     }
 
+    /* After the signature, so an unsigned package is reported as unsigned.
+     * Before anything prints or joins the fields. */
+    if (eos_pkg_check_header_names(&hdr) != 0) {
+        free(binary_data);
+        fclose(f);
+        return -1;
+    }
+
     free(binary_data);
     fclose(f);
 
@@ -566,6 +724,15 @@ int eos_pkg_install(eapp_db_t *db, const char *eapp_path)
 
     if (hdr.version != EAPP_VERSION) {
         fprintf(stderr, "eos-pkg: unsupported package version %u\n", hdr.version);
+        fclose(f);
+        return -1;
+    }
+
+    /* Before the fields are printed or looked up. verify() checks them after
+     * the signature because there the message is the product; here nothing
+     * is said about the package before the signature except the line below,
+     * so the check goes first and covers it. */
+    if (eos_pkg_check_header_names(&hdr) != 0) {
         fclose(f);
         return -1;
     }
@@ -749,6 +916,16 @@ int eos_pkg_remove(eapp_db_t *db, const char *package_id)
     }
 
     if (strlen(pkg->install_path) > 0) {
+        /* load_db() held the record to this already; hold it again here,
+         * where the directory tree is actually removed. */
+        char expected[EAPP_MAX_PATH];
+        snprintf(expected, sizeof(expected), "%s%c%s",
+                 db->apps_dir, EOS_PATH_SEP, pkg->package_id);
+        if (strncmp(pkg->install_path, expected, sizeof(pkg->install_path)) != 0) {
+            fprintf(stderr, "eos-pkg: refusing to remove '%s': it is not the install "
+                            "directory of '%s'\n", pkg->install_path, package_id);
+            return -1;
+        }
         if (eos_rmdir_recursive(pkg->install_path) != 0) {
             fprintf(stderr, "eos-pkg: warning — could not fully remove '%s'\n",
                     pkg->install_path);
@@ -793,15 +970,22 @@ int eos_pkg_update(eapp_db_t *db, const char *eapp_path)
     }
     fclose(f);
 
+    /* This copy of the header is the one everything below uses; verify()
+     * re-opens the file and validates its own, which says nothing about
+     * this one if the file changed in between. */
+    if (eos_pkg_check_header_names(&hdr) != 0) return -1;
+
+    /* Verify before the lookup, so an unverifiable package is not told
+     * whether its package_id is installed. */
+    if (eos_pkg_verify(eapp_path) != 0) {
+        fprintf(stderr, "eos-pkg: new package failed verification — update aborted\n");
+        return -1;
+    }
+
     eapp_package_t *existing = eos_pkg_find(db, hdr.package_id);
     if (!existing) {
         fprintf(stderr, "eos-pkg: '%s' is not installed (use 'install' instead)\n",
                 hdr.package_id);
-        return -1;
-    }
-
-    if (eos_pkg_verify(eapp_path) != 0) {
-        fprintf(stderr, "eos-pkg: new package failed verification — update aborted\n");
         return -1;
     }
 
@@ -1026,17 +1210,25 @@ int eos_pkg_stop(const eapp_db_t *db, const char *package_id)
         return -1;
     }
 
+    /* The name is one path component (install and load_db both hold it to
+     * that), and it is handed to the process killer as an argv element,
+     * not through a shell line. */
 #if defined(_WIN32)
-    char cmd[EAPP_MAX_PATH + 64];
-    snprintf(cmd, sizeof(cmd), "taskkill /IM \"%s\" /F >nul 2>&1", pkg->name);
-    system(cmd);
+    {
+        const char *const argv[] = { "taskkill", "/IM", pkg->name, "/F", NULL };
+        (void)_spawnvp(_P_WAIT, argv[0], argv);
+    }
     pkg->state = EAPP_STATE_INSTALLED;
     printf("eos-pkg: stopped '%s'\n", pkg->name);
 
 #elif defined(__linux__) || defined(__APPLE__) || defined(__unix__)
-    char cmd[EAPP_MAX_PATH + 64];
-    snprintf(cmd, sizeof(cmd), "pkill -f \"%s\" 2>/dev/null", pkg->name);
-    system(cmd);
+    {
+        char *const argv[] = { "pkill", "-f", pkg->name, NULL };
+        pid_t pid;
+        int status;
+        if (posix_spawnp(&pid, argv[0], NULL, NULL, argv, environ) == 0)
+            (void)waitpid(pid, &status, 0);
+    }
     pkg->state = EAPP_STATE_INSTALLED;
     printf("eos-pkg: stopped '%s'\n", pkg->name);
 
