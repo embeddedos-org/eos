@@ -102,3 +102,33 @@ pattern (vendor-neutral core, pluggable NPU modules) rather than a bespoke
 kernel service. The eAI runtime-API design (`eAI` `docs/track1/runtime-api.md`,
 same day) adopts the module pattern; this HAL doc is compatible with either
 — the backend table is the seam. Decision recorded there, not here.
+
+---
+
+## Tiering metric: tokens-per-watt (2026-10-07)
+
+Accelerator tiering in this doc now uses **tokens-per-watt** as the primary
+tiering metric, replacing raw TOPS. TOPS measures peak throughput; it says
+nothing about which workloads a profile can sustain inside eos's power
+envelope. The tiers below map onto power classes, not compute classes:
+
+- **CMSIS-NN class** (cortex-m microcontrollers, no dedicated NPU): best
+  tokens-per-watt comes from 8-bit quantized kernels, not from more cores.
+- **Mid-tier NPU** (e.g. STM32N657 Neural-ART, ~600 GOPS): the efficiency
+  sweet spot for on-device sensing and always-on inference.
+- **AIE class** (dedicated AI engines): highest absolute tokens, at a power
+  cost that only fits the performance power state.
+
+Evidence for the switch: the MediaTek Dimensity 9600 Pro ships a **dual-NPU
+split** — a performance NPU running a 30B MoE model on-device, plus a
+separate efficiency NPU handling always-on sensing at **−40% power** —
+reporting **+51% prefill and +55% tokens/watt** (finance.biggo.com Dimensity
+9600 story). The lesson for eos: the always-on tier is not a downclocked
+performance profile. It is a different accelerator with a different profile.
+
+Design implication: eos power-aware model selection maps backend profiles
+onto eos power states, and the **always-on tier gets its own profile** —
+selection candidates are scored in tokens-per-watt (see eAI
+`docs/track1/runtime-api.md`, power-aware model selection, same date), not
+in TOPS. A profile that wins the performance state can lose the always-on
+state, and the selector must be allowed to say so.
