@@ -28,7 +28,7 @@ jobs:
     name: Build & Test (Linux x86_64)
     runs-on: ubuntu-22.04
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           submodules: recursive
 
@@ -87,7 +87,7 @@ jobs:
     name: Build & Test (Windows MSVC)
     runs-on: windows-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           submodules: recursive
 
@@ -118,7 +118,7 @@ jobs:
     name: Default configuration (no tests, no product)
     runs-on: ubuntu-22.04
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           submodules: recursive
 
@@ -146,7 +146,7 @@ jobs:
     runs-on: ubuntu-22.04
     needs: test
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           submodules: recursive
 
@@ -169,7 +169,7 @@ jobs:
         run: find build/arm -name "*.elf" -o -name "*.bin" -o -name "*.hex" | sort
 
       - name: Upload ARM artifacts
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: eos-arm-cortex-m4
           path: |
@@ -183,7 +183,7 @@ jobs:
     name: Static Analysis (cppcheck + clang-tidy)
     runs-on: ubuntu-22.04
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - name: Install tools
         run: sudo apt-get install -y cppcheck clang-tidy
       - name: cppcheck
@@ -194,7 +194,7 @@ jobs:
             -I include/ src/ 2>&1 | tee cppcheck.log
         continue-on-error: true
       - name: Upload analysis report
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: eos-static-analysis
           path: cppcheck.log
@@ -206,7 +206,7 @@ jobs:
     needs: [test, build-arm]
     if: startsWith(github.ref, 'refs/tags/v')
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           submodules: recursive
 
@@ -230,7 +230,7 @@ jobs:
           tar czf eos-${{ github.ref_name }}-linux-x86_64.tar.gz -C dist .
 
       - name: Create Release
-        uses: softprops/action-gh-release@v2
+        uses: softprops/action-gh-release@efb35369e0ad2afab669f228072c1b0d510eae64 # v3.0.3
         with:
           files: |
             eos-${{ github.ref_name }}-linux-x86_64.tar.gz
@@ -260,7 +260,7 @@ jobs:
     needs: [test, windows-test, default-config, build-arm, static-analysis]
     if: always()
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - name: Every job in this workflow must have succeeded
         env:
           RESULTS: ${{ toJSON(needs) }}

@@ -30,19 +30,19 @@ jobs:
     runs-on: ubuntu-22.04
     steps:
       - name: Checkout eos
-        uses: actions/checkout@v4
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           path: eos
 
       - name: Checkout eBoot
-        uses: actions/checkout@v4
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           repository: embeddedos-org/eBoot
           ref: ${{ env.EBOOT_COMMIT }}
           path: eBoot
 
       - name: Checkout ebuild
-        uses: actions/checkout@v4
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           repository: embeddedos-org/ebuild
           ref: ${{ env.EBUILD_COMMIT }}
@@ -52,7 +52,7 @@ jobs:
       # job, and everything downstream of it, with it. Restore this block and
       # the CAD step below once the repository is published.
       # - name: Checkout eFab (CAD pipeline)
-      #   uses: actions/checkout@v4
+      #   uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       #   with:
       #     repository: embeddedos-org/eFab
       #     ref: master
@@ -141,7 +141,7 @@ jobs:
           echo "Kernel image: $(wc -c < eos_qemu.bin) bytes"
 
       - name: Upload kernel image artifact
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: eos-kernel-arm64
           path: |
@@ -161,7 +161,7 @@ jobs:
           sudo apt-get install -y --no-install-recommends qemu-system-arm
 
       - name: Download kernel image
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
         with:
           name: eos-kernel-arm64
 
@@ -232,7 +232,7 @@ jobs:
 
       - name: Upload simulation report
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: eos-simulation-report
           path: eos_serial.log
@@ -248,13 +248,13 @@ jobs:
         repo: [eAI, eNI, eosllm, eDB, eBrowser, eIPC, eOffice, EoStudio, EoSim, eApps]
     steps:
       - name: Checkout ${{ matrix.repo }}
-        uses: actions/checkout@v4
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           repository: embeddedos-org/${{ matrix.repo }}
           ref: master
 
       - name: Set up Python 3.11
-        uses: actions/setup-python@v5
+        uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
         with:
           python-version: "3.11"
           # No cache: pip. setup-python errors out with "No file ... matched to
@@ -277,7 +277,7 @@ jobs:
 
       - name: Upload test results
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: test-results-${{ matrix.repo }}
           path: test-results-${{ matrix.repo }}.xml
@@ -288,14 +288,14 @@ jobs:
     runs-on: ubuntu-22.04
     steps:
       - name: Checkout ebuild
-        uses: actions/checkout@v4
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           repository: embeddedos-org/ebuild
           ref: ${{ env.EBUILD_COMMIT }}
 
       # Same missing repository as in build-kernel.
       # - name: Checkout eFab
-      #   uses: actions/checkout@v4
+      #   uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       #   with:
       #     repository: embeddedos-org/eFab
       #     ref: master
@@ -348,7 +348,7 @@ jobs:
       # exits 127 on a missing file -- red for a reason that has nothing to do
       # with its dependencies, and never green, so requiring this name would
       # make master permanently unmergeable.
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - name: Report final status
         env:
           RESULTS: ${{ toJSON(needs) }}

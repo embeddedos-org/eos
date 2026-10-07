@@ -34,12 +34,12 @@ jobs:
     runs-on: ubuntu-22.04
     steps:
       - name: Checkout eos
-        uses: actions/checkout@v4
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           path: eos
 
       - name: Checkout eBoot at master
-        uses: actions/checkout@v4
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           repository: embeddedos-org/eBoot
           ref: master
@@ -47,7 +47,7 @@ jobs:
           fetch-depth: 0
 
       - name: Checkout ebuild at master
-        uses: actions/checkout@v4
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           repository: embeddedos-org/ebuild
           ref: master

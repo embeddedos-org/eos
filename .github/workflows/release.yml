@@ -16,7 +16,7 @@ jobs:
     name: Validate Release
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           submodules: recursive
       - name: Install dependencies
@@ -51,7 +51,7 @@ jobs:
             packages: gcc-riscv64-linux-gnu
             cc: riscv64-linux-gnu-gcc
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           submodules: recursive
       - name: Install cross-compiler
@@ -75,7 +75,7 @@ jobs:
           cp -r kernel/include/* staging/include/ 2>/dev/null || true
           cp -r hal/include/* staging/include/ 2>/dev/null || true
           tar czf eos-${{ steps.version.outputs.version }}-${{ matrix.arch }}.tar.gz -C staging .
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: eos-${{ matrix.arch }}
           path: "*.tar.gz"
@@ -88,7 +88,7 @@ jobs:
     needs: validate
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           submodules: recursive
       - name: Install dependencies
@@ -107,7 +107,7 @@ jobs:
           cp -r kernel/include/* staging/include/ 2>/dev/null || true
           cp -r hal/include/* staging/include/ 2>/dev/null || true
           tar czf eos-${{ steps.version.outputs.version }}-linux-x86_64.tar.gz -C staging .
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: eos-linux-x86_64
           path: "*.tar.gz"
@@ -130,7 +130,7 @@ jobs:
             runner: macos-14
             cmake_arch: arm64
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           submodules: recursive
       - name: Install dependencies
@@ -176,7 +176,7 @@ jobs:
           # Notarize
           xcrun notarytool submit eos-${{ steps.version.outputs.version }}-macos-${{ matrix.arch }}.tar.gz \
             --apple-id "$APPLE_ID" --team-id "$APPLE_TEAM_ID" --password "$APPLE_APP_PASSWORD" --wait || true
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: eos-macos-${{ matrix.arch }}
           path: "*.tar.gz"
@@ -197,7 +197,7 @@ jobs:
           - arch: arm64
             cmake_arch: ARM64
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           submodules: recursive
       - name: Extract version
@@ -233,7 +233,7 @@ jobs:
           Get-ChildItem staging/lib/*.lib -ErrorAction SilentlyContinue | ForEach-Object {
             & signtool sign /f cert.pfx /p "$env:WINDOWS_CERT_PASSWORD" /tr $TS /td sha256 /fd sha256 $_.FullName
           }
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: eos-windows-${{ matrix.arch }}
           path: |
@@ -252,7 +252,7 @@ jobs:
       matrix:
         product: [robot, gateway, medical, automotive, iot, aerospace]
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           submodules: recursive
       - name: Install dependencies
@@ -269,7 +269,7 @@ jobs:
           mkdir -p staging
           find build -name "*.a" -exec cp {} staging/ \;
           tar czf eos-${{ steps.version.outputs.version }}-product-${{ matrix.product }}.tar.gz -C staging .
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: eos-product-${{ matrix.product }}
           path: "*.tar.gz"
@@ -282,7 +282,7 @@ jobs:
     needs: [validate, linux-cross, linux-native, macos-build, windows-build, product-builds]
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           fetch-depth: 0
 
@@ -294,7 +294,7 @@ jobs:
           echo "version=${TAG#v}" >> $GITHUB_OUTPUT
 
       - name: Download all build artifacts
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
         with:
           pattern: eos-*
           merge-multiple: true
@@ -303,7 +303,7 @@ jobs:
         run: sha256sum *.tar.gz *.zip 2>/dev/null > SHA256SUMS.txt || sha256sum *.tar.gz > SHA256SUMS.txt
 
       - name: Generate CycloneDX SBOM
-        uses: anchore/sbom-action@v0
+        uses: anchore/sbom-action@66cbf4bc1f1c0d2edc94016e65bc221b6bb0ad6c # v0.24.3
         with:
           path: .
           format: cyclonedx-json
@@ -311,7 +311,7 @@ jobs:
           artifact-name: sbom.cdx.json
 
       - name: Generate SPDX SBOM
-        uses: anchore/sbom-action@v0
+        uses: anchore/sbom-action@66cbf4bc1f1c0d2edc94016e65bc221b6bb0ad6c # v0.24.3
         with:
           path: .
           format: spdx-json
@@ -319,7 +319,7 @@ jobs:
           artifact-name: sbom.spdx.json
 
       - name: Install cosign
-        uses: sigstore/cosign-installer@v3
+        uses: sigstore/cosign-installer@7e8b541eb2e61bf99390e1afd4be13a184e9ebc5 # v3.10.1
 
       - name: Sign artifacts (cosign keyless)
         run: |
@@ -371,7 +371,7 @@ jobs:
           fi
 
       - name: Attach all artifacts to release
-        uses: softprops/action-gh-release@v2
+        uses: softprops/action-gh-release@efb35369e0ad2afab669f228072c1b0d510eae64 # v3.0.3
         with:
           tag_name: ${{ steps.version.outputs.tag }}
           name: "EoS ${{ steps.version.outputs.tag }}"
