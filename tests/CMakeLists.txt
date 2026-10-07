@@ -318,6 +318,11 @@ if(NOT CMAKE_CROSSCOMPILING)
     add_executable(test_pkg_trust_anchor test_pkg_trust_anchor.c)
     target_link_libraries(test_pkg_trust_anchor PRIVATE eos_eapp eos_crypto)
     add_test(NAME test_pkg_trust_anchor COMMAND test_pkg_trust_anchor)
+
+    # --- test_pkg_install_paths: header name fields are path components ---
+    add_executable(test_pkg_install_paths test_pkg_install_paths.c)
+    target_link_libraries(test_pkg_install_paths PRIVATE eos_eapp eos_crypto)
+    add_test(NAME test_pkg_install_paths COMMAND test_pkg_install_paths)
 endif()
 
 # --- test_package: Package management ---
