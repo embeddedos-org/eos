@@ -137,6 +137,16 @@ add_executable(test_crypto_ed25519_loworder test_crypto_ed25519_loworder.c)
 target_link_libraries(test_crypto_ed25519_loworder PRIVATE eos_crypto)
 add_test(NAME test_crypto_ed25519_loworder COMMAND test_crypto_ed25519_loworder)
 
+# --- test_pkg_anchor_usable: the trust-anchor decision, minus the host-only deps ---
+# test_pkg_trust_anchor proves the full package-signing path but links the whole
+# host-only eos_eapp library, so it cannot build for cross targets (#133). The
+# anchor decision itself lives in eos_pkg_anchor.c, which needs only eos_crypto
+# and libc -- this suite links just that and is registered unconditionally, the
+# same as the low-order suite above.
+add_executable(test_pkg_anchor_usable test_pkg_anchor_usable.c)
+target_link_libraries(test_pkg_anchor_usable PRIVATE eos_pkg_anchor eos_crypto)
+add_test(NAME test_pkg_anchor_usable COMMAND test_pkg_anchor_usable)
+
 # --- test_ed25519_canonical_s: the [0, L) boundary, reached directly ---
 # The corpus cannot reach this boundary: through the public API, S == L and
 # a failed group equation are both simply 0.
