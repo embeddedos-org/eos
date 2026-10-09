@@ -63,8 +63,12 @@ Requires CMake ≥ 3.16 and a C11 compiler (GCC/Clang; MSVC on Windows). C only 
 the project declares `LANGUAGES C`.
 
 ```bash
-cmake -B build/host -DCMAKE_BUILD_TYPE=Release
-cmake --build build/host --parallel
+# Requires CMake >= 3.25
+cmake --build --preset default
+
+# Fallback for older CMake (>= 3.16):
+# cmake -B build/host -DCMAKE_BUILD_TYPE=Release
+# cmake --build build/host --parallel
 ```
 
 ### Build options
@@ -95,7 +99,40 @@ are unverified — see [`STATUS.md`](STATUS.md).
 Footprint of the full library set on Cortex-M4, via `arm-none-eabi-size -t`:
 **15.8 KB flash, 26.0 KB RAM**.
 
-## Test
+## Test & QA
+
+The recommended workflow before making a commit is to verify that everything passes using `cmake --workflow --preset test`.
+Note: some files might currently fail static analysis or formatting checks; 
+these have been temporarily disabled in the CMake configuration to allow builds, but should be fixed in the future.
+
+```bash
+# Make sure your Python .venv is active before running
+# Requires CMake >= 3.25
+cmake --workflow --preset test # will build and test on local (host machine), see below for other hardware profiles
+
+# Fallback for older CMake (>= 3.16):
+# cmake -B build/host -DEOS_BUILD_TESTS=ON -DEOS_PRODUCT=vbox_test
+# cmake --build build/host --parallel
+# ctest --test-dir build/host --output-on-failure
+# python run_all_tests.py
+```
+
+To run individual steps:
+
+> **Note:** The `cmake --workflow` commands require **CMake ≥ 3.25**. If you are on an older version 
+> (e.g. Ubuntu 20.04/22.04), you can upgrade, or use the plain fallback commands.
+
+```bash
+cmake --workflow --preset build               # Compiles the project natively (no linters, no tests)
+cmake --workflow --preset test                # Compiles and runs unit tests (C) and integration tests (Python)
+cmake --workflow --preset coverage            # Runs tests and generates coverage reports (gcovr/pytest-cov)
+cmake --workflow --preset static-analysis     # Runs static analysis tools (cppcheck and clang-tidy)
+cmake --workflow --preset dynamic-analysis    # Compiles and runs tests using memory sanitizers (ASan/UBSan)
+cmake --workflow --preset format              # Automatically formats all C/C++ code using clang-format
+cmake --workflow --preset all                 # Runs everything sequentially: format, static-analysis, build, and tests
+```
+
+You can change the product type if needed:
 
 ```bash
 # C unit tests

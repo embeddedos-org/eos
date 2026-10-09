@@ -1,0 +1,341 @@
+{
+  "version": 6,
+  "cmakeMinimumRequired": {
+    "major": 3,
+    "minor": 25,
+    "patch": 0
+  },
+  "configurePresets": [
+    {
+      "name": "default",
+      "displayName": "Default Host Build",
+      "binaryDir": "${sourceDir}/build/host",
+      "cacheVariables": {
+        "CMAKE_BUILD_TYPE": "Release",
+        "CMAKE_EXPORT_COMPILE_COMMANDS": "ON"
+      }
+    },
+    {
+      "name": "format",
+      "displayName": "Format Configuration",
+      "inherits": "default",
+      "binaryDir": "${sourceDir}/build/format",
+      "cacheVariables": {
+        "EOS_ENABLE_CLANG_FORMAT": "ON"
+      }
+    },
+    {
+      "name": "test",
+      "displayName": "Test Configuration",
+      "binaryDir": "${sourceDir}/build/test",
+      "cacheVariables": {
+        "EOS_BUILD_TESTS": "ON",
+        "EOS_PRODUCT": "vbox_test",
+        "CMAKE_EXPORT_COMPILE_COMMANDS": "ON"
+      }
+    },
+    {
+      "name": "coverage",
+      "displayName": "Coverage Configuration",
+      "inherits": "test",
+      "binaryDir": "${sourceDir}/build/coverage",
+      "cacheVariables": {
+        "CMAKE_C_FLAGS": "--coverage",
+        "CMAKE_EXE_LINKER_FLAGS": "--coverage"
+      }
+    },
+    {
+      "name": "static-analysis",
+      "displayName": "Static Analysis Configuration",
+      "inherits": "default",
+      "binaryDir": "${sourceDir}/build/static",
+      "cacheVariables": {
+        "EOS_ENABLE_CPPCHECK": "ON",
+        "EOS_ENABLE_CLANG_TIDY": "ON"
+      }
+    },
+    {
+      "name": "dynamic-analysis",
+      "displayName": "Dynamic Analysis (Sanitizers)",
+      "inherits": "test",
+      "binaryDir": "${sourceDir}/build/sanitizers",
+      "cacheVariables": {
+        "CMAKE_C_FLAGS": "-fsanitize=address,undefined -g -fno-omit-frame-pointer",
+        "CMAKE_EXE_LINKER_FLAGS": "-fsanitize=address,undefined"
+      }
+    },
+    {
+      "name": "all",
+      "displayName": "All Checks Configuration",
+      "inherits": [
+        "test",
+        "dynamic-analysis",
+        "format"
+      ],
+      "binaryDir": "${sourceDir}/build/all"
+    }
+  ],
+  "buildPresets": [
+    {
+      "name": "default",
+      "configurePreset": "default"
+    },
+    {
+      "name": "test",
+      "configurePreset": "test"
+    },
+    {
+      "name": "coverage",
+      "configurePreset": "coverage"
+    },
+    {
+      "name": "dynamic-analysis",
+      "configurePreset": "dynamic-analysis"
+    },
+    {
+      "name": "all",
+      "configurePreset": "all"
+    },
+    {
+      "name": "format",
+      "configurePreset": "format",
+      "targets": [
+        "format"
+      ]
+    },
+    {
+      "name": "test-python",
+      "configurePreset": "test",
+      "targets": [
+        "python-tests"
+      ]
+    },
+    {
+      "name": "coverage-python",
+      "configurePreset": "coverage",
+      "targets": [
+        "coverage-python"
+      ]
+    },
+    {
+      "name": "dynamic-analysis-python",
+      "configurePreset": "dynamic-analysis",
+      "targets": [
+        "python-tests"
+      ]
+    },
+    {
+      "name": "all-python",
+      "configurePreset": "all",
+      "targets": [
+        "python-tests"
+      ]
+    },
+    {
+      "name": "coverage-report",
+      "configurePreset": "coverage",
+      "targets": [
+        "coverage-report"
+      ]
+    },
+    {
+      "name": "all-format",
+      "configurePreset": "all",
+      "targets": [
+        "format"
+      ]
+    },
+    {
+      "name": "static-analysis",
+      "configurePreset": "static-analysis"
+    },
+    {
+      "name": "clang-tidy",
+      "configurePreset": "static-analysis",
+      "targets": [
+        "clang-tidy"
+      ]
+    },
+    {
+      "name": "cppcheck",
+      "configurePreset": "static-analysis",
+      "targets": [
+        "cppcheck"
+      ]
+    }
+  ],
+  "testPresets": [
+    {
+      "name": "test",
+      "configurePreset": "test",
+      "output": {
+        "outputOnFailure": true
+      }
+    },
+    {
+      "name": "coverage",
+      "configurePreset": "coverage",
+      "output": {
+        "outputOnFailure": true
+      }
+    },
+    {
+      "name": "dynamic-analysis",
+      "configurePreset": "dynamic-analysis",
+      "output": {
+        "outputOnFailure": true
+      }
+    },
+    {
+      "name": "all",
+      "configurePreset": "all",
+      "output": {
+        "outputOnFailure": true
+      }
+    }
+  ],
+  "workflowPresets": [
+    {
+      "name": "build",
+      "displayName": "Build the Project",
+      "steps": [
+        {
+          "type": "configure",
+          "name": "default"
+        },
+        {
+          "type": "build",
+          "name": "default"
+        }
+      ]
+    },
+    {
+      "name": "format",
+      "displayName": "Format Code",
+      "steps": [
+        {
+          "type": "configure",
+          "name": "format"
+        },
+        {
+          "type": "build",
+          "name": "format"
+        }
+      ]
+    },
+    {
+      "name": "test",
+      "displayName": "Build and Run All Tests",
+      "steps": [
+        {
+          "type": "configure",
+          "name": "test"
+        },
+        {
+          "type": "build",
+          "name": "test"
+        },
+        {
+          "type": "test",
+          "name": "test"
+        },
+        {
+          "type": "build",
+          "name": "test-python"
+        }
+      ]
+    },
+    {
+      "name": "coverage",
+      "displayName": "Build and Run Tests with Coverage",
+      "steps": [
+        {
+          "type": "configure",
+          "name": "coverage"
+        },
+        {
+          "type": "build",
+          "name": "coverage"
+        },
+        {
+          "type": "test",
+          "name": "coverage"
+        },
+        {
+          "type": "build",
+          "name": "coverage-report"
+        },
+        {
+          "type": "build",
+          "name": "coverage-python"
+        }
+      ]
+    },
+    {
+      "name": "static-analysis",
+      "displayName": "Run Static Analysis (cppcheck & clang-tidy)",
+      "steps": [
+        {
+          "type": "configure",
+          "name": "static-analysis"
+        },
+        {
+          "type": "build",
+          "name": "cppcheck"
+        },
+        {
+          "type": "build",
+          "name": "clang-tidy"
+        }
+      ]
+    },
+    {
+      "name": "dynamic-analysis",
+      "displayName": "Build and Run Tests with Sanitizers",
+      "steps": [
+        {
+          "type": "configure",
+          "name": "dynamic-analysis"
+        },
+        {
+          "type": "build",
+          "name": "dynamic-analysis"
+        },
+        {
+          "type": "test",
+          "name": "dynamic-analysis"
+        },
+        {
+          "type": "build",
+          "name": "dynamic-analysis-python"
+        }
+      ]
+    },
+    {
+      "name": "all",
+      "displayName": "Run All Checks",
+      "steps": [
+        {
+          "type": "configure",
+          "name": "all"
+        },
+        {
+          "type": "build",
+          "name": "all-format"
+        },
+        {
+          "type": "build",
+          "name": "all"
+        },
+        {
+          "type": "test",
+          "name": "all"
+        },
+        {
+          "type": "build",
+          "name": "all-python"
+        }
+      ]
+    }
+  ]
+}

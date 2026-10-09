@@ -153,9 +153,13 @@ Output:
 ### 3. Run the test suite
 ```bash
 cd ../../
-cmake -B build -DEOS_BUILD_TESTS=ON
-cmake --build build
-ctest --test-dir build --output-on-failure
+# Requires CMake >= 3.25
+cmake --workflow --preset test
+
+# Fallback for older CMake (>= 3.16):
+# cmake -B build -DEOS_BUILD_TESTS=ON
+# cmake --build build
+# ctest --test-dir build --output-on-failure
 ```
 
 → See the full [host build quickstart](docs/quickstart-host.md).

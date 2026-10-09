@@ -418,3 +418,42 @@ add_test(NAME test_exec_argv COMMAND test_exec_argv)
 # --- Fuzz targets ---
 # Opt-in (-DEOS_ENABLE_FUZZING=ON, Clang only); the subdirectory guards itself.
 add_subdirectory(fuzz)
+
+# --- Python Integration Tests ---
+find_package(Python3 COMPONENTS Interpreter)
+
+if(Python3_FOUND)
+    add_custom_target(python-tests
+        COMMAND ${CMAKE_COMMAND} -E env "PYTHONPATH=${EoS_SOURCE_DIR}" ${Python3_EXECUTABLE} ${EoS_SOURCE_DIR}/run_all_tests.py
+        WORKING_DIRECTORY ${EoS_SOURCE_DIR}
+        USES_TERMINAL
+    )
+
+    add_custom_target(coverage-python
+        COMMAND ${CMAKE_COMMAND} -E env "PYTHONPATH=${EoS_SOURCE_DIR}" ${Python3_EXECUTABLE} ${EoS_SOURCE_DIR}/run_all_tests.py --tb=short --cov=. --cov-report=xml --cov-report=term-missing --cov-fail-under=0
+        WORKING_DIRECTORY ${EoS_SOURCE_DIR}
+        USES_TERMINAL
+    )
+else()
+    add_custom_target(python-tests
+        COMMAND ${CMAKE_COMMAND} -E echo "Warning: Python3 not found. Skipping python integration tests."
+    )
+    add_custom_target(coverage-python
+        COMMAND ${CMAKE_COMMAND} -E echo "Warning: Python3 not found. Skipping python coverage."
+    )
+    message(WARNING "Python3 not found — python integration tests will not be available")
+endif()
+
+find_program(GCOVR_EXECUTABLE gcovr)
+if(GCOVR_EXECUTABLE)
+    add_custom_target(coverage-report
+        COMMAND ${CMAKE_COMMAND} -E make_directory ${CMAKE_BINARY_DIR}/html
+        COMMAND ${GCOVR_EXECUTABLE} -r ${EoS_SOURCE_DIR} --html --html-details -o ${CMAKE_BINARY_DIR}/html/index.html
+        WORKING_DIRECTORY ${EoS_SOURCE_DIR}
+        COMMENT "Generating HTML coverage report"
+    )
+else()
+    add_custom_target(coverage-report
+        COMMAND ${CMAKE_COMMAND} -E echo "Warning: gcovr not found. Skipping HTML report."
+    )
+endif()

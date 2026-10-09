@@ -28,3 +28,7 @@ build_sim/
 # above is here because it was committed once; this is the same mistake
 # under a name none of those patterns matched.
 bsan*/
+
+# coverage
+.coverage
+coverage.xml

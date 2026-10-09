@@ -31,6 +31,13 @@ else()
 endif()
 
 # ====================================================================
+# Optional CMake Modules
+# ====================================================================
+include(cmake/cppcheck.cmake OPTIONAL)
+include(cmake/format.cmake OPTIONAL)
+include(cmake/clang-tidy.cmake OPTIONAL)
+
+# ====================================================================
 # Test feature flags
 # ====================================================================
 # Module sources are wrapped in #if EOS_ENABLE_<MODULE>, and
