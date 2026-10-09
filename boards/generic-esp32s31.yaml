@@ -1,0 +1,43 @@
+# EoS Board: Generic ESP32-S31 (Espressif, preview)
+#
+# PREVIEW: ESP32-S31 is supported in ESP-IDF v6.1 as a *preview target*
+# (CONFIG_IDF_TARGET_ESP32S31 with preview targets enabled); the S31
+# datasheet has not landed publicly. Every value below is provisional,
+# drawn from early community bring-up and marked accordingly.
+#
+# What early bring-up confirms:
+# - S-family part on the Xtensa toolchain flow, 2.4 GHz Wi-Fi, Bluetooth,
+#   dual-core (community audio builds pin decode to core 1).
+# - Common module variant N16R16V: 16 MiB flash + 16 MiB octal PSRAM;
+#   internal SRAM holds the working set with heavy codec tables in flash
+#   .rodata, lazily allocated to RAM only while active.
+# - Audio-first design: I2S pipelines, onboard audio codecs on the
+#   Korvo-1 and Function-CoreBoard-1 dev kits, WS2812 RGB status LEDs on
+#   high GPIOs (GPIO60/61).
+#
+# Sources: ESP-IDF v6.1-rc1 release notes (preview target); community
+# S31 bring-up notes (2026-09/10).
+board:
+  name: generic-esp32s31
+  mcu: ESP32-S31
+  family: ESP32
+  arch: xtensa
+  core: lx7
+  vendor: Espressif
+  clock_hz: 240000000
+  memory:
+    flash: 16777216
+    ram: 16777216
+  peripherals:
+    - {name: UART0, type: uart, bus: apb}
+    - {name: SPI0, type: spi, bus: apb}
+    - {name: I2C0, type: i2c, bus: apb}
+    - {name: GPIO, type: gpio, count: 61}
+    - {name: I2S0, type: audio, bus: apb}
+    - {name: WiFi, type: wifi, bus: internal}
+    - {name: BLE, type: ble, bus: internal}
+    - {name: TIMER0, type: timer, bus: apb}
+    - {name: WDT, type: watchdog, bus: apb}
+    - {name: DMA, type: dma, bus: ahb}
+  features: [dual_core]
+  toolchain: xtensa-esp32s3-elf-gcc
