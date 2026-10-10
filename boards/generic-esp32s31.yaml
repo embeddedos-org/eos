@@ -15,8 +15,18 @@
 #   Korvo-1 and Function-CoreBoard-1 dev kits, WS2812 RGB status LEDs on
 #   high GPIOs (GPIO60/61).
 #
-# Sources: ESP-IDF v6.1-rc1 release notes (preview target); community
-# S31 bring-up notes (2026-09/10).
+# Sources: ESP-IDF v6.1 release notes (final; S31 remains a preview target);
+# community S31 bring-up notes (2026-09/10).
+#
+# errata:
+# - ESP-IDF v6.1.0 dual-core S31 cache fault (Espressif issue #18948):
+#   the parked core leaves branch prediction enabled while the other core
+#   accesses flash, producing layout-sensitive "Cache access error"
+#   (MCAUSE 0x19) crashes. Community workaround: disable branch prediction
+#   on the parked core until Espressif ships the fix. Any EoS dual-core
+#   bring-up on S31 must carry this workaround.
+#   Refs: https://github.com/espressif/esp-idf/issues/18948
+#         https://github.com/ibytergj/client-sdk-esp32/blob/HEAD/tools/esp-idf-patches/README.md
 board:
   name: generic-esp32s31
   mcu: ESP32-S31
