@@ -1,0 +1,133 @@
+{
+  "version": 6,
+  "cmakeMinimumRequired": { "major": 3, "minor": 25, "patch": 0 },
+  "configurePresets": [
+    {
+      "name": "host-tests",
+      "displayName": "Host unit/integration tests",
+      "description": "Debug build with the test suite enabled (EOS_BUILD_TESTS=ON).",
+      "binaryDir": "${sourceDir}/build/host-tests",
+      "cacheVariables": {
+        "CMAKE_BUILD_TYPE": "Debug",
+        "EOS_BUILD_TESTS": "ON",
+        "CMAKE_EXPORT_COMPILE_COMMANDS": "ON"
+      }
+    },
+    {
+      "name": "vbox",
+      "displayName": "VirtualBox test product",
+      "description": "The documented test configuration: EOS_BUILD_TESTS=ON with EOS_PRODUCT=vbox_test.",
+      "binaryDir": "${sourceDir}/build/vbox",
+      "cacheVariables": {
+        "CMAKE_BUILD_TYPE": "Debug",
+        "EOS_BUILD_TESTS": "ON",
+        "EOS_PRODUCT": "vbox_test",
+        "CMAKE_EXPORT_COMPILE_COMMANDS": "ON"
+      }
+    },
+    {
+      "name": "coverage",
+      "displayName": "Tests with gcov coverage instrumentation",
+      "description": "host-tests plus --coverage so gcovr/lcov can measure the run (see codecov.yml).",
+      "inherits": "host-tests",
+      "binaryDir": "${sourceDir}/build/coverage",
+      "cacheVariables": {
+        "CMAKE_C_FLAGS": "--coverage",
+        "CMAKE_CXX_FLAGS": "--coverage",
+        "CMAKE_EXE_LINKER_FLAGS": "--coverage"
+      }
+    },
+    {
+      "name": "static-analysis",
+      "displayName": "Build with clang-tidy (.clang-tidy)",
+      "description": "host-tests with clang-tidy wired into compilation; requires clang-tidy on PATH.",
+      "inherits": "host-tests",
+      "binaryDir": "${sourceDir}/build/static-analysis",
+      "cacheVariables": {
+        "CMAKE_C_CLANG_TIDY": "clang-tidy",
+        "CMAKE_CXX_CLANG_TIDY": "clang-tidy"
+      }
+    },
+    {
+      "name": "dynamic-analysis",
+      "displayName": "Tests under ASan + UBSan",
+      "description": "host-tests built with AddressSanitizer and UndefinedBehaviorSanitizer.",
+      "inherits": "host-tests",
+      "binaryDir": "${sourceDir}/build/dynamic-analysis",
+      "cacheVariables": {
+        "CMAKE_C_FLAGS": "-fsanitize=address,undefined -fno-omit-frame-pointer",
+        "CMAKE_CXX_FLAGS": "-fsanitize=address,undefined -fno-omit-frame-pointer",
+        "CMAKE_EXE_LINKER_FLAGS": "-fsanitize=address,undefined"
+      }
+    }
+  ],
+  "buildPresets": [
+    { "name": "host-tests", "configurePreset": "host-tests" },
+    { "name": "vbox", "configurePreset": "vbox" },
+    { "name": "coverage", "configurePreset": "coverage" },
+    { "name": "static-analysis", "configurePreset": "static-analysis" },
+    { "name": "dynamic-analysis", "configurePreset": "dynamic-analysis" }
+  ],
+  "testPresets": [
+    {
+      "name": "host-tests",
+      "configurePreset": "host-tests",
+      "output": { "outputOnFailure": true },
+      "execution": { "noTestsAction": "error" }
+    },
+    { "name": "vbox", "configurePreset": "vbox", "output": { "outputOnFailure": true } },
+    { "name": "coverage", "configurePreset": "coverage", "output": { "outputOnFailure": true } },
+    { "name": "dynamic-analysis", "configurePreset": "dynamic-analysis", "output": { "outputOnFailure": true } }
+  ],
+  "workflowPresets": [
+    {
+      "name": "build",
+      "steps": [
+        { "type": "configure", "name": "host-tests" },
+        { "type": "build", "name": "host-tests" }
+      ]
+    },
+    {
+      "name": "test",
+      "steps": [
+        { "type": "configure", "name": "vbox" },
+        { "type": "build", "name": "vbox" },
+        { "type": "test", "name": "vbox" }
+      ]
+    },
+    {
+      "name": "coverage",
+      "steps": [
+        { "type": "configure", "name": "coverage" },
+        { "type": "build", "name": "coverage" },
+        { "type": "test", "name": "coverage" }
+      ]
+    },
+    {
+      "name": "static-analysis",
+      "steps": [
+        { "type": "configure", "name": "static-analysis" },
+        { "type": "build", "name": "static-analysis" }
+      ]
+    },
+    {
+      "name": "dynamic-analysis",
+      "steps": [
+        { "type": "configure", "name": "dynamic-analysis" },
+        { "type": "build", "name": "dynamic-analysis" },
+        { "type": "test", "name": "dynamic-analysis" }
+      ]
+    },
+    {
+      "name": "all",
+      "steps": [
+        { "type": "configure", "name": "vbox" },
+        { "type": "build", "name": "vbox" },
+        { "type": "test", "name": "vbox" },
+        { "type": "configure", "name": "dynamic-analysis" },
+        { "type": "build", "name": "dynamic-analysis" },
+        { "type": "test", "name": "dynamic-analysis" }
+      ]
+    }
+  ]
+}
