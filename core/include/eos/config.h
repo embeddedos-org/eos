@@ -36,6 +36,14 @@ typedef struct {
     int option_count;
 } EosPackageConfig;
 
+/* Options accessors (#148 Step 0a): the only sanctioned way to read a
+ * package's options. Today they are thin readers over the inline array
+ * above; Step 2 moves the storage behind them (string-table
+ * indirection) without changing call sites. NULL-safe throughout. */
+int eos_package_option_count(const EosPackageConfig *pkg);
+const EosKeyValue *eos_package_option_at(const EosPackageConfig *pkg, int i);
+const char *eos_package_option_get(const EosPackageConfig *pkg, const char *key);
+
 typedef struct {
     char provider[EOS_MAX_NAME];
     char defconfig[EOS_MAX_PATH];

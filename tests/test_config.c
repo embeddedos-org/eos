@@ -327,6 +327,67 @@ static void test_dependencies_after_build(void) {
     remove("test_dependencies_after_build.yaml");
 }
 
+/* #148 Step 0a: the options accessors over a loaded config — a
+ * two-option package, a zero-option package, and NULL safety. */
+static void test_package_option_accessors(void) {
+    printf("test_package_option_accessors:\n");
+    static EosConfig cfg;
+
+    FILE *fp = fopen("test_eos_options.yaml", "w");
+    if (!fp) {
+        printf("  SKIP: cannot create test config file\n");
+        return;
+    }
+
+    fprintf(fp, "project:\n");
+    fprintf(fp, "  name: options-project\n");
+    fprintf(fp, "  version: 1.0.0\n");
+    fprintf(fp, "\n");
+    fprintf(fp, "packages:\n");
+    fprintf(fp, "  - name: withopts\n");
+    fprintf(fp, "    version: 1.0.0\n");
+    fprintf(fp, "    build:\n");
+    fprintf(fp, "      type: cmake\n");
+    fprintf(fp, "    options:\n");
+    fprintf(fp, "      alpha: one\n");
+    fprintf(fp, "      beta: two\n");
+    fprintf(fp, "  - name: noopts\n");
+    fprintf(fp, "    version: 2.0.0\n");
+    fclose(fp);
+
+    EosResult res = eos_config_load(&cfg, "test_eos_options.yaml");
+    ASSERT(res == EOS_OK, "options config loads successfully");
+    ASSERT(cfg.package_count == 2, "two packages loaded");
+
+    const EosPackageConfig *withopts = &cfg.packages[0];
+    const EosPackageConfig *noopts = &cfg.packages[1];
+
+    ASSERT(eos_package_option_count(withopts) == 2, "count is 2 for two-option package");
+    const EosKeyValue *first = eos_package_option_at(withopts, 0);
+    ASSERT(first && strcmp(first->key, "alpha") == 0 && strcmp(first->value, "one") == 0,
+           "at(0) returns the first loaded pair");
+    const EosKeyValue *second = eos_package_option_at(withopts, 1);
+    ASSERT(second && strcmp(second->key, "beta") == 0 && strcmp(second->value, "two") == 0,
+           "at(1) returns the second loaded pair");
+    ASSERT(eos_package_option_at(withopts, 2) == NULL, "at(count) is NULL");
+    ASSERT(eos_package_option_at(withopts, -1) == NULL, "at(-1) is NULL");
+
+    const char *beta = eos_package_option_get(withopts, "beta");
+    ASSERT(beta && strcmp(beta, "two") == 0, "get returns the value on a hit");
+    ASSERT(eos_package_option_get(withopts, "missing") == NULL, "get is NULL on a miss");
+    ASSERT(eos_package_option_get(withopts, NULL) == NULL, "get is NULL for a NULL key");
+
+    ASSERT(eos_package_option_count(noopts) == 0, "count is 0 for option-less package");
+    ASSERT(eos_package_option_at(noopts, 0) == NULL, "at(0) is NULL with no options");
+    ASSERT(eos_package_option_get(noopts, "alpha") == NULL, "get is NULL with no options");
+
+    ASSERT(eos_package_option_count(NULL) == 0, "count is 0 for NULL package");
+    ASSERT(eos_package_option_at(NULL, 0) == NULL, "at is NULL for NULL package");
+    ASSERT(eos_package_option_get(NULL, "alpha") == NULL, "get is NULL for NULL package");
+
+    remove("test_eos_options.yaml");
+}
+
 int main(void) {
     eos_log_set_level(EOS_LOG_ERROR);
 
@@ -338,6 +399,7 @@ int main(void) {
     test_dependencies_after_build();
     test_config_missing_file();
     test_config_load_package_overflow();
+    test_package_option_accessors();
     test_lockfile_freshness();
 
     printf("\n=== Results: %d/%d passed ===\n", tests_passed, tests_run);

@@ -353,6 +353,30 @@ EosResult eos_config_load(EosConfig *cfg, const char *path) {
     return EOS_OK;
 }
 
+/* ---- #148 Step 0a: EosPackageConfig options accessors ----
+ * Pure readers over the inline options array; no allocation, no
+ * logging, no behaviour change. Step 2 (storage indirection) will
+ * re-implement these over the string table. */
+
+int eos_package_option_count(const EosPackageConfig *pkg) {
+    if (!pkg) return 0;
+    return pkg->option_count;
+}
+
+const EosKeyValue *eos_package_option_at(const EosPackageConfig *pkg, int i) {
+    if (!pkg || i < 0 || i >= pkg->option_count) return NULL;
+    return &pkg->options[i];
+}
+
+const char *eos_package_option_get(const EosPackageConfig *pkg, const char *key) {
+    if (!pkg || !key) return NULL;
+    for (int i = 0; i < pkg->option_count; i++) {
+        if (strcmp(pkg->options[i].key, key) == 0)
+            return pkg->options[i].value;
+    }
+    return NULL;
+}
+
 void eos_config_dump(const EosConfig *cfg) {
     printf("Project: %s v%s\n", cfg->project.name, cfg->project.version);
     printf("Workspace:\n");
