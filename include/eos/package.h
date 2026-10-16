@@ -40,6 +40,16 @@ typedef struct EosPackageSet {
     int count;
 } EosPackageSet;
 
+/* Options accessors (#148 Step 0b): the EosPackage twins of the
+ * eos_package_option_* accessors for EosPackageConfig in
+ * eos/config.h — the only sanctioned way to read a package's
+ * options. Thin readers over the inline array today; Step 2 moves
+ * the storage behind them without changing call sites. NULL-safe
+ * throughout. */
+int eos_pkg_option_count(const EosPackage *pkg);
+const EosKeyValue *eos_pkg_option_at(const EosPackage *pkg, int i);
+const char *eos_pkg_option_get(const EosPackage *pkg, const char *key);
+
 /* Build-system API */
 EosResult eos_package_set_from_config(EosPackageSet *set, const EosConfig *cfg);
 EosResult eos_package_build_graph(const EosPackageSet *set, EosGraph *graph);

@@ -30,8 +30,12 @@ EosResult eos_package_set_from_config(EosPackageSet *set, const EosConfig *cfg) 
             pkg->dep_count++;
         }
 
-        for (int o = 0; o < pc->option_count && o < EOS_MAX_OPTIONS; o++) {
-            pkg->options[o] = pc->options[o];
+        /* #148 Step 0b: the copy goes through the Step 0a accessors,
+         * so the conversion boundary is accessor-mediated from here
+         * on and Step 2 can change one side's storage at a time. */
+        int opt_count = eos_package_option_count(pc);
+        for (int o = 0; o < opt_count && o < EOS_MAX_OPTIONS; o++) {
+            pkg->options[o] = *eos_package_option_at(pc, o);
             pkg->option_count++;
         }
 
@@ -176,4 +180,28 @@ int eos_package_init_all(EosPackageSet *set) {
         set->packages[i].installed = true;
     }
     return 0;
+}
+
+/* ---- #148 Step 0b: EosPackage options accessors ----
+ * Pure readers over the inline options array; no allocation, no
+ * logging, no behaviour change. Step 2 (storage indirection) will
+ * re-implement these over the package set's string table. */
+
+int eos_pkg_option_count(const EosPackage *pkg) {
+    if (!pkg) return 0;
+    return pkg->option_count;
+}
+
+const EosKeyValue *eos_pkg_option_at(const EosPackage *pkg, int i) {
+    if (!pkg || i < 0 || i >= pkg->option_count) return NULL;
+    return &pkg->options[i];
+}
+
+const char *eos_pkg_option_get(const EosPackage *pkg, const char *key) {
+    if (!pkg || !key) return NULL;
+    for (int i = 0; i < pkg->option_count; i++) {
+        if (strcmp(pkg->options[i].key, key) == 0)
+            return pkg->options[i].value;
+    }
+    return NULL;
 }
