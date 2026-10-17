@@ -98,6 +98,7 @@ EosResult eos_config_load(EosConfig *cfg, const char *path) {
     Section section = SEC_NONE;
     int pkg_idx = -1;
     int rtos_idx = -1;
+    int dropped_options = 0; /* #148 Step 0c: options dropped at the cap */
 
     while (fgets(line, sizeof(line), fp)) {
         char *nl = strchr(line, '\n');
@@ -323,12 +324,17 @@ EosResult eos_config_load(EosConfig *cfg, const char *path) {
             }
             break;
         case SEC_PKG_OPTIONS:
-            if (pkg_idx >= 0 && pkg_idx < EOS_MAX_PACKAGES &&
-                cfg->packages[pkg_idx].option_count < EOS_MAX_OPTIONS) {
-                int oi = cfg->packages[pkg_idx].option_count;
-                strncpy(cfg->packages[pkg_idx].options[oi].key, key, EOS_MAX_NAME - 1);
-                strncpy(cfg->packages[pkg_idx].options[oi].value, val, EOS_MAX_PATH - 1);
-                cfg->packages[pkg_idx].option_count++;
+            if (pkg_idx >= 0 && pkg_idx < EOS_MAX_PACKAGES) {
+                if (cfg->packages[pkg_idx].option_count < EOS_MAX_OPTIONS) {
+                    int oi = cfg->packages[pkg_idx].option_count;
+                    strncpy(cfg->packages[pkg_idx].options[oi].key, key, EOS_MAX_NAME - 1);
+                    strncpy(cfg->packages[pkg_idx].options[oi].value, val, EOS_MAX_PATH - 1);
+                    cfg->packages[pkg_idx].option_count++;
+                } else {
+                    /* #148 Step 0c: count cap drops instead of dropping
+                     * silently; reported once after the load loop. */
+                    dropped_options++;
+                }
             }
             break;
         case SEC_DOCS:
@@ -349,6 +355,10 @@ EosResult eos_config_load(EosConfig *cfg, const char *path) {
     }
 
     fclose(fp);
+    if (dropped_options > 0) {
+        EOS_WARN("Dropped %d package option(s) beyond EOS_MAX_OPTIONS (%d) while loading %s",
+                 dropped_options, EOS_MAX_OPTIONS, path);
+    }
     EOS_INFO("Loaded config: %s (%s v%s)", path, cfg->project.name, cfg->project.version);
     return EOS_OK;
 }
@@ -430,3 +440,4 @@ void eos_config_dump(const EosConfig *cfg) {
             printf("  output_dir: %s\n", cfg->docs.output_dir);
     }
 }
+

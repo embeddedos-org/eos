@@ -388,6 +388,58 @@ static void test_package_option_accessors(void) {
     remove("test_eos_options.yaml");
 }
 
+
+/* #148 Step 0c: options beyond EOS_MAX_OPTIONS are dropped at the cap
+ * (and counted for the load-time diagnostic) — the stored set is exactly
+ * the first EOS_MAX_OPTIONS options, in order, with nothing past the
+ * cap written or counted. */
+static void test_config_load_option_overflow(void) {
+    printf("test_config_load_option_overflow:\n");
+    static EosConfig cfg;
+
+    const int total_options = EOS_MAX_OPTIONS + 3;
+
+    FILE *fp = fopen("test_eos_opt_overflow.yaml", "w");
+    if (!fp) {
+        printf("  SKIP: cannot create test config file\n");
+        return;
+    }
+
+    fprintf(fp, "project:\n");
+    fprintf(fp, "  name: opt-overflow-project\n");
+    fprintf(fp, "  version: 1.0.0\n");
+    fprintf(fp, "\n");
+    fprintf(fp, "packages:\n");
+    fprintf(fp, "  - name: manyopts\n");
+    fprintf(fp, "    version: 1.0.0\n");
+    fprintf(fp, "    build:\n");
+    fprintf(fp, "      type: cmake\n");
+    fprintf(fp, "    options:\n");
+    for (int i = 0; i < total_options; i++) {
+        fprintf(fp, "      opt%d: val%d\n", i, i);
+    }
+    fclose(fp);
+
+    EosResult res = eos_config_load(&cfg, "test_eos_opt_overflow.yaml");
+    ASSERT(res == EOS_OK, "option-overflow config still loads");
+    ASSERT(cfg.package_count == 1, "one package loaded");
+    ASSERT(cfg.packages[0].option_count == EOS_MAX_OPTIONS,
+           "option_count is capped at EOS_MAX_OPTIONS");
+    ASSERT(eos_package_option_count(&cfg.packages[0]) == EOS_MAX_OPTIONS,
+           "accessor count agrees with the cap");
+    const EosKeyValue *first = eos_package_option_at(&cfg.packages[0], 0);
+    ASSERT(first && strcmp(first->key, "opt0") == 0, "first stored option is opt0");
+    const EosKeyValue *last = eos_package_option_at(&cfg.packages[0], EOS_MAX_OPTIONS - 1);
+    char expected_key[EOS_MAX_NAME];
+    snprintf(expected_key, sizeof(expected_key), "opt%d", EOS_MAX_OPTIONS - 1);
+    ASSERT(last && strcmp(last->key, expected_key) == 0,
+           "last stored option is the cap-th option, in order");
+    ASSERT(eos_package_option_at(&cfg.packages[0], EOS_MAX_OPTIONS) == NULL,
+           "at(cap) is NULL — nothing stored past the cap");
+
+    remove("test_eos_opt_overflow.yaml");
+}
+
 int main(void) {
     eos_log_set_level(EOS_LOG_ERROR);
 
@@ -400,8 +452,10 @@ int main(void) {
     test_config_missing_file();
     test_config_load_package_overflow();
     test_package_option_accessors();
+    test_config_load_option_overflow();
     test_lockfile_freshness();
 
     printf("\n=== Results: %d/%d passed ===\n", tests_passed, tests_run);
     return (tests_passed == tests_run) ? 0 : 1;
 }
+
