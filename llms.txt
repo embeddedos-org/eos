@@ -1,0 +1,29 @@
+# eos
+
+> llms.txt for the eos repository (embeddedos-org/eos).
+> Status: the EmbeddedOS kernel and services — the core
+> platform every other repo in the org builds on.
+
+eos is the operating system itself: kernel, HAL, drivers, and
+system services (security, networking, filesystem, OTA) for
+constrained MCU targets, with board support defined per target
+and a host build for development and testing.
+
+
+## Docs
+
+- [Getting Started with EoS](GETTING_STARTED.md)
+- [🚀 EoS — Getting Started](docs/getting-started.md)
+- [🏗 EoS — Architecture](docs/architecture.md)
+- [API Reference](docs/api-reference.md)
+- [Adding Hardware to EoS and eboot](docs/adding-hardware.md)
+- [Integration Guide: eos + eboot + ebuild](docs/integration-guide.md)
+- [EoS Security Hardening Guide](docs/security-hardening-guide.md)
+- [EosConfig options indirection — design for the #148 first shrink step](docs/eosconfig-options-indirection.md)
+- [EosConfig size inventory — the #148 shrink record](docs/eosconfig-size-inventory.md)
+- [Accelerator HAL: tiered profiles for on-device inference](docs/track1/accelerator-hal-profiles.md)
+
+## Machine-readable
+
+- [llms.txt](llms.txt) — this file
+- [llms-full.txt](llms-full.txt) — the docs above concatenated as one document
