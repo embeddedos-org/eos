@@ -16,6 +16,7 @@
  */
 
 #include "eos/backend.h"
+#include "eos/package.h"
 #include "eos/shell_cmd.h"
 
 #include <stdio.h>
@@ -199,10 +200,10 @@ static const char *const HOSTILE_DIR = "/tmp/build\"; touch pwned; \"";
 
 static void assert_every_operation_refuses(EosBackend *b)
 {
-    EosKeyValue no_options[1];
-    memset(no_options, 0, sizeof(no_options));
+    EosPackage no_options;
+    memset(&no_options, 0, sizeof(no_options));
     if (b->configure)
-        ASSERT(b->configure(b, HOSTILE_DIR, HOSTILE_DIR, NULL, no_options, 0)
+        ASSERT(b->configure(b, HOSTILE_DIR, HOSTILE_DIR, NULL, &no_options)
                != EOS_ERR_BUILD);
     ASSERT(b->build(b, HOSTILE_DIR, 4) == EOS_ERR_INVALID);
     ASSERT(b->install(b, HOSTILE_DIR, HOSTILE_DIR) == EOS_ERR_INVALID);
@@ -232,17 +233,19 @@ TEST(test_configure_refuses_a_hostile_option_and_quotes_a_spaced_one)
     EosBackend b;
     eos_backend_cmake_init(&b);
 
-    EosKeyValue hostile[1];
-    memset(hostile, 0, sizeof(hostile));
-    strncpy(hostile[0].key, "CMAKE_C_FLAGS", EOS_MAX_NAME - 1);
-    strncpy(hostile[0].value, "-O2\"; touch pwned; \"", EOS_MAX_PATH - 1);
-    ASSERT(b.configure(&b, "/src", "/build", NULL, hostile, 1) == EOS_ERR_INVALID);
+    EosPackage hostile;
+    memset(&hostile, 0, sizeof(hostile));
+    strncpy(hostile.options[0].key, "CMAKE_C_FLAGS", EOS_MAX_NAME - 1);
+    strncpy(hostile.options[0].value, "-O2\"; touch pwned; \"", EOS_MAX_PATH - 1);
+    hostile.option_count = 1;
+    ASSERT(b.configure(&b, "/src", "/build", NULL, &hostile) == EOS_ERR_INVALID);
 
-    EosKeyValue bad_key[1];
-    memset(bad_key, 0, sizeof(bad_key));
-    strncpy(bad_key[0].key, "X Y", EOS_MAX_NAME - 1);   /* not one word */
-    strncpy(bad_key[0].value, "1", EOS_MAX_PATH - 1);
-    ASSERT(b.configure(&b, "/src", "/build", NULL, bad_key, 1) == EOS_ERR_INVALID);
+    EosPackage bad_key;
+    memset(&bad_key, 0, sizeof(bad_key));
+    strncpy(bad_key.options[0].key, "X Y", EOS_MAX_NAME - 1);   /* not one word */
+    strncpy(bad_key.options[0].value, "1", EOS_MAX_PATH - 1);
+    bad_key.option_count = 1;
+    ASSERT(b.configure(&b, "/src", "/build", NULL, &bad_key) == EOS_ERR_INVALID);
 
     /* The shape of the line a spaced value produces, checked on the builder
      * rather than by running cmake. */

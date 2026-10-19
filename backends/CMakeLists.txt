@@ -15,6 +15,12 @@ add_library(eos_backends STATIC
 
 target_link_libraries(eos_backends PRIVATE eos_core)
 
+# The backends read package options through the eos_pkg_option_*
+# accessors (#148 Step 0c), which live in eos_pkg. PUBLIC, so every
+# consumer of eos_backends links the accessors too — declaring it only
+# here keeps future consumers from rediscovering the dependency.
+target_link_libraries(eos_backends PUBLIC eos_pkg)
+
 target_compile_options(eos_backends PRIVATE
     $<$<C_COMPILER_ID:GNU>:-Wall -Wextra -Wpedantic>
     $<$<C_COMPILER_ID:Clang>:-Wall -Wextra -Wpedantic>

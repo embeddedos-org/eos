@@ -147,20 +147,27 @@ EosResult eos_firmware_build(EosFirmware *fw) {
     }
 
     if (be) {
-        /* Build board option for configure */
-        EosKeyValue opts[4];
-        int opt_count = 0;
+        /* Build the board option for configure. configure() takes
+         * the package itself (#148 Step 0c), and an EosPackage is far
+         * too large for a stack frame, so it is heap-allocated for
+         * the duration of the call. */
+        EosPackage *pkg = calloc(1, sizeof(*pkg));
+        if (!pkg) {
+            EOS_ERROR("Firmware configure: out of memory");
+            return EOS_ERR_NOMEM;
+        }
         if (fw->board[0]) {
-            strncpy(opts[opt_count].key, "board", EOS_MAX_NAME - 1);
-            strncpy(opts[opt_count].value, fw->board, EOS_MAX_PATH - 1);
-            opt_count++;
+            strncpy(pkg->options[0].key, "board", EOS_MAX_NAME - 1);
+            strncpy(pkg->options[0].value, fw->board, EOS_MAX_PATH - 1);
+            pkg->option_count = 1;
         }
 
         /* Configure */
         EOS_INFO("Configure: %s -> %s (backend=%s)",
                  fw->src_dir, fw->build_dir, be->name);
         EosResult res = be->configure(be, fw->src_dir, fw->build_dir,
-                                      fw->toolchain_target, opts, opt_count);
+                                      fw->toolchain_target, pkg);
+        free(pkg);
         if (res != EOS_OK) {
             EOS_ERROR("Firmware configure failed: %s", eos_error_str(res));
             return res;

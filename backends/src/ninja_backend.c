@@ -9,9 +9,9 @@
 
 static EosResult ninja_configure(EosBackend *self, const char *src_dir,
                                  const char *build_dir, const char *toolchain_file,
-                                 const EosKeyValue *options, int option_count) {
+                                 const EosPackage *pkg) {
     (void)self; (void)src_dir; (void)build_dir; (void)toolchain_file;
-    (void)options; (void)option_count;
+    (void)pkg;
     /* Ninja consumes a build.ninja that something else generated. */
     return EOS_OK;
 }

@@ -10,8 +10,8 @@
 
 static EosResult cargo_configure(EosBackend *self, const char *src_dir,
                                  const char *build_dir, const char *toolchain_file,
-                                 const EosKeyValue *options, int option_count) {
-    (void)self; (void)build_dir; (void)options; (void)option_count;
+                                 const EosPackage *pkg) {
+    (void)self; (void)build_dir; (void)pkg;
 
     if (toolchain_file && toolchain_file[0]) {
         EOS_DEBUG("Cargo: toolchain file %s is not used; set a target in Cargo config",

@@ -9,16 +9,11 @@
 
 static EosResult nuttx_configure(EosBackend *self, const char *src_dir,
                                  const char *build_dir, const char *toolchain_file,
-                                 const EosKeyValue *options, int option_count) {
+                                 const EosPackage *pkg) {
     (void)self; (void)build_dir;
     /* NuttX uses its own tools/configure.sh <board>:<config> flow */
-    const char *board_config = "sim:nsh";
-    for (int i = 0; i < option_count; i++) {
-        if (strcmp(options[i].key, "board_config") == 0) {
-            board_config = options[i].value;
-            break;
-        }
-    }
+    const char *board_config = eos_pkg_option_get(pkg, "board_config");
+    if (!board_config) board_config = "sim:nsh";
 
     EosShellCmd cmd;
     eos_shell_cmd_init(&cmd);

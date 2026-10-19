@@ -179,9 +179,7 @@ EosResult eos_scheduler_execute(EosScheduler *sched) {
         /* Configure */
         EOS_INFO("  Configure: %s -> %s", src_dir, build_dir);
         EosResult res = be->configure(be, src_dir, build_dir,
-                                      sched->toolchain_target,
-                                      pkg ? pkg->options : NULL,
-                                      pkg ? pkg->option_count : 0);
+                                      sched->toolchain_target, pkg);
         if (res != EOS_OK) {
             EOS_ERROR("  Configure failed: %s (%s)", node->name, eos_error_str(res));
             node->status = EOS_NODE_FAILED;

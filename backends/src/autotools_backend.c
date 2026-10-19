@@ -9,7 +9,7 @@
 
 static EosResult autotools_configure(EosBackend *self, const char *src_dir,
                                      const char *build_dir, const char *toolchain_file,
-                                     const EosKeyValue *options, int option_count) {
+                                     const EosPackage *pkg) {
     (void)self; (void)build_dir;
     EosShellCmd cmd;
     eos_shell_cmd_init(&cmd);
@@ -21,11 +21,13 @@ static EosResult autotools_configure(EosBackend *self, const char *src_dir,
         eos_shell_cmd_arg(&cmd, toolchain_file);
     }
     /* --<key>=<value>: the key is an option name, one word; the value quoted. */
+    int option_count = eos_pkg_option_count(pkg);
     for (int i = 0; i < option_count; i++) {
+        const EosKeyValue *opt = eos_pkg_option_at(pkg, i);
         eos_shell_cmd_text(&cmd, " --");
-        eos_shell_cmd_word(&cmd, options[i].key);
+        eos_shell_cmd_word(&cmd, opt->key);
         eos_shell_cmd_text(&cmd, "=");
-        eos_shell_cmd_arg(&cmd, options[i].value);
+        eos_shell_cmd_arg(&cmd, opt->value);
     }
     return eos_shell_cmd_run(&cmd, "Autotools configure");
 }

@@ -10,8 +10,8 @@
 
 static EosResult make_configure(EosBackend *self, const char *src_dir,
                                 const char *build_dir, const char *toolchain_file,
-                                const EosKeyValue *options, int option_count) {
-    (void)self; (void)build_dir; (void)options; (void)option_count;
+                                const EosPackage *pkg) {
+    (void)self; (void)build_dir; (void)pkg;
 
     /* Check for configure script (autotools-style) */
     char configure_path[EOS_MAX_PATH];

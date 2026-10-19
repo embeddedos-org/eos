@@ -9,20 +9,22 @@
 
 /* -D<key>=<value> for every option; the key unquoted as one word, the value
  * quoted. A value with spaces used to split into two arguments. */
-static void append_defines(EosShellCmd *cmd, const EosKeyValue *options,
-                           int option_count, const char *skip_key) {
+static void append_defines(EosShellCmd *cmd, const EosPackage *pkg,
+                           const char *skip_key) {
+    int option_count = eos_pkg_option_count(pkg);
     for (int i = 0; i < option_count; i++) {
-        if (skip_key && strcmp(options[i].key, skip_key) == 0) continue;
+        const EosKeyValue *opt = eos_pkg_option_at(pkg, i);
+        if (skip_key && strcmp(opt->key, skip_key) == 0) continue;
         eos_shell_cmd_text(cmd, " -D");
-        eos_shell_cmd_word(cmd, options[i].key);
+        eos_shell_cmd_word(cmd, opt->key);
         eos_shell_cmd_text(cmd, "=");
-        eos_shell_cmd_arg(cmd, options[i].value);
+        eos_shell_cmd_arg(cmd, opt->value);
     }
 }
 
 static EosResult cmake_configure(EosBackend *self, const char *src_dir,
                                  const char *build_dir, const char *toolchain_file,
-                                 const EosKeyValue *options, int option_count) {
+                                 const EosPackage *pkg) {
     (void)self;
     EosShellCmd cmd;
     eos_shell_cmd_init(&cmd);
@@ -35,7 +37,7 @@ static EosResult cmake_configure(EosBackend *self, const char *src_dir,
         eos_shell_cmd_text(&cmd, " -DCMAKE_TOOLCHAIN_FILE=");
         eos_shell_cmd_arg(&cmd, toolchain_file);
     }
-    append_defines(&cmd, options, option_count, NULL);
+    append_defines(&cmd, pkg, NULL);
     return eos_shell_cmd_run(&cmd, "CMake configure");
 }
 

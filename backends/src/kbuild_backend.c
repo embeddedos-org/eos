@@ -9,16 +9,11 @@
 
 static EosResult kbuild_configure(EosBackend *self, const char *src_dir,
                                   const char *build_dir, const char *toolchain_file,
-                                  const EosKeyValue *options, int option_count) {
+                                  const EosPackage *pkg) {
     (void)self;
     /* Find defconfig from options */
-    const char *defconfig = "defconfig";
-    for (int i = 0; i < option_count; i++) {
-        if (strcmp(options[i].key, "defconfig") == 0) {
-            defconfig = options[i].value;
-            break;
-        }
-    }
+    const char *defconfig = eos_pkg_option_get(pkg, "defconfig");
+    if (!defconfig) defconfig = "defconfig";
 
     EosShellCmd cmd;
     eos_shell_cmd_init(&cmd);

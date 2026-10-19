@@ -17,6 +17,7 @@
 
 #include "eos/types.h"
 #include "eos/error.h"
+#include "eos/package.h"
 
 #define EOS_MAX_BACKENDS 16  /**< Maximum registered backends */
 
@@ -30,10 +31,14 @@ typedef struct EosBackend {
     char name[EOS_MAX_NAME];   /**< Backend identifier (e.g., "cmake", "zephyr") */
     EosBuildType type;          /**< Corresponding build type enum */
 
-    /** @brief Configure the build (e.g., cmake -S ... -B ...) */
+    /** @brief Configure the build (e.g., cmake -S ... -B ...)
+     *
+     * The package's options are read through the eos_pkg_option_*
+     * accessors (#148 Step 0c) — never via pkg->options directly.
+     * pkg may be NULL, which the accessors treat as no options. */
     EosResult (*configure)(struct EosBackend *self, const char *src_dir,
                              const char *build_dir, const char *toolchain_file,
-                             const EosKeyValue *options, int option_count);
+                             const EosPackage *pkg);
 
     /** @brief Execute the build (e.g., cmake --build ...) */
     EosResult (*build)(struct EosBackend *self, const char *build_dir, int jobs);
