@@ -7,16 +7,15 @@
 
 <!-- Check all that apply -->
 
-- [ ] eat — New feature
-- [ ] ix — Bug fix
+- [ ] feat — New feature
+- [ ] fix — Bug fix
 - [ ] docs — Documentation only
 - [ ] style — Formatting, no code change
-- [ ] efactor — Code restructuring without behavior change
-- [ ] 	est — Add or fix tests
-- [ ] uild — Build system or dependency changes
+- [ ] refactor — Code restructuring without behavior change
+- [ ] test — Add or fix tests
+- [ ] build — Build system or dependency changes
 - [ ] ci — CI/CD pipeline changes
 - [ ] perf — Performance improvement
-
 ## Changes
 
 <!-- List each change made in this PR -->
