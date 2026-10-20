@@ -75,9 +75,10 @@ static void compute_cache_key(const EosPackage *pkg, const char *toolchain,
                                                   : 1u;
     }
 
-    for (int i = 0; i < pkg->option_count && len < options_cap - 1u; i++) {
+    for (int i = 0; i < eos_pkg_option_count(pkg) && len < options_cap - 1u; i++) {
+        const EosKeyValue *opt = eos_pkg_option_at(pkg, i);
         len = append_clamped(input, options_cap, len, ":%s=%s",
-                             pkg->options[i].key, pkg->options[i].value);
+                             opt->key, opt->value);
     }
     if (pkg->hash[0]) {
         len = append_clamped(input, sizeof(input), len, ":%s", pkg->hash, NULL);
