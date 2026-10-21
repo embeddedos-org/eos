@@ -62,6 +62,11 @@ TEST(test_secureboot_null_paths) {
     ASSERT(eos_secureboot_verify_image(NULL, "img", "sig", "key") == -1);
 }
 
+TEST(test_secureboot_dump_null) {
+    eos_secureboot_dump(NULL);
+    ASSERT(1);
+}
+
 TEST(test_keystore_add_find) {
     EosKeyStore ks;
     eos_keystore_init(&ks, NULL);
@@ -138,6 +143,7 @@ int main(void) {
     printf("=== EoS: Security Services Unit Tests ===\n\n");
     run_test_secureboot_init();
     run_test_secureboot_null_paths();
+    run_test_secureboot_dump_null();
     run_test_keystore_add_find();
     run_test_keystore_not_found();
     run_test_keystore_multiple_keys();
@@ -145,7 +151,7 @@ int main(void) {
     run_test_acl_default_deny();
     run_test_acl_wildcard();
     run_test_acl_last_match_wins();
-    tests_run = 9;
+    tests_run = 10;
     printf("\n%d/%d tests passed\n", tests_passed, tests_run);
     return (tests_passed == tests_run) ? 0 : 1;
 }
