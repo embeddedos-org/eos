@@ -2,7 +2,9 @@
 
 Companion to `docs/eosconfig-size-inventory.md` (where the bytes are)
 and `docs/eosconfig-options-indirection.md` (the accessor-first
-design, landed 2026-10-14). The design note says *what* changes and
+design, landed 2026-10-14). Step 2's go/no-go evidence pack —
+accessor audit, lifetime position, predicted size, slice split — is
+`docs/eosconfig-step2-scoping.md` (2026-10-21). The design note says *what* changes and
 why a naive struct edit is unsafe; this plan is the *sequence* the
 daily loop executes it in — each step sized for one commit, each
 with its own verification gate, so the shrink lands incrementally
