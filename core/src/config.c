@@ -63,6 +63,47 @@ static int parse_kv(const char *line, char *key, size_t ksz, char *val, size_t v
     return 0;
 }
 
+/* ---- #148 Step 2a: the EosConfig string table ----
+ * Package options are interned here as key\0value\0 pairs instead of
+ * living in a 20,480-byte inline array per package. The table is a heap
+ * arena owned by EosConfig, lazily allocated on first intern; a NULL
+ * table means "empty". Interning returns the byte offset of the pair.
+ * Allocation failure is reported to the caller — never a silent
+ * truncate (the bug class the Step 0c dropped-option diagnostic exists
+ * to catch). Growing the table may move it, so packages hold offsets,
+ * and eos_config_load() refreshes their borrowed pointers at the end. */
+static int options_table_intern(EosConfig *cfg, const char *key,
+                                const char *val, uint32_t *off_out) {
+    size_t klen = strlen(key) + 1;
+    size_t vlen = strlen(val) + 1;
+    if (cfg->options_table_len + klen + vlen > cfg->options_table_cap) {
+        size_t new_cap = cfg->options_table_cap ? cfg->options_table_cap : 4096;
+        while (new_cap < cfg->options_table_len + klen + vlen) new_cap *= 2;
+        char *grown = realloc(cfg->options_table, new_cap);
+        if (!grown) return -1;
+        cfg->options_table = grown;
+        cfg->options_table_cap = new_cap;
+    }
+    *off_out = (uint32_t)cfg->options_table_len;
+    memcpy(cfg->options_table + cfg->options_table_len, key, klen);
+    memcpy(cfg->options_table + cfg->options_table_len + klen, val, vlen);
+    cfg->options_table_len += klen + vlen;
+    return 0;
+}
+
+void eos_config_dispose(EosConfig *cfg) {
+    if (!cfg) return;
+    free(cfg->options_table);
+    cfg->options_table = NULL;
+    cfg->options_table_len = 0;
+    cfg->options_table_cap = 0;
+    for (int i = 0; i < cfg->package_count && i < EOS_MAX_PACKAGES; i++) {
+        cfg->packages[i].options_table = NULL;
+        cfg->packages[i].options_off = 0;
+        cfg->packages[i].option_count = 0;
+    }
+}
+
 typedef enum {
     SEC_NONE,
     SEC_PROJECT,
@@ -92,6 +133,9 @@ EosResult eos_config_load(EosConfig *cfg, const char *path) {
         return EOS_ERR_IO;
     }
 
+    /* A live config may already own a string table; release it before
+     * init's memset would orphan it (#148 Step 2a lifetime contract). */
+    if (cfg->options_table) eos_config_dispose(cfg);
     eos_config_init(cfg);
 
     char line[1024];
@@ -326,9 +370,24 @@ EosResult eos_config_load(EosConfig *cfg, const char *path) {
         case SEC_PKG_OPTIONS:
             if (pkg_idx >= 0 && pkg_idx < EOS_MAX_PACKAGES) {
                 if (cfg->packages[pkg_idx].option_count < EOS_MAX_OPTIONS) {
-                    int oi = cfg->packages[pkg_idx].option_count;
-                    strncpy(cfg->packages[pkg_idx].options[oi].key, key, EOS_MAX_NAME - 1);
-                    strncpy(cfg->packages[pkg_idx].options[oi].value, val, EOS_MAX_PATH - 1);
+                    /* #148 Step 2a: intern into the config's string table.
+                     * Keys/values keep the historical truncation bounds
+                     * (EOS_MAX_NAME / EOS_MAX_PATH, as the inline array's
+                     * fixed fields imposed). */
+                    char tkey[EOS_MAX_NAME];
+                    char tval[EOS_MAX_PATH];
+                    strncpy(tkey, key, EOS_MAX_NAME - 1);
+                    tkey[EOS_MAX_NAME - 1] = '\0';
+                    strncpy(tval, val, EOS_MAX_PATH - 1);
+                    tval[EOS_MAX_PATH - 1] = '\0';
+                    uint32_t off = 0;
+                    if (options_table_intern(cfg, tkey, tval, &off) != 0) {
+                        fclose(fp);
+                        EOS_ERROR("Out of memory interning package options from %s", path);
+                        return EOS_ERR_NOMEM;
+                    }
+                    if (cfg->packages[pkg_idx].option_count == 0)
+                        cfg->packages[pkg_idx].options_off = off;
                     cfg->packages[pkg_idx].option_count++;
                 } else {
                     /* #148 Step 0c: count cap drops instead of dropping
@@ -355,6 +414,10 @@ EosResult eos_config_load(EosConfig *cfg, const char *path) {
     }
 
     fclose(fp);
+    /* The table may have moved as it grew; refresh every package's
+     * borrowed pointer now that interning is done (#148 Step 2a). */
+    for (int i = 0; i < cfg->package_count; i++)
+        cfg->packages[i].options_table = cfg->options_table;
     if (dropped_options > 0) {
         EOS_WARN("Dropped %d package option(s) beyond EOS_MAX_OPTIONS (%d) while loading %s",
                  dropped_options, EOS_MAX_OPTIONS, path);
@@ -363,10 +426,24 @@ EosResult eos_config_load(EosConfig *cfg, const char *path) {
     return EOS_OK;
 }
 
-/* ---- #148 Step 0a: EosPackageConfig options accessors ----
- * Pure readers over the inline options array; no allocation, no
- * logging, no behaviour change. Step 2 (storage indirection) will
- * re-implement these over the string table. */
+/* ---- #148 Step 0a accessors, Step 2a storage ----
+ * Readers over the config-owned string table (key\0value\0 pairs from
+ * the package's options_off). No allocation, no logging. option_at()
+ * materialises the pair into a static view — the returned pointer
+ * stays valid until the next option_at() call; option_get() returns a
+ * pointer directly into the table, valid while the owning EosConfig's
+ * table lives. */
+
+static const char *option_entry(const EosPackageConfig *pkg, int i) {
+    if (!pkg || !pkg->options_table || i < 0 || i >= pkg->option_count)
+        return NULL;
+    const char *p = pkg->options_table + pkg->options_off;
+    for (int j = 0; j < i; j++) {
+        p += strlen(p) + 1; /* key */
+        p += strlen(p) + 1; /* value */
+    }
+    return p;
+}
 
 int eos_package_option_count(const EosPackageConfig *pkg) {
     if (!pkg) return 0;
@@ -374,15 +451,21 @@ int eos_package_option_count(const EosPackageConfig *pkg) {
 }
 
 const EosKeyValue *eos_package_option_at(const EosPackageConfig *pkg, int i) {
-    if (!pkg || i < 0 || i >= pkg->option_count) return NULL;
-    return &pkg->options[i];
+    static EosKeyValue view;
+    const char *entry = option_entry(pkg, i);
+    if (!entry) return NULL;
+    memset(&view, 0, sizeof(view));
+    strncpy(view.key, entry, EOS_MAX_NAME - 1);
+    strncpy(view.value, entry + strlen(entry) + 1, EOS_MAX_PATH - 1);
+    return &view;
 }
 
 const char *eos_package_option_get(const EosPackageConfig *pkg, const char *key) {
     if (!pkg || !key) return NULL;
     for (int i = 0; i < pkg->option_count; i++) {
-        if (strcmp(pkg->options[i].key, key) == 0)
-            return pkg->options[i].value;
+        const char *entry = option_entry(pkg, i);
+        if (entry && strcmp(entry, key) == 0)
+            return entry + strlen(entry) + 1;
     }
     return NULL;
 }

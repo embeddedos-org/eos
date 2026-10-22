@@ -32,14 +32,22 @@ typedef struct {
     EosBuildType build_type;
     char deps[EOS_MAX_DEPS][EOS_MAX_NAME];
     int dep_count;
-    EosKeyValue options[EOS_MAX_OPTIONS];
-    int option_count;
+    /* #148 Step 2a: options no longer live inline. They are interned as
+     * key\0value\0 pairs in the owning EosConfig's heap string table
+     * (EosConfig.options_table below); this struct carries only a
+     * borrowed pointer to that table, the byte offset of this package's
+     * first option within it, and the count (capped at EOS_MAX_OPTIONS).
+     * The borrowed pointer is refreshed by eos_config_load() after any
+     * table growth; a zeroed package has a NULL table and no options. */
+    const char *options_table;
+    uint32_t options_off;
+    uint16_t option_count;
 } EosPackageConfig;
 
-/* Options accessors (#148 Step 0a): the only sanctioned way to read a
- * package's options. Today they are thin readers over the inline array
- * above; Step 2 moves the storage behind them (string-table
- * indirection) without changing call sites. NULL-safe throughout. */
+/* Options accessors (#148 Step 0a, storage moved in Step 2a): the only
+ * sanctioned way to read a package's options. NULL-safe throughout.
+ * eos_package_option_at() materialises the pair into a static view:
+ * the returned pointer stays valid until the next option_at() call. */
 int eos_package_option_count(const EosPackageConfig *pkg);
 const EosKeyValue *eos_package_option_at(const EosPackageConfig *pkg, int i);
 const char *eos_package_option_get(const EosPackageConfig *pkg, const char *key);
@@ -104,10 +112,21 @@ typedef struct {
 
     EosPackageConfig packages[EOS_MAX_PACKAGES];
     int package_count;
+
+    /* #148 Step 2a: heap string table owning every package's options
+     * (interned key\0value\0 pairs; each package's options_off indexes
+     * into it). NULL in a zeroed or eos_config_init()'d config means
+     * "empty table". Owned by this struct: release it with
+     * eos_config_dispose() before re-initialising a live config;
+     * eos_config_load() disposes any previous table itself. */
+    char *options_table;
+    size_t options_table_len;
+    size_t options_table_cap;
 } EosConfig;
 
 EosResult eos_config_load(EosConfig *cfg, const char *path);
 void eos_config_init(EosConfig *cfg);
+void eos_config_dispose(EosConfig *cfg);
 void eos_config_dump(const EosConfig *cfg);
 
 #endif /* EOS_CONFIG_H */

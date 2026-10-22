@@ -21,8 +21,10 @@
 #include <stdio.h>
 #include "eos/config.h"
 
-/* Today's measured size (3,953,236) rounded up slightly. */
-#define EOS_CONFIG_SIZE_CEILING 3960000u
+/* Measured 1,333,872 after #148 Step 2a (package options moved to the
+ * config-owned string table), rounded up slightly. Previous ceiling
+ * 3,960,000 guarded the 3,953,236 inline-array layout. */
+#define EOS_CONFIG_SIZE_CEILING 1340000u
 
 int main(void) {
     size_t size = sizeof(EosConfig);
