@@ -105,6 +105,8 @@ int eos_secureboot_verify_image(EosSecureBoot *sb, const char *image_path,
 }
 
 void eos_secureboot_dump(const EosSecureBoot *sb) {
+    if (!sb) return;
+
     const char *status_str[] = {"UNVERIFIED", "VERIFIED", "FAILED", "SKIPPED"};
     printf("Secure Boot:\n");
     printf("  Image:  %s\n", sb->image_path);
