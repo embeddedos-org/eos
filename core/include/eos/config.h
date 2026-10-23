@@ -70,8 +70,12 @@ typedef struct {
     char entry[EOS_MAX_PATH];
     char output[EOS_MAX_PATH];
     EosFirmwareFormat format;
-    EosKeyValue options[EOS_MAX_OPTIONS];
-    int option_count;
+    /* #148: the former options[EOS_MAX_OPTIONS] array (20,480 B per
+     * entry, 81,920 B across rtos[EOS_MAX_RTOS]) and its option_count
+     * were dead storage — no writer, reader, or accessor anywhere in
+     * the tree (parser sets provider/board/core/entry/output/format
+     * only). Removed, not migrated to the string table: there was
+     * nothing to migrate. */
 } EosRtosConfig;
 
 typedef struct {
