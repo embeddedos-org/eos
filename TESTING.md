@@ -25,6 +25,24 @@ default rather than the logic.
 Do this for every test that backs an acceptance criterion. If a test still
 passes with the implementation broken, the test is the defect.
 
+## Native network tests on WSL
+
+The native TCP tests use 127.0.0.1 by default. If WSL redirects loopback to the
+Windows host, first verify a local IPv4 address that accepts connections to a
+listener in the same WSL instance, then provide it as `EOS_NET_TEST_HOST`:
+
+```sh
+# HOST_BUILD_DIR is the configured native build with tests enabled.
+# LOCAL_TEST_IPV4 must be a verified address of this WSL instance, not a remote host.
+(cd "$HOST_BUILD_DIR" && EOS_NET_TEST_HOST="$LOCAL_TEST_IPV4" ctest --output-on-failure)
+```
+
+This override changes only the native TCP test destination; the echo listener,
+real send/receive assertions, and connection-refused assertion still execute.
+The localhost resolver assertions remain unchanged. An invalid IPv4 override
+fails the test instead of falling back or skipping it. This is environment
+qualification, not physical-board or network-service qualification.
+
 ## Coverage
 
 Target 95% or higher on new and changed code where the toolchain measures it.
