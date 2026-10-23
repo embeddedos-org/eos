@@ -348,6 +348,38 @@ static void test_fs_write_clamps_wrapping_length(void) {
     printf("[PASS] fs write clamps wrapping length\n");
 }
 
+/*
+ * Regression: readdir() copied the name with strncpy(..., EOS_PATH_MAX - 1),
+ * which writes no terminator for the longest valid path (EOS_PATH_MAX - 1
+ * chars), leaving the caller's last byte in place. Pre-fill the entry so a
+ * missing terminator cannot be masked by a zeroed buffer.
+ */
+static void test_fs_readdir_terminates_longest_name(void) {
+    eos_fs_init(NULL);
+    char path[EOS_PATH_MAX];
+    path[0] = '/';
+    memset(path + 1, 'n', EOS_PATH_MAX - 2);
+    path[EOS_PATH_MAX - 1] = '\0';
+    assert(eos_fs_mkdir(path) == 0);
+
+    eos_dir_t dir = eos_fs_opendir("/");
+    assert(dir != EOS_DIR_INVALID);
+    eos_dirent_t entry;
+    int seen = 0;
+    for (;;) {
+        memset(&entry, 'X', sizeof(entry));
+        if (eos_fs_readdir(dir, &entry) != 0) break;
+        if (entry.name[1] != 'n') continue;
+        assert(entry.name[EOS_PATH_MAX - 1] == '\0');
+        assert(strcmp(entry.name, path) == 0);
+        seen++;
+    }
+    eos_fs_closedir(dir);
+    assert(seen == 1);
+    eos_fs_deinit();
+    printf("[PASS] fs readdir terminates longest name\n");
+}
+
 int main(void) {
     printf("=== EoS Filesystem Tests ===\n");
     test_fs_init();
@@ -367,6 +399,7 @@ int main(void) {
     test_fs_write_clamps_wrapping_length();
 
     test_fs_open_does_not_leak_inode_when_fds_exhausted();
+    test_fs_readdir_terminates_longest_name();
     printf("=== ALL FS TESTS PASSED (14/14) ===\n");
     return 0;
 }

@@ -188,6 +188,7 @@ int eos_fs_readdir(eos_dir_t d, eos_dirent_t *e) {
         int i = g_dirs[d].idx++;
         if (g_inodes[i].in_use && !g_inodes[i].unlinked) {
             strncpy(e->name, g_inodes[i].name, EOS_PATH_MAX - 1);
+            e->name[EOS_PATH_MAX - 1] = '\0';
             e->size = g_inodes[i].size; e->is_dir = g_inodes[i].is_dir; return 0;
         }
     }
