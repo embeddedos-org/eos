@@ -22,6 +22,7 @@ and a host build for development and testing.
 - [EosConfig options indirection — design for the #148 first shrink step](docs/eosconfig-options-indirection.md)
 - [EosConfig size inventory — the #148 shrink record](docs/eosconfig-size-inventory.md)
 - [Accelerator HAL: tiered profiles for on-device inference](docs/track1/accelerator-hal-profiles.md)
+- [MQTT client design — implementing the net.h MQTT surface](docs/eos-mqtt-client-design.md)
 
 ## Machine-readable
 
