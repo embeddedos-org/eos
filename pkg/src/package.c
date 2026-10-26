@@ -305,6 +305,8 @@ EosResult eos_pkg_option_add(EosPackage *pkg, const char *key, const char *value
 
     size_t klen = strlen(key) + 1;
     size_t vlen = strlen(value) + 1;
+    if (klen > EOS_MAX_NAME || vlen > EOS_MAX_PATH)
+        return EOS_ERR_OVERFLOW;
 
     /* Current table length: an owned table holds exactly this
      * package's pairs, starting at offset 0. */

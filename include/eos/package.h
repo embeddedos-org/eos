@@ -80,8 +80,9 @@ const char *eos_pkg_option_get(const EosPackage *pkg, const char *key);
  * by the package. Fails with EOS_ERR_INVALID on a package borrowing
  * a set-owned table (set members are populated by
  * eos_package_set_from_config(), never by hand), EOS_ERR_OVERFLOW
- * at the EOS_MAX_OPTIONS cap, and EOS_ERR_NOMEM on allocation
- * failure. Release a package-owned table with
+ * when the option count or key/value length exceeds the corresponding
+ * EosKeyValue capacity, and EOS_ERR_NOMEM on allocation failure.
+ * Release a package-owned table with
  * eos_pkg_options_dispose(). */
 EosResult eos_pkg_option_add(EosPackage *pkg, const char *key, const char *value);
 void eos_pkg_options_dispose(EosPackage *pkg);
