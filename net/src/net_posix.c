@@ -148,11 +148,7 @@ int eos_net_recv(eos_socket_t sock, void *buf, size_t len, uint32_t timeout_ms)
     struct timeval tv;
     tv.tv_sec = (time_t)(timeout_ms / 1000u);
     tv.tv_usec = (suseconds_t)((timeout_ms % 1000u) * 1000u);
-    /* A zero timeout means "block forever" to SO_RCVTIMEO, which is the
-     * opposite of what a caller passing 0 expects. Only set it when non-zero. */
-    if (timeout_ms > 0) {
-        (void)setsockopt(sock, SOL_SOCKET, SO_RCVTIMEO, &tv, sizeof(tv));
-    }
+    (void)setsockopt(sock, SOL_SOCKET, SO_RCVTIMEO, &tv, sizeof(tv));
 
     ssize_t n = recv(sock, buf, len, 0);
     if (n < 0 && (errno == EAGAIN || errno == EWOULDBLOCK)) return 0;  /* timed out */
@@ -174,12 +170,10 @@ int eos_net_recvfrom(eos_socket_t sock, void *buf, size_t len,
 {
     if (sock < 0 || (!buf && len > 0)) return -1;
 
-    if (timeout_ms > 0) {
-        struct timeval tv;
-        tv.tv_sec = (time_t)(timeout_ms / 1000u);
-        tv.tv_usec = (suseconds_t)((timeout_ms % 1000u) * 1000u);
-        (void)setsockopt(sock, SOL_SOCKET, SO_RCVTIMEO, &tv, sizeof(tv));
-    }
+    struct timeval tv;
+    tv.tv_sec = (time_t)(timeout_ms / 1000u);
+    tv.tv_usec = (suseconds_t)((timeout_ms % 1000u) * 1000u);
+    (void)setsockopt(sock, SOL_SOCKET, SO_RCVTIMEO, &tv, sizeof(tv));
 
     struct sockaddr_in sa;
     socklen_t sl = sizeof(sa);
