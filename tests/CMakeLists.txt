@@ -47,6 +47,11 @@ if(CMAKE_C_COMPILER_ID MATCHES "GNU|Clang")
 endif()
 
 # EoS Unit Tests
+# --- test_cache: reject invalid build cache markers ---
+add_executable(test_cache test_cache.c)
+target_link_libraries(test_cache PRIVATE eos_core)
+add_test(NAME test_cache COMMAND test_cache)
+
 # --- test_board_configs: Board YAML schema shape ---
 add_executable(test_board_configs test_board_configs.c)
 add_test(NAME test_board_configs COMMAND test_board_configs boards)
