@@ -36,6 +36,27 @@ static void test_fs_write_read(void) {
     printf("[PASS] fs write/read\n");
 }
 
+static void test_fs_append_uses_current_end(void) {
+    eos_fs_init(NULL);
+    eos_file_t first = eos_fs_open("/append.txt", EOS_O_CREATE | EOS_O_APPEND | EOS_O_WRITE);
+    eos_file_t second = eos_fs_open("/append.txt", EOS_O_APPEND | EOS_O_WRITE);
+    assert(first != EOS_FILE_INVALID);
+    assert(second != EOS_FILE_INVALID);
+    assert(eos_fs_write(first, "A", 1) == 1);
+    assert(eos_fs_write(second, "B", 1) == 1);
+    assert(eos_fs_close(first) == 0);
+    assert(eos_fs_close(second) == 0);
+
+    eos_file_t reader = eos_fs_open("/append.txt", EOS_O_READ);
+    char contents[3] = {0};
+    assert(reader != EOS_FILE_INVALID);
+    assert(eos_fs_read(reader, contents, sizeof(contents)) == 2);
+    assert(strcmp(contents, "AB") == 0);
+    assert(eos_fs_close(reader) == 0);
+    eos_fs_deinit();
+    printf("[PASS] fs append uses current end\n");
+}
+
 static void test_fs_seek(void) {
     eos_fs_init(NULL);
     eos_file_t fd = eos_fs_open("/s.txt", EOS_O_CREATE | EOS_O_WRITE);
@@ -352,6 +373,7 @@ int main(void) {
     printf("=== EoS Filesystem Tests ===\n");
     test_fs_init();
     test_fs_write_read();
+    test_fs_append_uses_current_end();
     test_fs_seek();
     test_fs_truncate();
     test_fs_truncate_growth_zero_fills_stale_bytes();
