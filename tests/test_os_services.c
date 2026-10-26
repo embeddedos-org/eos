@@ -112,6 +112,33 @@ TEST(test_audit_multiple) {
     ASSERT(log.entries[2].sequence == 2);
 }
 
+TEST(test_audit_save_preserves_order_after_wrap) {
+    const char *path = "test_audit_wrap.log";
+    EosAuditLog log;
+    eos_audit_init(&log, path);
+
+    for (uint32_t i = 0; i < EOS_AUDIT_MAX_ENTRIES + 1; i++) {
+        char message[16];
+        snprintf(message, sizeof(message), "entry-%u", i);
+        ASSERT(eos_audit_record(&log, EOS_AUDIT_INFO, "test", message) == 0);
+    }
+    ASSERT(log.count == EOS_AUDIT_MAX_ENTRIES);
+    ASSERT(eos_audit_save(&log) == 0);
+
+    FILE *fp = fopen(path, "r");
+    ASSERT(fp != NULL);
+    char line[512];
+    for (uint32_t expected = 1; expected <= EOS_AUDIT_MAX_ENTRIES; expected++) {
+        uint32_t sequence = UINT32_MAX;
+        ASSERT(fgets(line, sizeof(line), fp) != NULL);
+        ASSERT(sscanf(line, "[%u]", &sequence) == 1);
+        ASSERT(sequence == expected);
+    }
+    ASSERT(fgets(line, sizeof(line), fp) == NULL);
+    fclose(fp);
+    remove(path);
+}
+
 /* ---- Secure Storage ---- */
 
 TEST(test_storage_set_get) {
@@ -374,6 +401,7 @@ int main(void) {
     run_test_audit_init();
     run_test_audit_record();
     run_test_audit_multiple();
+    run_test_audit_save_preserves_order_after_wrap();
     run_test_storage_set_get();
     run_test_storage_overwrite();
     run_test_storage_delete();

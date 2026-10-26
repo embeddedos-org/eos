@@ -352,7 +352,8 @@ int eos_audit_save(const EosAuditLog *log) {
     if (!fp) return -1;
     const char *lvl_str[] = {"INFO","WARN","ERROR","SECURITY","BOOT","UPDATE"};
     for (int i = 0; i < log->count; i++) {
-        const EosAuditEntry *e = &log->entries[i];
+        int idx = (log->head + i) % EOS_AUDIT_MAX_ENTRIES;
+        const EosAuditEntry *e = &log->entries[idx];
         fprintf(fp, "[%u] %s [%s] %s\n",
                 e->sequence, lvl_str[e->level], e->source, e->message);
     }
@@ -370,7 +371,8 @@ void eos_audit_dump(const EosAuditLog *log, int last_n) {
     int start = (last_n > 0 && last_n < log->count) ? log->count - last_n : 0;
     printf("Audit Log (%d entries):\n", log->count);
     for (int i = start; i < log->count; i++) {
-        const EosAuditEntry *e = &log->entries[i];
+        int idx = (log->head + i) % EOS_AUDIT_MAX_ENTRIES;
+        const EosAuditEntry *e = &log->entries[idx];
         printf("  [%u] %s [%s] %s\n",
                e->sequence, lvl_str[e->level], e->source, e->message);
     }
