@@ -7,6 +7,15 @@
 #include <assert.h>
 #include "eos/sensor.h"
 
+static int sensor_read_fails = 1;
+
+static int test_sensor_read_fn(uint8_t id, float *raw_value) {
+    (void)id;
+    if (sensor_read_fails) return -1;
+    *raw_value = 42.0f;
+    return 0;
+}
+
 static void test_sensor_init(void) {
     assert(eos_sensor_init() == 0);
     assert(eos_sensor_get_count() == 0);
@@ -59,6 +68,35 @@ static void test_sensor_read(void) {
     assert(r.valid);
     eos_sensor_deinit();
     printf("[PASS] sensor read\n");
+}
+
+static void test_sensor_read_callback_failure(void) {
+    eos_sensor_init();
+    eos_sensor_config_t cfg; memset(&cfg, 0, sizeof(cfg));
+    cfg.id = 0;
+    cfg.read_fn = test_sensor_read_fn;
+    assert(eos_sensor_register(&cfg) == 0);
+
+    eos_sensor_reading_t reading = {.valid = true};
+    assert(eos_sensor_read(0, &reading) == -1);
+    assert(!reading.valid);
+
+    eos_sensor_calib_t calibration = {.offset = 3.0f, .scale = 2.0f, .calibrated = true};
+    assert(eos_sensor_calibrate(0, &calibration) == 0);
+    assert(eos_sensor_auto_calibrate(0) == -1);
+    eos_sensor_calib_t after;
+    assert(eos_sensor_get_calibration(0, &after) == 0);
+    assert(after.offset == calibration.offset);
+    assert(after.scale == calibration.scale);
+    assert(after.calibrated == calibration.calibrated);
+
+    sensor_read_fails = 0;
+    assert(eos_sensor_read(0, &reading) == 0);
+    assert(reading.valid);
+    assert(reading.value == 90.0f);
+    eos_sensor_deinit();
+    sensor_read_fails = 1;
+    printf("[PASS] sensor callback failure propagation\n");
 }
 
 static void test_sensor_calibrate(void) {
@@ -217,6 +255,7 @@ int main(void) {
     test_sensor_register();
     test_sensor_register_invalid_filter_config();
     test_sensor_read();
+    test_sensor_read_callback_failure();
     test_sensor_calibrate();
     test_sensor_filter();
     test_sensor_filter_window();
@@ -226,6 +265,6 @@ int main(void) {
     test_sensor_filter_invalid_window();
     test_sensor_filter_invalid_type();
     test_sensor_null();
-    printf("=== ALL SENSOR TESTS PASSED (13/13) ===\n");
+    printf("=== ALL SENSOR TESTS PASSED (14/14) ===\n");
     return 0;
 }

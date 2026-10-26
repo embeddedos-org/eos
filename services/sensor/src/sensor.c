@@ -68,8 +68,12 @@ int eos_sensor_unregister(uint8_t id) {
 int eos_sensor_read(uint8_t id, eos_sensor_reading_t *r) {
     if (!g_init || id >= EOS_SENSOR_MAX || !g_s[id].in_use || !r) return -1;
     float raw = 0;
-    if (g_s[id].cfg.read_fn) g_s[id].cfg.read_fn(id, &raw);
-    else raw = (float)g_s[id].read_count;
+    if (g_s[id].cfg.read_fn) {
+        if (g_s[id].cfg.read_fn(id, &raw) != 0) {
+            r->valid = false;
+            return -1;
+        }
+    } else raw = (float)g_s[id].read_count;
     r->value = (raw + g_s[id].calib.offset) * g_s[id].calib.scale;
     r->timestamp_ms = g_s[id].read_count++;
     r->valid = true;
@@ -131,7 +135,11 @@ int eos_sensor_get_calibration(uint8_t id, eos_sensor_calib_t *c) {
 int eos_sensor_auto_calibrate(uint8_t id) {
     if (!g_init || id >= EOS_SENSOR_MAX || !g_s[id].in_use) return -1;
     float sum = 0;
-    for (int i = 0; i < 16; i++) { eos_sensor_reading_t r; eos_sensor_read(id, &r); sum += r.value; }
+    for (int i = 0; i < 16; i++) {
+        eos_sensor_reading_t r;
+        if (eos_sensor_read(id, &r) != 0) return -1;
+        sum += r.value;
+    }
     g_s[id].calib.offset = -(sum / 16.0f);
     g_s[id].calib.calibrated = true;
     return 0;
