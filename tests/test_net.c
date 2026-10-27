@@ -172,6 +172,16 @@ static void test_mdns_init(void) {
 #include <pthread.h>
 #include <time.h>
 
+/* Some WSL environments route loopback through the Windows host. Use an
+ * explicitly supplied local IPv4 address there, without skipping the real
+ * socket round trip. Invalid overrides must fail, not silently fall back. */
+static uint32_t test_host_ip(void) {
+    const char *host = getenv("EOS_NET_TEST_HOST");
+    struct in_addr ip;
+    CHECK(inet_pton(AF_INET, host ? host : "127.0.0.1", &ip) == 1);
+    return ip.s_addr;
+}
+
 static uint16_t g_test_port = 45771;
 
 static void *echo_server(void *arg) {
@@ -212,7 +222,7 @@ static void test_net_tcp_round_trip(void) {
     CHECK(ready == 1);
     eos_socket_t c = eos_net_socket(EOS_NET_TCP);
     eos_net_addr_t addr;
-    addr.ip = inet_addr("127.0.0.1");
+    addr.ip = test_host_ip();
     addr.port = g_test_port;
     CHECK(eos_net_connect(c, &addr) == 0);
     CHECK(eos_net_send(c, "ping", 4) == 4);
@@ -244,7 +254,7 @@ static void test_net_connect_refused(void) {
     eos_net_init();
     eos_socket_t c = eos_net_socket(EOS_NET_TCP);
     eos_net_addr_t addr;
-    addr.ip = inet_addr("127.0.0.1");
+    addr.ip = test_host_ip();
     addr.port = 1;              /* nothing listens on port 1 */
     CHECK(eos_net_connect(c, &addr) != 0);
     eos_net_close(c);
