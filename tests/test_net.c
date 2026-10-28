@@ -172,7 +172,31 @@ static void test_mdns_init(void) {
 #include <pthread.h>
 #include <time.h>
 
+#define EOS_TEST_NET_DESTINATION_ENV "EOS_TEST_NET_DESTINATION"
+
 static uint16_t g_test_port = 45771;
+static uint32_t g_test_destination_ip;
+
+static int configure_test_destination(void) {
+    const char *override = getenv(EOS_TEST_NET_DESTINATION_ENV);
+    struct in_addr parsed;
+
+    if (!override) {
+        g_test_destination_ip = htonl(INADDR_LOOPBACK);
+        return 0;
+    }
+
+    if (override[0] == '\0' || inet_pton(AF_INET, override, &parsed) != 1 ||
+        parsed.s_addr == htonl(INADDR_ANY)) {
+        fprintf(stderr,
+                "[FAIL] %s must be a non-empty, non-unspecified IPv4 address; got '%s'\n",
+                EOS_TEST_NET_DESTINATION_ENV, override);
+        return -1;
+    }
+
+    g_test_destination_ip = parsed.s_addr;
+    return 0;
+}
 
 static void *echo_server(void *arg) {
     int *ready = (int *)arg;
@@ -212,7 +236,7 @@ static void test_net_tcp_round_trip(void) {
     CHECK(ready == 1);
     eos_socket_t c = eos_net_socket(EOS_NET_TCP);
     eos_net_addr_t addr;
-    addr.ip = inet_addr("127.0.0.1");
+    addr.ip = g_test_destination_ip;
     addr.port = g_test_port;
     CHECK(eos_net_connect(c, &addr) == 0);
     CHECK(eos_net_send(c, "ping", 4) == 4);
@@ -272,6 +296,7 @@ int main(void) {
     test_mqtt_connect();
     test_mdns_init();
 #ifdef EOS_NET_POSIX
+    if (configure_test_destination() != 0) return 2;
     test_net_tcp_round_trip();
     test_net_resolve_localhost();
     test_net_connect_refused();

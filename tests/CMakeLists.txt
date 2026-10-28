@@ -312,6 +312,13 @@ if(NOT CMAKE_CROSSCOMPILING AND UNIX)
     target_compile_definitions(test_net PRIVATE EOS_NET_POSIX=1)
     find_package(Threads REQUIRED)
     target_link_libraries(test_net PRIVATE Threads::Threads)
+    # A malformed explicit destination is a configuration error, not a
+    # reason to silently fall back to loopback.
+    add_test(NAME test_net_invalid_destination COMMAND test_net)
+    set_tests_properties(test_net_invalid_destination PROPERTIES
+        WILL_FAIL TRUE
+        ENVIRONMENT "EOS_TEST_NET_DESTINATION=not-an-ip"
+    )
 endif()
 add_test(NAME test_net COMMAND test_net)
 
