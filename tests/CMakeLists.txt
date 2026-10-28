@@ -304,6 +304,12 @@ target_link_libraries(test_power PRIVATE eos_power)
 add_test(NAME test_power COMMAND test_power)
 
 # --- test_net: Networking abstraction ---
+# --- test_mqtt_codec: MQTT 3.1.1 codec fixtures (#199 slice 1) ---
+add_executable(test_mqtt_codec test_mqtt_codec.c)
+target_link_libraries(test_mqtt_codec PRIVATE eos_net)
+target_include_directories(test_mqtt_codec PRIVATE ${EoS_SOURCE_DIR}/net/src)
+add_test(NAME test_mqtt_codec COMMAND test_mqtt_codec)
+
 add_executable(test_net test_net.c)
 target_link_libraries(test_net PRIVATE eos_net)
 # The POSIX round-trip cases need the same switch the library was built with,
