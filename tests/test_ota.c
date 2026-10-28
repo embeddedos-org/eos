@@ -201,6 +201,34 @@ static void test_ota_unapplied_slot_is_not_a_rollback_target(void) {
     printf("[PASS] ota unapplied slot is not a rollback target\n");
 }
 
+/* After one A->B apply, slot A is the update target for the next begin().
+ * It stayed marked valid while being overwritten, so a rollback mid-download
+ * switched to a half-written image. */
+static void test_ota_slot_being_written_is_not_a_rollback_target(void) {
+    eos_ota_init();
+    uint8_t fw[16]; memset(fw, 0x55, sizeof(fw));
+    uint8_t hash[32]; sha256_of(fw, sizeof(fw), hash);
+
+    stage_update(fw, sizeof(fw), hash);
+    eos_ota_set_authenticator(auth_accept, NULL);
+    assert(eos_ota_apply() == 0);
+    assert(eos_ota_get_active_slot() == EOS_OTA_SLOT_B);
+
+    eos_ota_source_t src; memset(&src, 0, sizeof(src));
+    src.expected_size = sizeof(fw);
+    memcpy(src.expected_sha256, hash, 32);
+    assert(eos_ota_begin(&src) == 0);          /* targets slot A */
+    assert(eos_ota_write_chunk(fw, 4) == 0);   /* partial */
+
+    assert(eos_ota_rollback() == -1);
+    assert(eos_ota_set_active_slot(EOS_OTA_SLOT_A) == -1);
+    assert(eos_ota_get_active_slot() == EOS_OTA_SLOT_B);
+    eos_ota_abort();
+    eos_ota_set_authenticator(NULL, NULL);
+    eos_ota_deinit();
+    printf("[PASS] ota slot being written is not a rollback target\n");
+}
+
 static void test_ota_write_chunk_overflow(void) {
     eos_ota_init();
     uint8_t fw[64];
@@ -249,6 +277,7 @@ int main(void) {
     test_ota_apply_honours_a_rejecting_authenticator();
     test_ota_authenticator_sees_the_computed_digest();
     test_ota_unapplied_slot_is_not_a_rollback_target();
+    test_ota_slot_being_written_is_not_a_rollback_target();
     test_ota_write_chunk_overflow();
     test_ota_write_chunk_wrap();
     printf("=== ALL OTA TESTS PASSED (11/11) ===\n");

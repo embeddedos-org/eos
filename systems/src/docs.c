@@ -24,6 +24,7 @@ static void resolve_output_dir(char *out, size_t sz,
                                const EosConfig *cfg) {
     if (docs_cfg->output_dir[0]) {
         strncpy(out, docs_cfg->output_dir, sz - 1);
+        out[sz - 1] = '\0';   /* out is uninitialised; a 511-char dir has no NUL */
     } else {
         snprintf(out, sz, "%s%sdocs", cfg->workspace.build_dir, PATH_SEP);
     }

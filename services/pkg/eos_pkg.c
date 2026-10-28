@@ -793,8 +793,8 @@ int eos_pkg_install(eapp_db_t *db, const char *eapp_path)
         struct stat st;
         if (stat(install_dir, &st) != 0) {
             fprintf(stderr, "eos-pkg: cannot create '%s'\n", install_dir);
+            free(res_data);
             free(binary_data);
-            fclose(f);
             return -1;
         }
     }
@@ -806,16 +806,16 @@ int eos_pkg_install(eapp_db_t *db, const char *eapp_path)
     FILE *fbin = fopen(binary_path, "wb");
     if (!fbin) {
         fprintf(stderr, "eos-pkg: cannot create binary '%s'\n", binary_path);
+        free(res_data);
         free(binary_data);
-        fclose(f);
         return -1;
     }
 
     if (fwrite(binary_data, 1, hdr.binary_size, fbin) != hdr.binary_size) {
         fprintf(stderr, "eos-pkg: failed to write binary\n");
         fclose(fbin);
+        free(res_data);
         free(binary_data);
-        fclose(f);
         return -1;
     }
     fclose(fbin);

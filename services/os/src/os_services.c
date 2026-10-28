@@ -267,12 +267,19 @@ int eos_ota_download(EosOtaUpdate *ota) {
 }
 
 int eos_ota_verify(EosOtaUpdate *ota) {
+    if (!ota) return -1;
     ota->state = EOS_OTA_VERIFYING;
+    /* With no expected digest there is nothing to verify against; passing
+     * here accepted whatever bytes were downloaded. */
+    if (!ota->expected_hash[0]) {
+        ota->state = EOS_OTA_FAILED;
+        return -1;
+    }
     if (eos_sha256_file(ota->local_path, ota->computed_hash) != 0) {
         ota->state = EOS_OTA_FAILED;
         return -1;
     }
-    if (ota->expected_hash[0] && strcmp(ota->computed_hash, ota->expected_hash) != 0) {
+    if (strcmp(ota->computed_hash, ota->expected_hash) != 0) {
         ota->state = EOS_OTA_FAILED;
         return -1;
     }
@@ -399,6 +406,7 @@ int eos_storage_set(EosSecureStorage *ss, const char *key,
     if (ss->count >= EOS_STORAGE_MAX_ITEMS) return -1;
     EosStorageItem *item = &ss->items[ss->count];
     strncpy(item->key, key, sizeof(item->key) - 1);
+    item->key[sizeof(item->key) - 1] = '\0';
     memcpy(item->value, value, len);
     item->value_len = len;
     item->encrypted = ss->encryption_enabled;
@@ -447,13 +455,22 @@ int eos_storage_load(EosSecureStorage *ss) {
     if (!ss->store_path[0]) return -1;
     FILE *fp = fopen(ss->store_path, "rb");
     if (!fp) return -1;
-    fread(&ss->count, sizeof(int), 1, fp);
-    if (ss->count > EOS_STORAGE_MAX_ITEMS) ss->count = EOS_STORAGE_MAX_ITEMS;
-    for (int i = 0; i < ss->count; i++) {
-        fread(&ss->items[i], sizeof(EosStorageItem), 1, fp);
+    /* The file is external input. A negative count passed the old clamp and
+     * made the next eos_storage_set() write to items[-1]; an oversized
+     * value_len or unterminated key made get() read past the item. Reject
+     * the whole file rather than load part of it. */
+    int count = 0;
+    int ok = fread(&count, sizeof(int), 1, fp) == 1 &&
+             count >= 0 && count <= EOS_STORAGE_MAX_ITEMS;
+    for (int i = 0; ok && i < count; i++) {
+        EosStorageItem *item = &ss->items[i];
+        ok = fread(item, sizeof(*item), 1, fp) == 1 &&
+             item->value_len <= EOS_STORAGE_MAX_VALUE &&
+             memchr(item->key, '\0', sizeof(item->key)) != NULL;
     }
     fclose(fp);
-    return 0;
+    ss->count = ok ? count : 0;
+    return ok ? 0 : -1;
 }
 
 void eos_storage_set_encryption(EosSecureStorage *ss, const uint8_t key[32]) {

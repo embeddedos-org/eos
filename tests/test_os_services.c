@@ -311,6 +311,107 @@ TEST(test_ota_install_refuses_a_missing_source_or_target) {
     ASSERT(eos_ota_install(&ota, "") == -1);
 }
 
+/* ---- Storage and OTA verify: fail closed on untrusted input ---- */
+
+#define STORE_FIXTURE "eos_storage_test.bin"
+
+/* A store file is external input. A negative item count passed the old
+ * `count > MAX` clamp, and the next set() wrote to items[-1]. */
+TEST(test_storage_load_rejects_a_negative_count) {
+    EosSecureStorage ss;
+    int bad = -1;
+    FILE *f = create_fixture(STORE_FIXTURE);
+    ASSERT(f != NULL);
+    ASSERT(fwrite(&bad, sizeof(bad), 1, f) == 1);
+    fclose(f);
+
+    eos_storage_init(&ss, STORE_FIXTURE);
+    ASSERT(eos_storage_load(&ss) == -1);
+    ASSERT(ss.count == 0);
+    remove(STORE_FIXTURE);
+}
+
+TEST(test_storage_load_rejects_bad_items) {
+    EosSecureStorage ss;
+    int one = 1;
+    EosStorageItem item;
+    FILE *f;
+
+    /* value_len larger than value[]: get() would copy past the item. */
+    memset(&item, 0, sizeof(item));
+    strcpy(item.key, "k");
+    item.value_len = EOS_STORAGE_MAX_VALUE + 1;
+    f = create_fixture(STORE_FIXTURE);
+    ASSERT(f != NULL);
+    ASSERT(fwrite(&one, sizeof(one), 1, f) == 1);
+    ASSERT(fwrite(&item, sizeof(item), 1, f) == 1);
+    fclose(f);
+    eos_storage_init(&ss, STORE_FIXTURE);
+    ASSERT(eos_storage_load(&ss) == -1);
+    ASSERT(ss.count == 0);
+
+    /* Key with no terminator: strcmp() in get() would read past it. */
+    memset(&item, 'A', sizeof(item.key));
+    item.value_len = 1;
+    f = create_fixture(STORE_FIXTURE);
+    ASSERT(f != NULL);
+    ASSERT(fwrite(&one, sizeof(one), 1, f) == 1);
+    ASSERT(fwrite(&item, sizeof(item), 1, f) == 1);
+    fclose(f);
+    eos_storage_init(&ss, STORE_FIXTURE);
+    ASSERT(eos_storage_load(&ss) == -1);
+    ASSERT(ss.count == 0);
+
+    /* Count promises more items than the file holds. */
+    f = create_fixture(STORE_FIXTURE);
+    ASSERT(f != NULL);
+    ASSERT(fwrite(&one, sizeof(one), 1, f) == 1);
+    fclose(f);
+    eos_storage_init(&ss, STORE_FIXTURE);
+    ASSERT(eos_storage_load(&ss) == -1);
+    ASSERT(ss.count == 0);
+    remove(STORE_FIXTURE);
+}
+
+TEST(test_storage_save_load_round_trips) {
+    EosSecureStorage ss;
+    int v = 42, out = 0;
+    size_t len = sizeof(out);
+    eos_storage_init(&ss, STORE_FIXTURE);
+    ASSERT(eos_storage_set(&ss, "answer", &v, sizeof(v)) == 0);
+    ASSERT(eos_storage_save(&ss) == 0);
+
+    eos_storage_init(&ss, STORE_FIXTURE);
+    ASSERT(eos_storage_load(&ss) == 0);
+    ASSERT(ss.count == 1);
+    ASSERT(eos_storage_get(&ss, "answer", &out, &len) == 0);
+    ASSERT(out == 42);
+    remove(STORE_FIXTURE);
+}
+
+/* With no expected digest, verify used to return 0 for any download. */
+TEST(test_ota_verify_refuses_without_an_expected_hash) {
+    EosOtaUpdate ota;
+    FILE *f = create_fixture("eos_ota_verify_test.bin");
+    ASSERT(f != NULL);
+    ASSERT(fwrite("abc", 1, 3, f) == 3);
+    fclose(f);
+
+    eos_ota_init(&ota);
+    eos_ota_set_source(&ota, "https://example.invalid/fw.bin", NULL);
+    snprintf(ota.local_path, sizeof(ota.local_path), "%s", "eos_ota_verify_test.bin");
+    ASSERT(eos_ota_verify(&ota) == -1);
+    ASSERT(ota.state == EOS_OTA_FAILED);
+
+    /* The matching digest still passes: SHA-256("abc"). */
+    eos_ota_init(&ota);
+    eos_ota_set_source(&ota, "https://example.invalid/fw.bin",
+        "ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad");
+    snprintf(ota.local_path, sizeof(ota.local_path), "%s", "eos_ota_verify_test.bin");
+    ASSERT(eos_ota_verify(&ota) == 0);
+    remove("eos_ota_verify_test.bin");
+}
+
 /* Windows: run_argv() quotes each element for _spawnvp(), which joins argv
  * unquoted. The quoting is plain C, so it is checked here on every host. */
 int eos_os_quote_win_arg(const char *in, char *out, size_t out_sz);
@@ -383,6 +484,10 @@ int main(void) {
     run_test_ota_url_check_accepts_url_characters();
     run_test_ota_install_copies_the_file_and_runs_nothing();
     run_test_ota_install_refuses_a_missing_source_or_target();
+    run_test_storage_load_rejects_a_negative_count();
+    run_test_storage_load_rejects_bad_items();
+    run_test_storage_save_load_round_trips();
+    run_test_ota_verify_refuses_without_an_expected_hash();
     run_test_win_arg_quoting_round_trips();
     printf("\n%d/%d tests passed\n", tests_passed, tests_run);
     return (tests_passed == tests_run) ? 0 : 1;

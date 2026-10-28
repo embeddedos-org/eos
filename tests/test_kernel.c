@@ -36,6 +36,12 @@ static void test_task_create(void) {
 static void test_task_create_invalid(void) {
     eos_kernel_init();
     assert(eos_task_create("t", NULL, NULL, 5, 1024) == EOS_KERN_INVALID);
+    /* Too small for the port's initial frame: it was written over the
+     * previous task's stack. */
+    assert(eos_task_create("t", test_entry, NULL, 5, 16) == EOS_KERN_INVALID);
+    assert(eos_task_create("t", test_entry, NULL, 5, EOS_MIN_STACK_SIZE - 1)
+           == EOS_KERN_INVALID);
+    assert(eos_task_create("t", test_entry, NULL, 5, EOS_MIN_STACK_SIZE) >= 0);
     printf("[PASS] task create invalid\n");
 }
 
@@ -433,6 +439,90 @@ static void test_wake_tick_zero(void) {
     printf("[PASS] wake_tick wrap to zero\n");
 }
 
+/* ---- A woken waiter whose resource was taken first keeps waiting ---- */
+
+/* Post/send dequeues and readies a waiter but does not reserve the count or
+ * item for it, so a task that runs first can take it. The woken waiter used
+ * to return EOS_KERN_TIMEOUT even under EOS_WAIT_FOREVER. Here the "other
+ * task" runs from the yield hook: on the first yield it gives and then takes
+ * back; on the second it gives for real. */
+static eos_sem_handle_t   st_sem;
+static eos_queue_handle_t st_q;
+static eos_task_handle_t  st_waiter, st_thief;
+static int st_yields;
+
+static void st_sem_hook(void)
+{
+    st_yields++;
+    eos_task_set_current_internal(st_thief);
+    assert(eos_sem_post(st_sem) == EOS_KERN_OK);
+    if (st_yields == 1)
+        assert(eos_sem_wait(st_sem, EOS_NO_WAIT) == EOS_KERN_OK);
+    eos_task_set_current_internal(st_waiter);
+}
+
+static void st_recv_hook(void)
+{
+    int v = 7, got;
+    st_yields++;
+    eos_task_set_current_internal(st_thief);
+    assert(eos_queue_send(st_q, &v, EOS_NO_WAIT) == EOS_KERN_OK);
+    if (st_yields == 1)
+        assert(eos_queue_receive(st_q, &got, EOS_NO_WAIT) == EOS_KERN_OK);
+    eos_task_set_current_internal(st_waiter);
+}
+
+static void st_send_hook(void)
+{
+    int got, v = 9;
+    st_yields++;
+    eos_task_set_current_internal(st_thief);
+    assert(eos_queue_receive(st_q, &got, EOS_NO_WAIT) == EOS_KERN_OK);
+    if (st_yields == 1)
+        assert(eos_queue_send(st_q, &v, EOS_NO_WAIT) == EOS_KERN_OK);
+    eos_task_set_current_internal(st_waiter);
+}
+
+static void test_wait_forever_survives_a_stolen_wakeup(void) {
+    eos_kernel_init();
+    st_waiter = (eos_task_handle_t)eos_task_create("w", test_entry, NULL, 5, 512);
+    st_thief  = (eos_task_handle_t)eos_task_create("t", test_entry, NULL, 1, 512);
+
+    assert(eos_sem_create(&st_sem, 0, 1) == EOS_KERN_OK);
+    eos_task_set_current_internal(st_waiter);
+    st_yields = 0;
+    q7_yield_hook = st_sem_hook;
+    assert(eos_sem_wait(st_sem, EOS_WAIT_FOREVER) == EOS_KERN_OK);
+    q7_yield_hook = NULL;
+    assert(st_yields == 2);
+    assert(eos_sem_get_count(st_sem) == 0);
+    assert(eos_sem_delete(st_sem) == EOS_KERN_OK);
+
+    int out = 0;
+    assert(eos_queue_create(&st_q, sizeof(int), 1) == EOS_KERN_OK);
+    st_yields = 0;
+    q7_yield_hook = st_recv_hook;
+    assert(eos_queue_receive(st_q, &out, EOS_WAIT_FOREVER) == EOS_KERN_OK);
+    q7_yield_hook = NULL;
+    assert(st_yields == 2 && out == 7);
+
+    int full = 1, mine = 2;
+    assert(eos_queue_send(st_q, &full, EOS_NO_WAIT) == EOS_KERN_OK);
+    st_yields = 0;
+    q7_yield_hook = st_send_hook;
+    assert(eos_queue_send(st_q, &mine, EOS_WAIT_FOREVER) == EOS_KERN_OK);
+    q7_yield_hook = NULL;
+    assert(st_yields == 2);
+    assert(eos_queue_receive(st_q, &out, EOS_NO_WAIT) == EOS_KERN_OK && out == mine);
+    assert(eos_queue_delete(st_q) == EOS_KERN_OK);
+
+    /* A real timeout still times out: nobody posts, the waiter stays queued. */
+    assert(eos_sem_create(&st_sem, 0, 1) == EOS_KERN_OK);
+    assert(eos_sem_wait(st_sem, 10) == EOS_KERN_TIMEOUT);
+    assert(eos_sem_delete(st_sem) == EOS_KERN_OK);
+    printf("[PASS] wait forever survives a stolen wakeup\n");
+}
+
 /* Mock port functions for host-based simulation/testing */
 uint32_t eos_port_enter_critical(void) {
     uint32_t previous = g_critical_depth;
@@ -510,6 +600,7 @@ int main(void) {
     RUN(test_queue_full);
     RUN(test_queue_send_waiter_overflow);
     RUN(test_queue_no_stale_send_waiter);
+    RUN(test_wait_forever_survives_a_stolen_wakeup);
     RUN(test_task_stats);
     RUN(test_tick_overflow);
     RUN(test_wake_tick_zero);
