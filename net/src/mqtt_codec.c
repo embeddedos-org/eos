@@ -6,8 +6,8 @@
  * @brief Pure MQTT 3.1.1 packet codec — implementation.
  *
  * See mqtt_codec.h for the contract and docs/eos-mqtt-client-design.md
- * for the design (#199, slice 1: codec core + fixtures; the client
- * state machine in net.c still stubs eos_mqtt_* until slice 2).
+ * for the design (#199, slice 1: codec core + fixtures). The client
+ * state machine that drives it lives in net.c.
  */
 
 #include "mqtt_codec.h"

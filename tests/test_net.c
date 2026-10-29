@@ -251,6 +251,269 @@ static void test_net_connect_refused(void) {
     eos_net_deinit();
     PASS("net connect to a closed port fails");
 }
+
+/* ── MQTT client over a fake broker (#199 slice 2) ────────────────────────
+ *
+ * No broker exists in CI (design doc section 6), so a thread plays one: it
+ * accepts a single client, records the CONNECT, answers with a scripted
+ * CONNACK (or hangs up), then records everything the client sends until the
+ * client closes. Raw recv() is used for that last part because eos_net_recv
+ * returns 0 for both a timeout and a close, and the tests need to tell those
+ * apart to prove the client closed its socket.
+ */
+#include <errno.h>
+#include <sys/socket.h>
+#include <sys/time.h>
+
+static uint16_t g_broker_port = 45780;
+
+typedef struct {
+    uint16_t       port;
+    const uint8_t *connack;         /* NULL: hang up after CONNECT */
+    size_t         connack_len;
+    volatile int   ready;
+    uint8_t        connect_pkt[256];
+    size_t         connect_len;
+    uint8_t        after[16];       /* bytes received after the CONNACK */
+    size_t         after_len;
+    int            saw_close;       /* client closed its end */
+} fake_broker_t;
+
+static int broker_recv_exact(int fd, uint8_t *buf, size_t len) {
+    while (len > 0) {
+        ssize_t n = recv(fd, buf, len, 0);
+        if (n <= 0) return -1;
+        buf += n;
+        len -= (size_t)n;
+    }
+    return 0;
+}
+
+static void *fake_broker(void *arg) {
+    fake_broker_t *b = (fake_broker_t *)arg;
+    eos_socket_t s = eos_net_socket(EOS_NET_TCP);
+    if (s == EOS_SOCKET_INVALID || eos_net_bind(s, b->port) != 0 ||
+        eos_net_listen(s, 1) != 0) {
+        b->ready = -1;
+        return NULL;
+    }
+    b->ready = 1;
+    eos_socket_t c = eos_net_accept(s, NULL);
+    eos_net_close(s);
+    if (c == EOS_SOCKET_INVALID) return NULL;
+
+    struct timeval tv = { .tv_sec = 2, .tv_usec = 0 };
+    setsockopt(c, SOL_SOCKET, SO_RCVTIMEO, &tv, sizeof(tv));
+
+    /* Every CONNECT in these tests is under 128 bytes, so Remaining Length
+     * is the single byte at offset 1. */
+    uint8_t *p = b->connect_pkt;
+    if (broker_recv_exact(c, p, 2) == 0 && (p[1] & 0x80u) == 0 &&
+        broker_recv_exact(c, p + 2, p[1]) == 0) {
+        b->connect_len = 2u + p[1];
+    }
+
+    if (b->connect_len > 0 && b->connack != NULL) {
+        eos_net_send(c, b->connack, b->connack_len);
+        for (;;) {
+            ssize_t n = recv(c, b->after + b->after_len,
+                             sizeof(b->after) - b->after_len, 0);
+            if (n == 0) { b->saw_close = 1; break; }
+            if (n < 0 && errno == EINTR) continue;
+            if (n < 0) break;
+            b->after_len += (size_t)n;
+            if (b->after_len == sizeof(b->after)) break;
+        }
+    }
+    eos_net_close(c);
+    return NULL;
+}
+
+static void broker_start(fake_broker_t *b, pthread_t *t,
+                         const uint8_t *connack, size_t connack_len) {
+    memset(b, 0, sizeof(*b));
+    b->port = g_broker_port++;
+    b->connack = connack;
+    b->connack_len = connack_len;
+    pthread_create(t, NULL, fake_broker, b);
+    for (int i = 0; i < 400 && b->ready == 0; i++) {
+        struct timespec ts;
+        ts.tv_sec = 0;
+        ts.tv_nsec = 5 * 1000 * 1000;
+        nanosleep(&ts, NULL);
+    }
+    CHECK(b->ready == 1);
+}
+
+static void mqtt_test_config(eos_mqtt_config_t *cfg, uint16_t port) {
+    memset(cfg, 0, sizeof(*cfg));
+    strncpy(cfg->broker_host, "127.0.0.1", sizeof(cfg->broker_host) - 1);
+    cfg->broker_port = port;
+    strncpy(cfg->client_id, "eos-test", sizeof(cfg->client_id) - 1);
+    cfg->keepalive_sec = 60;
+}
+
+static const uint8_t k_connack_accepted[] = { 0x20, 0x02, 0x00, 0x00 };
+
+/* CONNECT for client "eos-test", keep-alive 60, clean session, no
+ * credentials: MQTT 3.1.1 sections 3.1.2-3.1.3. */
+static const uint8_t k_connect_plain[] = {
+    0x10, 0x14,
+    0x00, 0x04, 'M', 'Q', 'T', 'T', 0x04, 0x02, 0x00, 0x3C,
+    0x00, 0x08, 'e', 'o', 's', '-', 't', 'e', 's', 't'
+};
+
+static void test_mqtt_connect_disconnect_lifecycle(void) {
+    eos_net_init();
+    fake_broker_t b;
+    pthread_t t;
+    broker_start(&b, &t, k_connack_accepted, sizeof(k_connack_accepted));
+
+    eos_mqtt_config_t cfg;
+    mqtt_test_config(&cfg, b.port);
+    eos_mqtt_handle_t h = eos_mqtt_connect(&cfg);
+    CHECK(h != EOS_MQTT_INVALID);
+    CHECK(eos_mqtt_disconnect(h) == 0);
+    pthread_join(t, NULL);
+
+    CHECK(b.connect_len == sizeof(k_connect_plain));
+    CHECK(memcmp(b.connect_pkt, k_connect_plain, sizeof(k_connect_plain)) == 0);
+    /* DISCONNECT, then the socket closed (MQTT-3.14.4-1). */
+    CHECK(b.after_len == 2);
+    CHECK(b.after[0] == 0xE0 && b.after[1] == 0x00);
+    CHECK(b.saw_close == 1);
+
+    /* The handle is released: a second disconnect has nothing to close. */
+    CHECK(eos_mqtt_disconnect(h) == -1);
+    eos_net_deinit();
+    PASS("mqtt connect/disconnect lifecycle");
+}
+
+static void test_mqtt_connect_credentials(void) {
+    eos_net_init();
+    fake_broker_t b;
+    pthread_t t;
+    broker_start(&b, &t, k_connack_accepted, sizeof(k_connack_accepted));
+
+    eos_mqtt_config_t cfg;
+    mqtt_test_config(&cfg, b.port);
+    strncpy(cfg.username, "u", sizeof(cfg.username) - 1);
+    strncpy(cfg.password, "p", sizeof(cfg.password) - 1);
+    eos_mqtt_handle_t h = eos_mqtt_connect(&cfg);
+    CHECK(h != EOS_MQTT_INVALID);
+    CHECK(eos_mqtt_disconnect(h) == 0);
+    pthread_join(t, NULL);
+
+    /* Username and password flags set (0xC0) beside clean session (0x02),
+     * and both fields follow the client id. */
+    static const uint8_t expected[] = {
+        0x10, 0x1A,
+        0x00, 0x04, 'M', 'Q', 'T', 'T', 0x04, 0xC2, 0x00, 0x3C,
+        0x00, 0x08, 'e', 'o', 's', '-', 't', 'e', 's', 't',
+        0x00, 0x01, 'u',
+        0x00, 0x01, 'p'
+    };
+    CHECK(b.connect_len == sizeof(expected));
+    CHECK(memcmp(b.connect_pkt, expected, sizeof(expected)) == 0);
+    eos_net_deinit();
+    PASS("mqtt connect sends credentials");
+}
+
+static void test_mqtt_reconnect_after_disconnect(void) {
+    eos_net_init();
+    for (int round = 0; round < 2; round++) {
+        fake_broker_t b;
+        pthread_t t;
+        broker_start(&b, &t, k_connack_accepted, sizeof(k_connack_accepted));
+        eos_mqtt_config_t cfg;
+        mqtt_test_config(&cfg, b.port);
+        eos_mqtt_handle_t h = eos_mqtt_connect(&cfg);
+        CHECK(h != EOS_MQTT_INVALID);
+        CHECK(eos_mqtt_disconnect(h) == 0);
+        pthread_join(t, NULL);
+        CHECK(b.saw_close == 1);
+    }
+    eos_net_deinit();
+    PASS("mqtt reconnect after disconnect");
+}
+
+/* Every way the broker can fail to accept must leave no valid handle and a
+ * closed socket. */
+static void expect_connect_fails(const uint8_t *connack, size_t connack_len) {
+    fake_broker_t b;
+    pthread_t t;
+    broker_start(&b, &t, connack, connack_len);
+    eos_mqtt_config_t cfg;
+    mqtt_test_config(&cfg, b.port);
+    CHECK(eos_mqtt_connect(&cfg) == EOS_MQTT_INVALID);
+    pthread_join(t, NULL);
+    CHECK(b.connect_len == sizeof(k_connect_plain));
+    if (connack != NULL) {
+        CHECK(b.after_len == 0);
+        CHECK(b.saw_close == 1);
+    }
+}
+
+static void test_mqtt_connect_broker_refuses(void) {
+    eos_net_init();
+    static const uint8_t refused[] = { 0x20, 0x02, 0x00, 0x05 };  /* not authorized */
+    expect_connect_fails(refused, sizeof(refused));
+    eos_net_deinit();
+    PASS("mqtt connect refused by broker");
+}
+
+static void test_mqtt_connect_malformed_connack(void) {
+    eos_net_init();
+    static const uint8_t bad_code[] = { 0x20, 0x02, 0x00, 0x06 };  /* code > 5 */
+    static const uint8_t not_ack[]  = { 0xD0, 0x00, 0x20, 0x02 };  /* PINGRESP first */
+    expect_connect_fails(bad_code, sizeof(bad_code));
+    expect_connect_fails(not_ack, sizeof(not_ack));
+    eos_net_deinit();
+    PASS("mqtt connect rejects a malformed CONNACK");
+}
+
+static void test_mqtt_connect_broker_hangs_up(void) {
+    eos_net_init();
+    expect_connect_fails(NULL, 0);
+    eos_net_deinit();
+    PASS("mqtt connect fails when broker hangs up");
+}
+
+static void test_mqtt_connect_no_listener(void) {
+    eos_net_init();
+    eos_mqtt_config_t cfg;
+    mqtt_test_config(&cfg, 1);      /* nothing listens on port 1 */
+    CHECK(eos_mqtt_connect(&cfg) == EOS_MQTT_INVALID);
+    eos_net_deinit();
+    PASS("mqtt connect to a closed port fails");
+}
+
+static void test_mqtt_connect_bad_config(void) {
+    eos_net_init();
+    eos_mqtt_config_t cfg;
+    CHECK(eos_mqtt_connect(NULL) == EOS_MQTT_INVALID);
+
+    mqtt_test_config(&cfg, 1883);
+    cfg.broker_host[0] = '\0';
+    CHECK(eos_mqtt_connect(&cfg) == EOS_MQTT_INVALID);
+
+    mqtt_test_config(&cfg, 0);
+    CHECK(eos_mqtt_connect(&cfg) == EOS_MQTT_INVALID);
+
+    /* No terminator anywhere in the field. */
+    mqtt_test_config(&cfg, 1883);
+    memset(cfg.client_id, 'a', sizeof(cfg.client_id));
+    CHECK(eos_mqtt_connect(&cfg) == EOS_MQTT_INVALID);
+    eos_net_deinit();
+    PASS("mqtt connect rejects a bad config");
+}
+
+static void test_mqtt_disconnect_bad_handle(void) {
+    CHECK(eos_mqtt_disconnect(EOS_MQTT_INVALID) == -1);
+    CHECK(eos_mqtt_disconnect(0) == -1);        /* never connected */
+    CHECK(eos_mqtt_disconnect(9999) == -1);     /* out of range */
+    PASS("mqtt disconnect rejects a bad handle");
+}
 #endif /* EOS_NET_POSIX */
 
 int main(void) {
@@ -275,6 +538,15 @@ int main(void) {
     test_net_tcp_round_trip();
     test_net_resolve_localhost();
     test_net_connect_refused();
+    test_mqtt_connect_disconnect_lifecycle();
+    test_mqtt_connect_credentials();
+    test_mqtt_reconnect_after_disconnect();
+    test_mqtt_connect_broker_refuses();
+    test_mqtt_connect_malformed_connack();
+    test_mqtt_connect_broker_hangs_up();
+    test_mqtt_connect_no_listener();
+    test_mqtt_connect_bad_config();
+    test_mqtt_disconnect_bad_handle();
 #endif
     printf("\n=== ALL %d NET TESTS PASSED ===\n", passed);
     return 0;

@@ -207,7 +207,16 @@ absence; this track is designed around it):
    handle table; `eos_mqtt_connect`, `eos_mqtt_disconnect`,
    `eos_mqtt_publish` live over the POSIX profile; fake-broker
    tests; the integration assertions for these three turn over.
-3. **Subscribe / loop:** subscriptions + callback dispatch,
+   *As landed:* slice 2 shipped connect and disconnect only. The
+   handle table, the DISCONNECTED → CONNECTING → CONNECTED →
+   DISCONNECTING states, and fake-broker tests are in
+   `tests/test_net.c`, which CI runs. `test_net_integration.c`
+   is still unregistered (see `tests/CMakeLists.txt`). Publish
+   moved to slice 3. Until slice 3 lands, nothing sends PINGREQ,
+   so a broker drops an idle connection after 1.5 ×
+   `keepalive_sec` (MQTT-3.1.2-24).
+3. **Publish / subscribe / loop:** `eos_mqtt_publish` (moved
+   here from slice 2), subscriptions + callback dispatch,
    `eos_mqtt_subscribe` / `eos_mqtt_unsubscribe` /
    `eos_mqtt_loop`, keep-alive. The remaining stub assertions
    turn over.
