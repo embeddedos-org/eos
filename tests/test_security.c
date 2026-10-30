@@ -166,7 +166,7 @@ int main(void) {
     run_test_acl_default_deny();
     run_test_acl_wildcard();
     run_test_acl_last_match_wins();
-    tests_run = 10;
+    tests_run = 11;
     printf("\n%d/%d tests passed\n", tests_passed, tests_run);
     return (tests_passed == tests_run) ? 0 : 1;
 }

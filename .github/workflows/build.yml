@@ -42,7 +42,7 @@ jobs:
         run: |
           gcc -std=c11 -Wall -Wextra -O0 -g \
             -DEOS_ENABLE_NET=1 -Iinclude -Inet/include \
-            -o build_net tests/test_net_integration.c net/src/net.c
+            -o build_net tests/test_net_integration.c net/src/net.c net/src/mqtt_codec.c
           echo "✓ Net test compiled"
 
       - name: Run network test (24 checks)

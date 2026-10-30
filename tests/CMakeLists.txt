@@ -76,6 +76,12 @@ add_executable(test_config_size test_config_size.c)
 target_link_libraries(test_config_size PRIVATE eos_core)
 add_test(NAME test_config_size COMMAND test_config_size)
 
+# --- test_cache: cache marker validation (#205) ---
+# Implementation is core/src/cache.c, which lives in eos_core.
+add_executable(test_cache test_cache.c)
+target_link_libraries(test_cache PRIVATE eos_core)
+add_test(NAME test_cache COMMAND test_cache)
+
 # --- test_scheduler_cache_key: the cache key against oversized options ---
 # #includes core/src/scheduler.c to reach its static compute_cache_key(), the
 # same way test_ed25519_canonical_s.c reaches ed25519_verify.c's -- so that
