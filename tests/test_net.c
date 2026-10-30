@@ -169,10 +169,63 @@ static void test_mdns_init(void) {
  */
 #ifdef EOS_NET_POSIX
 #include <arpa/inet.h>
+#include <ifaddrs.h>
+#include <netinet/in.h>
 #include <pthread.h>
+#include <sys/socket.h>
 #include <time.h>
 
+#define EOS_TEST_NET_DESTINATION_ENV "EOS_TEST_NET_DESTINATION"
+/* Distinct from CHECK()'s exit(1), so a rejected destination is never
+ * mistaken for a failed check. tests/CMakeLists.txt matches the message. */
+#define EOS_TEST_NET_DESTINATION_REJECTED 2
+
 static uint16_t g_test_port = 45771;
+static uint32_t g_test_destination_ip;
+
+/* ip in network byte order. True if one of this host's interfaces has it. */
+static int ipv4_on_local_interface(uint32_t ip) {
+    struct ifaddrs *list = NULL;
+    int found = 0;
+
+    if (getifaddrs(&list) != 0) return 0;
+    for (const struct ifaddrs *it = list; it && !found; it = it->ifa_next) {
+        if (it->ifa_addr && it->ifa_addr->sa_family == AF_INET) {
+            struct sockaddr_in sin;
+            memcpy(&sin, it->ifa_addr, sizeof(sin));
+            found = sin.sin_addr.s_addr == ip;
+        }
+    }
+    freeifaddrs(list);
+    return found;
+}
+
+static _Noreturn void reject_test_destination(const char *value, const char *reason) {
+    fprintf(stderr, "[CONFIG] %s rejected: '%s' %s\n",
+            EOS_TEST_NET_DESTINATION_ENV, value, reason);
+    exit(EOS_TEST_NET_DESTINATION_REJECTED);
+}
+
+/* The override exists for hosts where 127.0.0.1 does not reach the local
+ * listener (some WSL setups). It must stay on this machine: only
+ * 127.0.0.0/8 or an address assigned to a local interface is accepted, so a
+ * misconfigured runner cannot send test traffic to another host. Runs
+ * before any other check, so a rejected value exits before any socket work. */
+static void configure_test_destination(void) {
+    const char *override = getenv(EOS_TEST_NET_DESTINATION_ENV);
+    struct in_addr parsed;
+
+    if (!override) {
+        g_test_destination_ip = htonl(INADDR_LOOPBACK);
+        return;
+    }
+    if (override[0] == '\0' || inet_pton(AF_INET, override, &parsed) != 1)
+        reject_test_destination(override, "is not a numeric IPv4 address");
+    if ((ntohl(parsed.s_addr) >> 24) != 127 && !ipv4_on_local_interface(parsed.s_addr))
+        reject_test_destination(override,
+                                "is not in 127.0.0.0/8 or assigned to a local interface");
+    g_test_destination_ip = parsed.s_addr;
+}
 
 static void *echo_server(void *arg) {
     int *ready = (int *)arg;
@@ -212,7 +265,7 @@ static void test_net_tcp_round_trip(void) {
     CHECK(ready == 1);
     eos_socket_t c = eos_net_socket(EOS_NET_TCP);
     eos_net_addr_t addr;
-    addr.ip = inet_addr("127.0.0.1");
+    addr.ip = g_test_destination_ip;
     addr.port = g_test_port;
     CHECK(eos_net_connect(c, &addr) == 0);
     CHECK(eos_net_send(c, "ping", 4) == 4);
@@ -255,6 +308,9 @@ static void test_net_connect_refused(void) {
 
 int main(void) {
     printf("=== EoS Networking Tests ===\n");
+#ifdef EOS_NET_POSIX
+    configure_test_destination();
+#endif
     test_net_init();
     test_net_socket_tcp();
     test_net_socket_udp();
