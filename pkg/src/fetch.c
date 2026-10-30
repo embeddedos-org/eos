@@ -154,10 +154,22 @@ static int is_tarball(const char *url) {
             strstr(url, ".zip") != NULL);
 }
 
+/* Every string checked here is interpolated inside double quotes into a
+ * command run by system()/popen(). The old deny-list did not include '"', so
+ * `x"&touch pwned&"y.tar.gz` closed the quote and ran a command before any
+ * digest was compared. Within POSIX double quotes only '"', '\\', '$' and '`'
+ * are special; control characters are refused because they have no place in
+ * a URL or path. A leading '-' would be read by git/wget/tar as an option.
+ * cmd.exe expands %VAR% even inside quotes, so '%' is refused there too. */
 static int is_url_safe(const char *url) {
-    if (!url) return 0;
-    /* Basic check for common shell metacharacters */
-    if (strpbrk(url, ";|><$()`'")) return 0;
+    if (!url || url[0] == '-') return 0;
+    if (strpbrk(url, ";|><$()`'\"\\")) return 0;
+#ifdef _WIN32
+    if (strchr(url, '%')) return 0;
+#endif
+    for (const unsigned char *p = (const unsigned char *)url; *p; p++) {
+        if (*p < 0x20 || *p == 0x7f) return 0;
+    }
     return 1;
 }
 
@@ -216,51 +228,6 @@ static EosResult fetch_git(const char *url, const char *dest,
     return EOS_OK;
 }
 
-static EosResult fetch_tarball(const char *url, const char *dest) {
-    if (!is_url_safe(url)) {
-        EOS_ERROR("Potentially unsafe source URL detected: %s", url);
-        return EOS_ERR_FETCH;
-    }
-    MKDIR(dest);
-
-    char archive[EOS_MAX_PATH];
-    const char *basename = strrchr(url, '/');
-    if (!basename) basename = url;
-    else basename++;
-    snprintf(archive, sizeof(archive), "%s/%s", dest, basename);
-
-    char cmd[2048];
-#ifdef _WIN32
-    snprintf(cmd, sizeof(cmd), "curl -fSL -o \"%s\" \"%s\"", archive, url);
-#else
-    snprintf(cmd, sizeof(cmd), "wget -q -O \"%s\" \"%s\"", archive, url);
-#endif
-    EOS_INFO("Fetching (download): %s", url);
-    int rc = system(cmd);
-    if (rc != 0) return EOS_ERR_FETCH;
-
-    /* Extract */
-    if (strstr(archive, ".tar.gz") || strstr(archive, ".tgz")) {
-        snprintf(cmd, sizeof(cmd), "tar xzf \"%s\" -C \"%s\" --strip-components=1",
-                 archive, dest);
-    } else if (strstr(archive, ".tar.xz")) {
-        snprintf(cmd, sizeof(cmd), "tar xJf \"%s\" -C \"%s\" --strip-components=1",
-                 archive, dest);
-    } else if (strstr(archive, ".tar.bz2")) {
-        snprintf(cmd, sizeof(cmd), "tar xjf \"%s\" -C \"%s\" --strip-components=1",
-                 archive, dest);
-    } else if (strstr(archive, ".zip")) {
-        snprintf(cmd, sizeof(cmd), "unzip -o \"%s\" -d \"%s\"", archive, dest);
-    } else {
-        EOS_WARN("Unknown archive format: %s", archive);
-        return EOS_ERR_INVALID;
-    }
-
-    EOS_INFO("Extracting: %s", archive);
-    rc = system(cmd);
-    return (rc == 0) ? EOS_OK : EOS_ERR_FETCH;
-}
-
 EosResult eos_fetch_source(const char *url, const char *dest_dir,
                                const char *expected_hash) {
     if (!url || url[0] == '\0') {
@@ -270,6 +237,13 @@ EosResult eos_fetch_source(const char *url, const char *dest_dir,
 
     if (!is_url_safe(url)) {
         EOS_ERROR("Potentially unsafe source URL detected: %s", url);
+        return EOS_ERR_FETCH;
+    }
+
+    /* dest_dir reaches the same shell commands as the URL. */
+    if (!is_url_safe(dest_dir)) {
+        EOS_ERROR("Potentially unsafe destination directory: %s",
+                  dest_dir ? dest_dir : "(null)");
         return EOS_ERR_FETCH;
     }
 
@@ -357,8 +331,11 @@ EosResult eos_fetch_source(const char *url, const char *dest_dir,
         rc = system(cmd);
         res = (rc == 0) ? EOS_OK : EOS_ERR_FETCH;
     } else {
-        EOS_WARN("Assuming tarball for URL: %s", url);
-        res = fetch_tarball(url, dest_dir);
+        /* This branch used to download and extract with no digest
+         * comparison, which is the unverified fetch refused above. */
+        EOS_ERROR("Refusing %s: not a git URL or a recognised archive "
+                  "(.tar.*, .tgz, .zip), so it cannot be verified.", url);
+        res = EOS_ERR_INVALID;
     }
 
     return res;

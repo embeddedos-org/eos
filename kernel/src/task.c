@@ -300,6 +300,7 @@ int eos_task_create(const char *name, eos_task_func_t entry, void *arg,
 {
     if (!entry) return EOS_KERN_INVALID;
     if (stack_size == 0) stack_size = 1024;
+    if (stack_size < EOS_MIN_STACK_SIZE) return EOS_KERN_INVALID;
 
     uint32_t crit = eos_port_enter_critical();
 

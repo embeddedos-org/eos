@@ -464,6 +464,27 @@ TEST(test_remove_deletes_the_package_tree_and_nothing_else)
     eos_test_rmdir(p);
 }
 
+/* The package file is closed once its blobs are read; the error paths after
+ * that closed it a second time (undefined behaviour -- glibc may abort or
+ * corrupt the heap). Pre-creating the binary's path as a directory makes
+ * fopen("wb") fail and drives the first of those paths. The double close is
+ * not observable on every libc, so this test pins the path and its result;
+ * it does not by itself prove the close count. */
+TEST(test_install_fails_cleanly_when_the_binary_cannot_be_created)
+{
+    eapp_db_t db;
+    fresh_db(&db);
+    write_eapp_with_strings(GOOD_NAME, GOOD_ID);
+    ASSERT(eos_test_mkdir(APPS_DIR) == 0 || path_exists(APPS_DIR));
+    ASSERT(eos_test_mkdir(APPS_DIR "/" GOOD_ID) == 0);
+    ASSERT(eos_test_mkdir(APPS_DIR "/" GOOD_ID "/" GOOD_NAME) == 0);
+
+    ASSERT(eos_pkg_install(&db, EAPP_PATH) != 0);
+    ASSERT(db.count == 0);
+
+    ASSERT(eos_test_rmdir(APPS_DIR "/" GOOD_ID "/" GOOD_NAME) == 0);
+}
+
 /* The control: the same signed payload under a plain reverse-DNS id and a
  * name with every allowed punctuation character installs where it should. */
 TEST(test_install_accepts_a_plain_name)
@@ -493,6 +514,7 @@ int main(void)
     run_test_update_refuses_a_bad_package_id_before_looking_it_up();
     run_test_load_db_drops_a_record_that_would_reach_a_shell();
     run_test_remove_deletes_the_package_tree_and_nothing_else();
+    run_test_install_fails_cleanly_when_the_binary_cannot_be_created();
     run_test_install_accepts_a_plain_name();
     clean_fixture();
     printf("%d/%d tests passed\n", tests_passed, tests_run);

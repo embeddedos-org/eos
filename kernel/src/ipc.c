@@ -30,6 +30,36 @@ typedef struct {
 
 static queue_t g_q[EOS_MAX_QUEUES];
 
+static int q_remove_waiter(uint8_t *waiters, uint8_t *count, uint8_t task)
+{
+    for (int i = 0; i < *count; i++) {
+        if (waiters[i] != task) continue;
+        for (int j = i; j < *count - 1; j++)
+            waiters[j] = waiters[j + 1];
+        (*count)--;
+        return 1;
+    }
+    return 0;
+}
+
+/* A blocked sender/receiver that wakes to find nothing for it either timed
+ * out (it is still on the wait list) or was woken by the other side and then
+ * lost the slot/item to a task that ran first. The second case used to
+ * return EOS_KERN_TIMEOUT even under EOS_WAIT_FOREVER; it now waits again
+ * for whatever time remains. */
+static int q_wait_again(int still_queued, uint32_t timeout_ms,
+                        uint32_t deadline, uint32_t *remaining,
+                        uint8_t waiter_count)
+{
+    if (still_queued) return 0;
+    if (timeout_ms != EOS_WAIT_FOREVER) {
+        int32_t left = (int32_t)(deadline - eos_tick_get());
+        if (left <= 0) return 0;
+        *remaining = (uint32_t)left;
+    }
+    return waiter_count < Q_MAX_WAITERS;
+}
+
 int eos_queue_create(eos_queue_handle_t *out, size_t item_size, uint32_t capacity)
 {
     if (!out || item_size == 0 || capacity == 0) return EOS_KERN_INVALID;
@@ -91,39 +121,30 @@ int eos_queue_send(eos_queue_handle_t h, const void *item, uint32_t timeout_ms)
     }
 
     uint8_t caller = (uint8_t)eos_task_get_current();
-    g_q[h].send_waiters[g_q[h].send_waiter_count++] = caller;
-    eos_task_block_with_timeout(caller, timeout_ms);
-    eos_port_exit_critical(crit);
-    eos_port_yield();
+    uint32_t deadline = eos_tick_get() + timeout_ms;   /* ticks are ms */
+    uint32_t remaining = timeout_ms;
 
-    /* Retry after waking */
-    crit = eos_port_enter_critical();
-    if (g_q[h].count < g_q[h].capacity) {
-        memcpy(g_q[h].buf + g_q[h].head * g_q[h].item_size, item, g_q[h].item_size);
-        g_q[h].head = (g_q[h].head + 1) % g_q[h].capacity;
-        g_q[h].count++;
-        /* Remove from wait queue if still there (woken by timeout, not by a
-         * receiver) — a stale entry would later steal another waiter's wakeup. */
-        for (int i = 0; i < g_q[h].send_waiter_count; i++) {
-            if (g_q[h].send_waiters[i] == caller) {
-                for (int j = i; j < g_q[h].send_waiter_count - 1; j++)
-                    g_q[h].send_waiters[j] = g_q[h].send_waiters[j + 1];
-                g_q[h].send_waiter_count--;
-                break;
-            }
-        }
+    /* A receiver dequeues and readies one sender but does not reserve the
+     * free slot for it; see q_wait_again(). */
+    for (;;) {
+        g_q[h].send_waiters[g_q[h].send_waiter_count++] = caller;
+        eos_task_block_with_timeout(caller, remaining);
         eos_port_exit_critical(crit);
-        return EOS_KERN_OK;
-    }
+        eos_port_yield();
 
-    /* Still full — timeout */
-    for (int i = 0; i < g_q[h].send_waiter_count; i++) {
-        if (g_q[h].send_waiters[i] == caller) {
-            for (int j = i; j < g_q[h].send_waiter_count - 1; j++)
-                g_q[h].send_waiters[j] = g_q[h].send_waiters[j + 1];
-            g_q[h].send_waiter_count--;
-            break;
+        crit = eos_port_enter_critical();
+        int still_queued = q_remove_waiter(g_q[h].send_waiters,
+                                           &g_q[h].send_waiter_count, caller);
+        if (g_q[h].count < g_q[h].capacity) {
+            memcpy(g_q[h].buf + g_q[h].head * g_q[h].item_size, item, g_q[h].item_size);
+            g_q[h].head = (g_q[h].head + 1) % g_q[h].capacity;
+            g_q[h].count++;
+            eos_port_exit_critical(crit);
+            return EOS_KERN_OK;
         }
+        if (!q_wait_again(still_queued, timeout_ms, deadline, &remaining,
+                          g_q[h].send_waiter_count))
+            break;
     }
     eos_port_exit_critical(crit);
     return EOS_KERN_TIMEOUT;
@@ -165,39 +186,30 @@ int eos_queue_receive(eos_queue_handle_t h, void *item, uint32_t timeout_ms)
     }
 
     uint8_t caller = (uint8_t)eos_task_get_current();
-    g_q[h].recv_waiters[g_q[h].recv_waiter_count++] = caller;
-    eos_task_block_with_timeout(caller, timeout_ms);
-    eos_port_exit_critical(crit);
-    eos_port_yield();
+    uint32_t deadline = eos_tick_get() + timeout_ms;   /* ticks are ms */
+    uint32_t remaining = timeout_ms;
 
-    /* Retry after waking */
-    crit = eos_port_enter_critical();
-    if (g_q[h].count > 0) {
-        memcpy(item, g_q[h].buf + g_q[h].tail * g_q[h].item_size, g_q[h].item_size);
-        g_q[h].tail = (g_q[h].tail + 1) % g_q[h].capacity;
-        g_q[h].count--;
-        /* Remove from wait queue if still there (woken by timeout, not by a
-         * sender) — a stale entry would later steal another waiter's wakeup. */
-        for (int i = 0; i < g_q[h].recv_waiter_count; i++) {
-            if (g_q[h].recv_waiters[i] == caller) {
-                for (int j = i; j < g_q[h].recv_waiter_count - 1; j++)
-                    g_q[h].recv_waiters[j] = g_q[h].recv_waiters[j + 1];
-                g_q[h].recv_waiter_count--;
-                break;
-            }
-        }
+    /* A sender dequeues and readies one receiver but does not reserve the
+     * item for it; see q_wait_again(). */
+    for (;;) {
+        g_q[h].recv_waiters[g_q[h].recv_waiter_count++] = caller;
+        eos_task_block_with_timeout(caller, remaining);
         eos_port_exit_critical(crit);
-        return EOS_KERN_OK;
-    }
+        eos_port_yield();
 
-    /* Still empty — timeout */
-    for (int i = 0; i < g_q[h].recv_waiter_count; i++) {
-        if (g_q[h].recv_waiters[i] == caller) {
-            for (int j = i; j < g_q[h].recv_waiter_count - 1; j++)
-                g_q[h].recv_waiters[j] = g_q[h].recv_waiters[j + 1];
-            g_q[h].recv_waiter_count--;
-            break;
+        crit = eos_port_enter_critical();
+        int still_queued = q_remove_waiter(g_q[h].recv_waiters,
+                                           &g_q[h].recv_waiter_count, caller);
+        if (g_q[h].count > 0) {
+            memcpy(item, g_q[h].buf + g_q[h].tail * g_q[h].item_size, g_q[h].item_size);
+            g_q[h].tail = (g_q[h].tail + 1) % g_q[h].capacity;
+            g_q[h].count--;
+            eos_port_exit_critical(crit);
+            return EOS_KERN_OK;
         }
+        if (!q_wait_again(still_queued, timeout_ms, deadline, &remaining,
+                          g_q[h].recv_waiter_count))
+            break;
     }
     eos_port_exit_critical(crit);
     return EOS_KERN_TIMEOUT;

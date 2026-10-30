@@ -119,6 +119,18 @@ static int mtx_remove_waiter(mtx_t *m, uint8_t task)
     return 0;
 }
 
+static int sem_remove_waiter(sem_t *sm, uint8_t task)
+{
+    for (int i = 0; i < sm->waiter_count; i++) {
+        if (sm->waiters[i] != task) continue;
+        for (int j = i; j < sm->waiter_count - 1; j++)
+            sm->waiters[j] = sm->waiters[j + 1];
+        sm->waiter_count--;
+        return 1;
+    }
+    return 0;
+}
+
 int eos_mutex_create(eos_mutex_handle_t *out)
 {
     if (!out) return EOS_KERN_INVALID;
@@ -331,35 +343,33 @@ int eos_sem_wait(eos_sem_handle_t h, uint32_t timeout_ms)
     }
 
     uint8_t caller = (uint8_t)eos_task_get_current();
-    g_sem[h].waiters[g_sem[h].waiter_count++] = caller;
-    eos_task_block_with_timeout(caller, timeout_ms);
-    eos_port_exit_critical(crit);
-    eos_port_yield();
+    uint32_t deadline = eos_tick_get() + timeout_ms;   /* ticks are ms */
+    uint32_t remaining = timeout_ms;
 
-    /* Re-check */
-    crit = eos_port_enter_critical();
-    if (g_sem[h].count > 0) {
-        g_sem[h].count--;
-        /* Remove from wait queue if still there */
-        for (int i = 0; i < g_sem[h].waiter_count; i++) {
-            if (g_sem[h].waiters[i] == caller) {
-                for (int j = i; j < g_sem[h].waiter_count - 1; j++)
-                    g_sem[h].waiters[j] = g_sem[h].waiters[j + 1];
-                g_sem[h].waiter_count--;
-                break;
-            }
-        }
+    /* A post dequeues and readies one waiter but does not reserve the count
+     * for it, so another task can take it first. That waiter used to return
+     * EOS_KERN_TIMEOUT even under EOS_WAIT_FOREVER. Being off the wait list
+     * means a post woke us; still on it means the timeout (or a delete) did. */
+    for (;;) {
+        g_sem[h].waiters[g_sem[h].waiter_count++] = caller;
+        eos_task_block_with_timeout(caller, remaining);
         eos_port_exit_critical(crit);
-        return EOS_KERN_OK;
-    }
-    /* Timeout — remove from queue */
-    for (int i = 0; i < g_sem[h].waiter_count; i++) {
-        if (g_sem[h].waiters[i] == caller) {
-            for (int j = i; j < g_sem[h].waiter_count - 1; j++)
-                g_sem[h].waiters[j] = g_sem[h].waiters[j + 1];
-            g_sem[h].waiter_count--;
-            break;
+        eos_port_yield();
+
+        crit = eos_port_enter_critical();
+        int still_queued = sem_remove_waiter(&g_sem[h], caller);
+        if (g_sem[h].count > 0) {
+            g_sem[h].count--;
+            eos_port_exit_critical(crit);
+            return EOS_KERN_OK;
         }
+        if (still_queued) break;
+        if (timeout_ms != EOS_WAIT_FOREVER) {
+            int32_t left = (int32_t)(deadline - eos_tick_get());
+            if (left <= 0) break;
+            remaining = (uint32_t)left;
+        }
+        if (g_sem[h].waiter_count >= MTX_MAX_WAITERS) break;
     }
     eos_port_exit_critical(crit);
     return EOS_KERN_TIMEOUT;

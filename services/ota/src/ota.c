@@ -52,6 +52,9 @@ int eos_ota_check_update(const eos_ota_source_t *source, bool *available) {
 int eos_ota_begin(const eos_ota_source_t *source) {
     if (!g_ota.initialized || !source || g_ota.in_progress) return -1;
     g_ota.update_slot = (g_ota.active_slot == EOS_OTA_SLOT_A) ? EOS_OTA_SLOT_B : EOS_OTA_SLOT_A;
+    /* The slot is about to be overwritten: it stops being a rollback or
+     * set_active_slot() target now, not when the new image is applied. */
+    g_ota.slot_valid[g_ota.update_slot] = 0;
     g_ota.total_size = source->expected_size;
     g_ota.bytes_written = 0;
     g_ota.integrity_ok = 0;
