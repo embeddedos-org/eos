@@ -82,6 +82,20 @@ TEST(test_keystore_add_find) {
     ASSERT(found->active == 1);
 }
 
+TEST(test_keystore_rejects_overlong_id) {
+    EosKeyStore ks;
+    eos_keystore_init(&ks, NULL);
+    uint8_t key_data[16] = {0};
+    char id[EOS_KEY_MAX_ID + 1];
+    memset(id, 'k', sizeof(id) - 1);
+    id[sizeof(id) - 1] = '\0';
+
+    ASSERT(eos_keystore_add(&ks, id, EOS_KEY_AES128, key_data,
+                            sizeof(key_data)) == -1);
+    ASSERT(ks.count == 0);
+    ASSERT(eos_keystore_find(&ks, id) == NULL);
+}
+
 TEST(test_keystore_not_found) {
     EosKeyStore ks;
     eos_keystore_init(&ks, NULL);
@@ -145,6 +159,7 @@ int main(void) {
     run_test_secureboot_null_paths();
     run_test_secureboot_dump_null();
     run_test_keystore_add_find();
+    run_test_keystore_rejects_overlong_id();
     run_test_keystore_not_found();
     run_test_keystore_multiple_keys();
     run_test_acl_allow_deny();
