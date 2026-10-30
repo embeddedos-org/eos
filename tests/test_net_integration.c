@@ -215,18 +215,21 @@ static void test_http_response_free_null(void) {
  * MQTT Client Tests
  * ============================================================ */
 
-static void test_mqtt_connect(void) {
+/* eos_mqtt_connect is implemented (#199 slice 2), so connecting to a real
+ * host no longer fails by construction. The connect/disconnect lifecycle is
+ * tested against a fake broker in test_net.c. This checks only the
+ * configs that must fail before any network I/O. */
+static void test_mqtt_connect_bad_config(void) {
     eos_net_init();
     eos_mqtt_config_t cfg;
     memset(&cfg, 0, sizeof(cfg));
     cfg.broker_port = 1883;
-    strncpy(cfg.broker_host, "mqtt.example.com", sizeof(cfg.broker_host) - 1);
     strncpy(cfg.client_id, "eos_test", sizeof(cfg.client_id) - 1);
 
-    eos_mqtt_handle_t h = eos_mqtt_connect(&cfg);
-    assert(h == EOS_MQTT_INVALID);  /* No network in stub */
+    assert(eos_mqtt_connect(NULL) == EOS_MQTT_INVALID);
+    assert(eos_mqtt_connect(&cfg) == EOS_MQTT_INVALID);  /* empty host */
     eos_net_deinit();
-    PASS("MQTT connect (stub)");
+    PASS("MQTT connect bad config");
 }
 
 static void test_mqtt_disconnect_invalid(void) {
@@ -319,7 +322,7 @@ int main(void) {
     test_http_response_free_null();
 
     /* MQTT */
-    test_mqtt_connect();
+    test_mqtt_connect_bad_config();
     test_mqtt_disconnect_invalid();
     test_mqtt_publish_invalid();
     test_mqtt_subscribe_invalid();
