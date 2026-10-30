@@ -47,10 +47,12 @@ if(CMAKE_C_COMPILER_ID MATCHES "GNU|Clang")
 endif()
 
 # EoS Unit Tests
-# --- test_cache: reject invalid build cache markers ---
-add_executable(test_cache test_cache.c)
-target_link_libraries(test_cache PRIVATE eos_core)
-add_test(NAME test_cache COMMAND test_cache)
+# --- test_toolchain_path_overflow: reject truncated target descriptor paths ---
+add_executable(test_toolchain_path_overflow test_toolchain_path_overflow.c)
+target_include_directories(test_toolchain_path_overflow PRIVATE
+    ${EoS_SOURCE_DIR}/core/include)
+target_link_libraries(test_toolchain_path_overflow PRIVATE eos_toolchains)
+add_test(NAME test_toolchain_path_overflow COMMAND test_toolchain_path_overflow)
 
 # --- test_board_configs: Board YAML schema shape ---
 add_executable(test_board_configs test_board_configs.c)
