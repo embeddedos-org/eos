@@ -5,6 +5,7 @@
 #include <stdio.h>
 #include <string.h>
 #include <assert.h>
+#include <stdint.h>
 #include "eos/filesystem.h"
 
 static void test_fs_init(void) {
@@ -66,6 +67,10 @@ static void test_fs_seek(void) {
     assert(pos == 4);
     char buf[4]; eos_fs_read(fd, buf, 4);
     assert(memcmp(buf, "EFGH", 4) == 0);
+    assert(eos_fs_seek(fd, 1, EOS_SEEK_SET) == 0);
+    assert(eos_fs_seek(fd, INT32_MAX, EOS_SEEK_CUR) == 0);
+    assert(eos_fs_tell(fd, &pos) == 0);
+    assert(pos == 4096);
     eos_fs_close(fd);
     eos_fs_deinit();
     printf("[PASS] fs seek\n");
