@@ -188,6 +188,24 @@ static void test_pkg_option_add_cap(void) {
     PASS("pkg option_add cap and ownership rules");
 }
 
+static void test_pkg_option_add_size_limits(void) {
+    EosPackage pkg;
+    char key[EOS_MAX_NAME + 1];
+    char value[EOS_MAX_PATH + 1];
+    memset(&pkg, 0, sizeof(pkg));
+    memset(key, 'k', sizeof(key) - 1);
+    key[sizeof(key) - 1] = '\0';
+    memset(value, 'v', sizeof(value) - 1);
+    value[sizeof(value) - 1] = '\0';
+
+    assert(eos_pkg_option_add(&pkg, key, "value") == EOS_ERR_OVERFLOW);
+    assert(eos_pkg_option_count(&pkg) == 0);
+    assert(eos_pkg_option_add(&pkg, "key", value) == EOS_ERR_OVERFLOW);
+    assert(eos_pkg_option_count(&pkg) == 0);
+    eos_pkg_options_dispose(&pkg);
+    PASS("pkg option_add size limits");
+}
+
 /* #148 Step 2b size guard: the set must stay within the measured
  * post-2b size. Ratchet down only, in the commit that shrinks it
  * (the test_config_size.c rule, applied to EosPackageSet). */
@@ -207,6 +225,7 @@ int main(void) {
     test_package_build_type();
     test_package_from_config_carries_options();
     test_pkg_option_add_cap();
+    test_pkg_option_add_size_limits();
     test_package_set_size_guard();
     printf("\n=== ALL %d PACKAGE TESTS PASSED ===\n", passed);
     return 0;
