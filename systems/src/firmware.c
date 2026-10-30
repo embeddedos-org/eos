@@ -157,9 +157,16 @@ EosResult eos_firmware_build(EosFirmware *fw) {
             return EOS_ERR_NOMEM;
         }
         if (fw->board[0]) {
-            strncpy(pkg->options[0].key, "board", EOS_MAX_NAME - 1);
-            strncpy(pkg->options[0].value, fw->board, EOS_MAX_PATH - 1);
-            pkg->option_count = 1;
+            /* #148 Step 2b: the package owns its options table now;
+             * the board option goes through the writer, not a direct
+             * write into an inline array. */
+            EosResult ores = eos_pkg_option_add(pkg, "board", fw->board);
+            if (ores != EOS_OK) {
+                EOS_ERROR("Firmware configure: cannot set board option");
+                eos_pkg_options_dispose(pkg);
+                free(pkg);
+                return ores;
+            }
         }
 
         /* Configure */
@@ -167,6 +174,7 @@ EosResult eos_firmware_build(EosFirmware *fw) {
                  fw->src_dir, fw->build_dir, be->name);
         EosResult res = be->configure(be, fw->src_dir, fw->build_dir,
                                       fw->toolchain_target, pkg);
+        eos_pkg_options_dispose(pkg);
         free(pkg);
         if (res != EOS_OK) {
             EOS_ERROR("Firmware configure failed: %s", eos_error_str(res));

@@ -5,6 +5,7 @@
 #include <stdio.h>
 #include <string.h>
 #include <assert.h>
+#include <stdint.h>
 #include "eos/filesystem.h"
 
 static void test_fs_init(void) {
@@ -36,6 +37,27 @@ static void test_fs_write_read(void) {
     printf("[PASS] fs write/read\n");
 }
 
+static void test_fs_append_uses_current_end(void) {
+    eos_fs_init(NULL);
+    eos_file_t first = eos_fs_open("/append.txt", EOS_O_CREATE | EOS_O_APPEND | EOS_O_WRITE);
+    eos_file_t second = eos_fs_open("/append.txt", EOS_O_APPEND | EOS_O_WRITE);
+    assert(first != EOS_FILE_INVALID);
+    assert(second != EOS_FILE_INVALID);
+    assert(eos_fs_write(first, "A", 1) == 1);
+    assert(eos_fs_write(second, "B", 1) == 1);
+    assert(eos_fs_close(first) == 0);
+    assert(eos_fs_close(second) == 0);
+
+    eos_file_t reader = eos_fs_open("/append.txt", EOS_O_READ);
+    char contents[3] = {0};
+    assert(reader != EOS_FILE_INVALID);
+    assert(eos_fs_read(reader, contents, sizeof(contents)) == 2);
+    assert(strcmp(contents, "AB") == 0);
+    assert(eos_fs_close(reader) == 0);
+    eos_fs_deinit();
+    printf("[PASS] fs append uses current end\n");
+}
+
 static void test_fs_seek(void) {
     eos_fs_init(NULL);
     eos_file_t fd = eos_fs_open("/s.txt", EOS_O_CREATE | EOS_O_WRITE);
@@ -45,6 +67,10 @@ static void test_fs_seek(void) {
     assert(pos == 4);
     char buf[4]; eos_fs_read(fd, buf, 4);
     assert(memcmp(buf, "EFGH", 4) == 0);
+    assert(eos_fs_seek(fd, 1, EOS_SEEK_SET) == 0);
+    assert(eos_fs_seek(fd, INT32_MAX, EOS_SEEK_CUR) == 0);
+    assert(eos_fs_tell(fd, &pos) == 0);
+    assert(pos == 4096);
     eos_fs_close(fd);
     eos_fs_deinit();
     printf("[PASS] fs seek\n");
@@ -352,6 +378,7 @@ int main(void) {
     printf("=== EoS Filesystem Tests ===\n");
     test_fs_init();
     test_fs_write_read();
+    test_fs_append_uses_current_end();
     test_fs_seek();
     test_fs_truncate();
     test_fs_truncate_growth_zero_fills_stale_bytes();

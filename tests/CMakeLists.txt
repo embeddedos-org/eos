@@ -311,6 +311,12 @@ target_link_libraries(test_power PRIVATE eos_power)
 add_test(NAME test_power COMMAND test_power)
 
 # --- test_net: Networking abstraction ---
+# --- test_mqtt_codec: MQTT 3.1.1 codec fixtures (#199 slice 1) ---
+add_executable(test_mqtt_codec test_mqtt_codec.c)
+target_link_libraries(test_mqtt_codec PRIVATE eos_net)
+target_include_directories(test_mqtt_codec PRIVATE ${EoS_SOURCE_DIR}/net/src)
+add_test(NAME test_mqtt_codec COMMAND test_mqtt_codec)
+
 add_executable(test_net test_net.c)
 target_link_libraries(test_net PRIVATE eos_net)
 # The POSIX round-trip cases need the same switch the library was built with,
@@ -319,6 +325,26 @@ if(NOT CMAKE_CROSSCOMPILING AND UNIX)
     target_compile_definitions(test_net PRIVATE EOS_NET_POSIX=1)
     find_package(Threads REQUIRED)
     target_link_libraries(test_net PRIVATE Threads::Threads)
+    # A bad EOS_TEST_NET_DESTINATION is a configuration error, not a reason
+    # to fall back to loopback. Each case passes only on its own rejection
+    # message, not on any non-zero exit as WILL_FAIL would, and fails if any
+    # check ran first. test_net validates the variable before any socket
+    # work, so these cases bind no ports and can run beside test_net under
+    # ctest -j.
+    add_test(NAME test_net_invalid_destination COMMAND test_net)
+    set_tests_properties(test_net_invalid_destination PROPERTIES
+        ENVIRONMENT "EOS_TEST_NET_DESTINATION=not-an-ip"
+        PASS_REGULAR_EXPRESSION "EOS_TEST_NET_DESTINATION rejected: 'not-an-ip' is not a numeric IPv4 address"
+        FAIL_REGULAR_EXPRESSION "\\[PASS\\]"
+    )
+    # 192.0.2.1 (TEST-NET-1) is never on this host: the override must not
+    # send test traffic off the machine.
+    add_test(NAME test_net_nonlocal_destination COMMAND test_net)
+    set_tests_properties(test_net_nonlocal_destination PROPERTIES
+        ENVIRONMENT "EOS_TEST_NET_DESTINATION=192.0.2.1"
+        PASS_REGULAR_EXPRESSION "EOS_TEST_NET_DESTINATION rejected: '192[.]0[.]2[.]1' is not in 127[.]0[.]0[.]0/8 or assigned to a local interface"
+        FAIL_REGULAR_EXPRESSION "\\[PASS\\]"
+    )
 endif()
 add_test(NAME test_net COMMAND test_net)
 

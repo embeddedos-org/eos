@@ -105,6 +105,8 @@ int eos_secureboot_verify_image(EosSecureBoot *sb, const char *image_path,
 }
 
 void eos_secureboot_dump(const EosSecureBoot *sb) {
+    if (!sb) return;
+
     const char *status_str[] = {"UNVERIFIED", "VERIFIED", "FAILED", "SKIPPED"};
     printf("Secure Boot:\n");
     printf("  Image:  %s\n", sb->image_path);
@@ -177,7 +179,9 @@ void eos_keystore_init(EosKeyStore *ks, const char *path) {
 
 int eos_keystore_add(EosKeyStore *ks, const char *id, EosKeyType type,
                      const uint8_t *data, size_t len) {
+    if (!ks || !id || (!data && len > 0)) return -1;
     if (ks->count >= EOS_KEY_MAX_KEYS) return -1;
+    if (strlen(id) >= EOS_KEY_MAX_ID) return -1;
     if (len > sizeof(ks->keys[0].data)) return -1;
 
     EosKeyEntry *e = &ks->keys[ks->count];

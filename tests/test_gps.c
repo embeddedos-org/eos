@@ -29,6 +29,18 @@ static void test_gprmc_void_fix(void) {
     printf("[PASS] gps gprmc void fix\n");
 }
 
+static void test_gprmc_active_fix_requires_coordinates(void) {
+    const char *missing_latitude = "$GPRMC,092750.000,A,,N,12225.1644,W,0.00";
+    const char *missing_longitude = "$GPRMC,092750.000,A,3746.4949,N,,W,0.00";
+    eos_gps_data_t data = {0};
+
+    assert(eos_gps_parse_gprmc(missing_latitude, &data) == 0);
+    assert(!data.fix_valid);
+    assert(eos_gps_parse_gprmc(missing_longitude, &data) == 0);
+    assert(!data.fix_valid);
+    printf("[PASS] gps gprmc active fix requires coordinates\n");
+}
+
 static void test_gprmc_rejects_wrong_sentence(void) {
     eos_gps_data_t data;
     assert(eos_gps_parse_gprmc("$GPGGA,092750.000,3746.4949,N", &data) == -1);
@@ -51,6 +63,7 @@ static void test_gprmc_rejects_short_sentence(void) {
 int main(void) {
     test_gprmc_valid_fix();
     test_gprmc_void_fix();
+    test_gprmc_active_fix_requires_coordinates();
     test_gprmc_rejects_wrong_sentence();
     test_gprmc_rejects_null_args();
     test_gprmc_rejects_short_sentence();

@@ -321,7 +321,7 @@ static int cmd_build(const CliArgs *args) {
 
     /* Load packages and resolve deps */
     static EosPackageSet pkgs;
-    eos_package_set_from_config(&pkgs, &cfg);
+    EOS_CHECK(eos_package_set_from_config(&pkgs, &cfg));
     EOS_CHECK(eos_package_resolve(&pkgs));
 
     /* Build dependency graph */
@@ -359,8 +359,8 @@ static int cmd_system(const CliArgs *args) {
     /* Build all packages first */
     if (cfg.package_count > 0) {
         static EosPackageSet pkgs;
-        eos_package_set_from_config(&pkgs, &cfg);
-        eos_package_resolve(&pkgs);
+        EOS_CHECK(eos_package_set_from_config(&pkgs, &cfg));
+        EOS_CHECK(eos_package_resolve(&pkgs));
 
         static EosGraph graph;
         eos_package_build_graph(&pkgs, &graph);
@@ -416,8 +416,8 @@ static int cmd_firmware(const CliArgs *args) {
         }
 
         static EosPackageSet pkgs;
-        eos_package_set_from_config(&pkgs, &cfg);
-        eos_package_resolve(&pkgs);
+        EOS_CHECK(eos_package_set_from_config(&pkgs, &cfg));
+        EOS_CHECK(eos_package_resolve(&pkgs));
 
         static EosGraph graph;
         eos_package_build_graph(&pkgs, &graph);
@@ -445,7 +445,8 @@ static int cmd_firmware(const CliArgs *args) {
         }
 
         static EosFirmware fw;
-        eos_firmware_init(&fw, &cfg.system.rtos[i], &cfg);
+        /* A truncated path is reported, never built into. */
+        EOS_CHECK(eos_firmware_init(&fw, &cfg.system.rtos[i], &cfg));
         fw.dry_run = args->dry_run;
         fw.verbose = args->verbose;
         EOS_CHECK(eos_firmware_build(&fw));
@@ -478,8 +479,8 @@ static int cmd_hybrid(const CliArgs *args) {
         }
 
         static EosPackageSet pkgs;
-        eos_package_set_from_config(&pkgs, &cfg);
-        eos_package_resolve(&pkgs);
+        EOS_CHECK(eos_package_set_from_config(&pkgs, &cfg));
+        EOS_CHECK(eos_package_resolve(&pkgs));
 
         static EosGraph graph;
         eos_package_build_graph(&pkgs, &graph);

@@ -24,8 +24,19 @@ typedef struct {
     char deps[EOS_MAX_DEPS][EOS_MAX_NAME];
     int dep_count;
 
-    EosKeyValue options[EOS_MAX_OPTIONS];
-    int option_count;
+    /* #148 Step 2b: options no longer live inline. They are interned
+     * as key\0value\0 pairs in a heap string table; this struct
+     * carries only a borrowed pointer to that table, the byte offset
+     * of this package's first option within it, and the count
+     * (capped at EOS_MAX_OPTIONS). The table is owned by the
+     * EosPackageSet when the package came from
+     * eos_package_set_from_config(), or by the package itself when
+     * built with eos_pkg_option_add() (options_owned). A zeroed
+     * package has a NULL table and no options. */
+    const char *options_table;
+    uint32_t options_off;
+    uint16_t option_count;
+    bool options_owned;
 
     char src_dir[EOS_MAX_PATH];
     char build_dir[EOS_MAX_PATH];
@@ -38,17 +49,47 @@ typedef struct {
 typedef struct EosPackageSet {
     EosPackage packages[EOS_MAX_PACKAGES];
     int count;
+
+    /* #148 Step 2b: heap string table owning the options of every
+     * package in the set (interned key\0value\0 pairs; each
+     * package's options_off indexes into it). NULL in a zeroed set
+     * means "empty table". Owned by this struct: release it with
+     * eos_package_set_dispose() before reusing a live set;
+     * eos_package_set_from_config() disposes any previous table
+     * itself. */
+    char *options_table;
+    size_t options_table_len;
+    size_t options_table_cap;
 } EosPackageSet;
 
 /* Options accessors (#148 Step 0b): the EosPackage twins of the
  * eos_package_option_* accessors for EosPackageConfig in
  * eos/config.h — the only sanctioned way to read a package's
- * options. Thin readers over the inline array today; Step 2 moves
- * the storage behind them without changing call sites. NULL-safe
- * throughout. */
+ * options. Step 2b moved the storage behind them (the set-owned
+ * string table above) without changing call sites. NULL-safe
+ * throughout. eos_pkg_option_at() materialises the pair into a
+ * static view: the returned pointer stays valid until the next
+ * option_at() call. */
 int eos_pkg_option_count(const EosPackage *pkg);
 const EosKeyValue *eos_pkg_option_at(const EosPackage *pkg, int i);
 const char *eos_pkg_option_get(const EosPackage *pkg, const char *key);
+
+/* Options writer (#148 Step 2b): appends one option to a package
+ * that owns its table (a standalone package, zeroed before first
+ * use), interning the pair into a lazily allocated heap table owned
+ * by the package. Fails with EOS_ERR_INVALID on a package borrowing
+ * a set-owned table (set members are populated by
+ * eos_package_set_from_config(), never by hand), EOS_ERR_OVERFLOW
+ * at the EOS_MAX_OPTIONS cap, and EOS_ERR_NOMEM on allocation
+ * failure. Release a package-owned table with
+ * eos_pkg_options_dispose(). */
+EosResult eos_pkg_option_add(EosPackage *pkg, const char *key, const char *value);
+void eos_pkg_options_dispose(EosPackage *pkg);
+
+/* Release the set-owned options table and clear every member's
+ * borrowed option fields (name/version/deps are untouched). Safe on
+ * a zeroed set and on NULL. */
+void eos_package_set_dispose(EosPackageSet *set);
 
 /* Build-system API */
 EosResult eos_package_set_from_config(EosPackageSet *set, const EosConfig *cfg);

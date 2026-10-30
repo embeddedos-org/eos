@@ -110,6 +110,18 @@ ctest --test-dir build/host --output-on-failure
 python run_all_tests.py
 ```
 
+On native POSIX builds, `test_net` exercises a real TCP loopback round-trip.
+Some WSL environments redirect or disable `127.0.0.1`; when that is confirmed
+for the host, set `EOS_TEST_NET_DESTINATION` to a verified local IPv4 address
+that reaches the same listener (for example, an address assigned to the WSL
+interface). The default remains `127.0.0.1`. The override must be a numeric
+IPv4 address in `127.0.0.0/8` or one assigned to a local interface, so test
+traffic never leaves the machine. Any other value, including `0.0.0.0` or
+another host's address, makes `test_net` print
+`EOS_TEST_NET_DESTINATION rejected` and exit with code 2 before any check
+runs, instead of silently skipping the TCP check. The separate `localhost`
+resolver assertions are unchanged.
+
 ## Getting started
 
 - [`GETTING_STARTED.md`](GETTING_STARTED.md) — from host build to flashing an nRF52 or STM32
