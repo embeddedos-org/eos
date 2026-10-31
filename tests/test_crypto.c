@@ -49,6 +49,17 @@ static void test_sha256_null(void) {
     printf("[PASS] sha256 null safety\n");
 }
 
+/* A directory opens with fopen() on POSIX hosts but every fread() on it fails
+ * (EISDIR). fread() returns 0 for that error exactly as it does at EOF, so a
+ * loop that only checks the return value hashes zero bytes and reports the
+ * empty-input digest as the file's hash. The call must fail instead. Where
+ * fopen() itself refuses a directory the result is the same -1. */
+static void test_sha256_file_read_error(void) {
+    char hex[EOS_SHA256_HEX_SIZE];
+    assert(eos_sha256_file(".", hex) != 0);
+    printf("[PASS] sha256 file read error\n");
+}
+
 static void test_crc32(void) {
     uint32_t c = eos_crc32(0, "123456789", 9);
     assert(c == 0xCBF43926);
@@ -70,8 +81,9 @@ int main(void) {
     test_sha256_nist();
     test_sha256_incremental();
     test_sha256_null();
+    test_sha256_file_read_error();
     test_crc32();
     test_crc32_incremental();
-    printf("=== ALL CRYPTO TESTS PASSED (7/7) ===\n");
+    printf("=== ALL CRYPTO TESTS PASSED (8/8) ===\n");
     return 0;
 }
