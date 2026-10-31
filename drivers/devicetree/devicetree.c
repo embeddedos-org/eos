@@ -249,17 +249,25 @@ EosDtNode *eos_dt_find(EosDeviceTree *dt, const char *path) {
     return current;
 }
 
-/* Substring search restricted to `prop->len`.
+/* Does the stringlist in `prop` contain `name` as one whole entry?
  *
- * A property value is raw bytes, and a value that filled the property buffer
- * has no terminator, so strstr() would run past the end of prop->data. */
-static int dt_prop_contains(const EosDtProp *prop, const char *needle)
+ * A compatible value is a list of NUL-terminated strings ("st,stm32h7-uart\0
+ * arm,pl011\0"), and matching is per entry: "uart" must not match
+ * "st,stm32h7-uart". The walk stays within `prop->len` because a value that
+ * filled the property buffer has no terminator; an unterminated trailing
+ * entry may have been truncated, so it never matches. */
+static int dt_prop_has_string(const EosDtProp *prop, const char *name)
 {
-    size_t nlen = strlen(needle);
-    if (nlen == 0) return 1;
-    if (prop->len < nlen) return 0;
-    for (uint32_t i = 0; i + nlen <= prop->len; i++) {
-        if (memcmp(prop->data + i, needle, nlen) == 0) return 1;
+    size_t nlen = strlen(name);
+    if (nlen == 0) return 0;
+    uint32_t i = 0;
+    while (i < prop->len) {
+        const uint8_t *entry = prop->data + i;
+        const uint8_t *nul = memchr(entry, '\0', prop->len - i);
+        if (!nul) return 0;
+        size_t elen = (size_t)(nul - entry);
+        if (elen == nlen && memcmp(entry, name, nlen) == 0) return 1;
+        i += (uint32_t)elen + 1u;
     }
     return 0;
 }
@@ -269,7 +277,7 @@ EosDtNode *eos_dt_find_compatible(EosDeviceTree *dt, const char *compat) {
     for (int i = 0; i < dt->node_count; i++) {
         for (int j = 0; j < dt->nodes[i].prop_count; j++) {
             if (strcmp(dt->nodes[i].props[j].name, "compatible") == 0) {
-                if (dt_prop_contains(&dt->nodes[i].props[j], compat))
+                if (dt_prop_has_string(&dt->nodes[i].props[j], compat))
                     return &dt->nodes[i];
             }
         }
@@ -278,7 +286,9 @@ EosDtNode *eos_dt_find_compatible(EosDeviceTree *dt, const char *compat) {
 }
 
 EosDtNode *eos_dt_find_by_phandle(EosDeviceTree *dt, uint32_t phandle) {
-    if (!dt) return NULL;
+    /* 0 is not a valid phandle: it is what every node without a phandle
+     * property holds, so matching it would return the root. */
+    if (!dt || phandle == 0) return NULL;
     for (int i = 0; i < dt->node_count; i++) {
         if (dt->nodes[i].phandle == phandle)
             return &dt->nodes[i];
