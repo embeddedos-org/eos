@@ -266,6 +266,34 @@ static void test_ota_write_chunk_wrap(void) {
     printf("[PASS] ota write chunk wrap\n");
 }
 
+/* bytes_written * 100 was computed in uint32_t, which wraps once
+ * bytes_written passes UINT32_MAX / 100 (~42.9 MB). Halfway through a
+ * 100,000,000-byte image the old arithmetic gave
+ * (5,000,000,000 mod 2^32) / 100,000,000 = 7 instead of 50. */
+static void test_ota_progress_large_image(void) {
+    static uint8_t chunk[1000000];
+    eos_ota_init();
+    memset(chunk, 0x5A, sizeof(chunk));
+    eos_ota_source_t src;
+    memset(&src, 0, sizeof(src));
+    src.expected_size = 100000000u;
+    g_progress = -1;
+    assert(eos_ota_set_progress_callback(progress_cb, NULL) == 0);
+    assert(eos_ota_begin(&src) == 0);
+    for (int i = 0; i < 50; i++)
+        assert(eos_ota_write_chunk(chunk, sizeof(chunk)) == 0);
+
+    assert(g_progress == 50);
+    eos_ota_status_t st;
+    assert(eos_ota_get_status(&st) == 0);
+    assert(st.bytes_received == 50000000u);
+    assert(st.progress_pct == 50);
+
+    eos_ota_set_progress_callback(NULL, NULL);
+    eos_ota_deinit();
+    printf("[PASS] ota progress large image\n");
+}
+
 int main(void) {
     printf("=== EoS OTA Tests ===\n");
     test_ota_init();
@@ -280,6 +308,7 @@ int main(void) {
     test_ota_slot_being_written_is_not_a_rollback_target();
     test_ota_write_chunk_overflow();
     test_ota_write_chunk_wrap();
-    printf("=== ALL OTA TESTS PASSED (11/11) ===\n");
+    test_ota_progress_large_image();
+    printf("=== ALL OTA TESTS PASSED (13/13) ===\n");
     return 0;
 }
