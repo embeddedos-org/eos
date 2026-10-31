@@ -123,6 +123,52 @@ static void test_task_delete(void) {
     printf("[PASS] task delete\n");
 }
 
+static int stacks_overlap(int a, int b) {
+    const uint32_t *as = g_tasks[a].stack_base;
+    const uint32_t *ae = as + g_tasks[a].stack_size / sizeof(uint32_t);
+    const uint32_t *bs = g_tasks[b].stack_base;
+    const uint32_t *be = bs + g_tasks[b].stack_size / sizeof(uint32_t);
+    return as < be && bs < ae;
+}
+
+/* The stack pool was a bump allocator that eos_task_delete() never gave
+ * memory back to, so after EOS_MAX_TASKS create/delete cycles of default-size
+ * stacks every eos_task_create() returned EOS_KERN_NO_MEMORY. */
+static void test_task_delete_frees_stack(void) {
+    eos_kernel_init();
+    for (int i = 0; i < 4 * EOS_MAX_TASKS; i++) {
+        int h = eos_task_create("cycle", test_entry, NULL, 5, 1024);
+        assert(h > 0);
+        assert(eos_task_delete((eos_task_handle_t)h) == EOS_KERN_OK);
+    }
+
+    /* A freed gap between live stacks is reused without overlapping them. */
+    int a = eos_task_create("a", test_entry, NULL, 5, 1024);
+    int b = eos_task_create("b", test_entry, NULL, 5, 2048);
+    int c = eos_task_create("c", test_entry, NULL, 5, 1024);
+    assert(a > 0 && b > 0 && c > 0);
+    assert(eos_task_delete((eos_task_handle_t)b) == EOS_KERN_OK);
+    int d = eos_task_create("d", test_entry, NULL, 5, 2048);
+    assert(d > 0);
+    assert(!stacks_overlap(d, a) && !stacks_overlap(d, c));
+
+    /* A task that deletes itself is still running on its stack until the
+     * switch away, so that region must not be handed out before then. */
+    eos_task_set_current_internal((eos_task_handle_t)d);
+    assert(eos_task_delete((eos_task_handle_t)d) == EOS_KERN_OK);
+    const uint32_t *d_lo = g_tasks[d].stack_base;
+    const uint32_t *d_hi = d_lo + g_tasks[d].stack_size / sizeof(uint32_t);
+    int e = eos_task_create("e", test_entry, NULL, 5, 2048);
+    assert(e > 0);
+    assert(!stacks_overlap(e, a) && !stacks_overlap(e, c));
+    const uint32_t *e_lo = g_tasks[e].stack_base;
+    const uint32_t *e_hi = e_lo + g_tasks[e].stack_size / sizeof(uint32_t);
+    assert(e_hi <= d_lo || d_hi <= e_lo);
+    eos_task_set_current_internal(0);
+
+    printf("[PASS] task delete frees its stack\n");
+}
+
 static void test_task_suspend_resume(void) {
     eos_kernel_init();
     int h = eos_task_create("sr", test_entry, NULL, 5, 1024);
@@ -592,6 +638,7 @@ int main(void) {
     RUN(test_task_create);
     RUN(test_task_create_invalid);
     RUN(test_task_delete);
+    RUN(test_task_delete_frees_stack);
     RUN(test_task_suspend_resume);
     RUN(test_mutex);
     RUN(test_mutex_pi_timeout_restores_priority);
