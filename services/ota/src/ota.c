@@ -77,7 +77,8 @@ int eos_ota_write_chunk(const uint8_t *data, size_t len) {
     eos_sha256_update(&g_ota.hash_ctx, data, len);
     g_ota.bytes_written += (uint32_t)len;
     if (g_ota.progress_cb && g_ota.total_size > 0) {
-        uint8_t pct = (uint8_t)((g_ota.bytes_written * 100) / g_ota.total_size);
+        /* 64-bit: bytes_written * 100 wraps uint32_t above ~42.9 MB. */
+        uint8_t pct = (uint8_t)(((uint64_t)g_ota.bytes_written * 100u) / g_ota.total_size);
         g_ota.progress_cb(pct, g_ota.progress_ctx);
     }
     return 0;
@@ -164,7 +165,8 @@ int eos_ota_get_status(eos_ota_status_t *status) {
     status->bytes_received = g_ota.bytes_written;
     status->total_bytes = g_ota.total_size;
     if (g_ota.total_size > 0)
-        status->progress_pct = (uint8_t)((g_ota.bytes_written * 100) / g_ota.total_size);
+        status->progress_pct = (uint8_t)(((uint64_t)g_ota.bytes_written * 100u) /
+                                         g_ota.total_size);
     status->state = g_ota.in_progress ? EOS_OTA_STATE_DOWNLOADING : EOS_OTA_STATE_IDLE;
     return 0;
 }
