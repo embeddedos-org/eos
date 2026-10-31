@@ -459,6 +459,17 @@ add_executable(test_exec_argv test_exec_argv.c ../cmd/eos/exec_argv.c)
 target_include_directories(test_exec_argv PRIVATE ../cmd/eos)
 add_test(NAME test_exec_argv COMMAND test_exec_argv)
 
+# --- example_secure_ota: examples/secure-ota must keep compiling ---
+# It includes eos/ota.h and eos/os_services.h together, which failed while
+# both declared eos_ota_init/verify/rollback with different signatures. It
+# is compiled, not linked: there is no host port for eos_kernel (only
+# kernel/src/arch/arm_cm), so no kernel example links on the host. The
+# object library is part of ALL, so a regression fails the build.
+add_library(example_secure_ota OBJECT
+    ${EoS_SOURCE_DIR}/examples/secure-ota/main.c)
+target_link_libraries(example_secure_ota PRIVATE
+    eos_hal eos_kernel eos_ota eos_crypto eos_os_services)
+
 # --- Fuzz targets ---
 # Opt-in (-DEOS_ENABLE_FUZZING=ON, Clang only); the subdirectory guards itself.
 add_subdirectory(fuzz)

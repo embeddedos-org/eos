@@ -77,7 +77,7 @@ void eos_watchdog_dump(const EosWatchdog *wd) {
 
 /* ---- OTA Update ---- */
 
-void eos_ota_init(EosOtaUpdate *ota) {
+void eos_ota_update_init(EosOtaUpdate *ota) {
     memset(ota, 0, sizeof(*ota));
     ota->state = EOS_OTA_IDLE;
 }
@@ -266,7 +266,7 @@ int eos_ota_download(EosOtaUpdate *ota) {
     return 0;
 }
 
-int eos_ota_verify(EosOtaUpdate *ota) {
+int eos_ota_update_verify(EosOtaUpdate *ota) {
     if (!ota) return -1;
     ota->state = EOS_OTA_VERIFYING;
     /* With no expected digest there is nothing to verify against; passing
@@ -301,7 +301,7 @@ int eos_ota_install(EosOtaUpdate *ota, const char *target_path) {
     return 0;
 }
 
-int eos_ota_rollback(EosOtaUpdate *ota) {
+int eos_ota_update_rollback(EosOtaUpdate *ota) {
     ota->state = EOS_OTA_ROLLBACK;
     return 0;
 }
