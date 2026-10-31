@@ -232,6 +232,79 @@ static void test_lookup_and_property_access(void)
     free(dt); free(dtb);
 }
 
+/*
+ * A child whose compatible is a two-entry stringlist:
+ *
+ *   / {
+ *       serial@40011000 {
+ *           compatible = "st,stm32h7-uart", "arm,pl011";
+ *       };
+ *   };
+ */
+static uint8_t *build_stringlist_dtb(uint32_t *out_size)
+{
+    static Blob st, str;
+    static const char compat[] = "st,stm32h7-uart\0arm,pl011";  /* + final NUL */
+    b_reset(&st); b_reset(&str);
+
+    uint32_t s_compat = b_str(&str, "compatible");
+
+    b_u32(&st, EOS_DT_BEGIN_NODE);
+    b_str_pad(&st, "");
+
+    b_u32(&st, EOS_DT_BEGIN_NODE);
+    b_str_pad(&st, "serial@40011000");
+
+    b_u32(&st, EOS_DT_PROP);
+    b_u32(&st, (uint32_t)sizeof(compat)); b_u32(&st, s_compat);
+    memcpy(st.buf + st.len, compat, sizeof(compat));
+    st.len += (uint32_t)sizeof(compat);
+    while (st.len & 3u) st.buf[st.len++] = 0;
+
+    b_u32(&st, EOS_DT_END_NODE);              /* serial */
+    b_u32(&st, EOS_DT_END_NODE);              /* root */
+    b_u32(&st, EOS_DT_END);
+
+    return compose(&st, &str, out_size);
+}
+
+/* Compatible entries match whole, never as a substring of an entry or across
+ * the NUL between two entries; phandle 0 means "no phandle" and is never a
+ * lookup key. */
+static void test_lookup_matches_whole_entries(void)
+{
+    printf("test_lookup_matches_whole_entries:\n");
+    uint32_t size = 0;
+    uint8_t *dtb = build_stringlist_dtb(&size);
+    EosDeviceTree *dt = malloc(sizeof(*dt));
+    ASSERT(eos_dt_parse(dt, dtb, size) == 0, "stringlist blob parses");
+
+    EosDtNode *serial = eos_dt_find(dt, "/serial@40011000");
+    ASSERT(serial != NULL, "serial node resolves");
+    ASSERT(eos_dt_find_compatible(dt, "st,stm32h7-uart") == serial,
+           "first compatible entry matches");
+    ASSERT(eos_dt_find_compatible(dt, "arm,pl011") == serial,
+           "second compatible entry matches");
+    ASSERT(eos_dt_find_compatible(dt, "uart") == NULL,
+           "suffix of an entry does not match");
+    ASSERT(eos_dt_find_compatible(dt, "st,stm32h7") == NULL,
+           "prefix of an entry does not match");
+    ASSERT(eos_dt_find_compatible(dt, "pl011") == NULL,
+           "suffix of the last entry does not match");
+    ASSERT(eos_dt_find_compatible(dt, "") == NULL,
+           "empty compatible matches nothing");
+    free(dt); free(dtb);
+
+    dtb = build_valid_dtb(&size);
+    dt = malloc(sizeof(*dt));
+    eos_dt_parse(dt, dtb, size);
+    ASSERT(eos_dt_find_by_phandle(dt, 0) == NULL,
+           "phandle 0 finds nothing (not the root)");
+    ASSERT(eos_dt_find_by_phandle(dt, 2) == NULL,
+           "unassigned phandle finds nothing");
+    free(dt); free(dtb);
+}
+
 /* ------------------------------------------------------------------
  * Malformed input — each of these was an out-of-bounds read
  * ------------------------------------------------------------------ */
@@ -431,6 +504,7 @@ int main(void)
 
     test_parse_valid_blob();
     test_lookup_and_property_access();
+    test_lookup_matches_whole_entries();
     test_rejects_malformed_blobs();
     test_truncations_never_overrun();
     test_single_byte_corruption_is_safe();
