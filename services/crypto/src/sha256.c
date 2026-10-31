@@ -143,7 +143,11 @@ int eos_sha256_file(const char *path, char hex[65]) {
     size_t n;
     while ((n = fread(buf, 1, sizeof(buf), f)) > 0)
         eos_sha256_update(&ctx, buf, n);
+    /* fread() returns 0 on both EOF and error: a digest of a partial read
+     * must not be reported as the file's hash. */
+    int read_failed = ferror(f);
     fclose(f);
+    if (read_failed) return -1;
     uint8_t digest[32];
     eos_sha256_final(&ctx, digest);
     eos_sha256_hex(digest, hex);
