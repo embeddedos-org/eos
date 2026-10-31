@@ -65,16 +65,45 @@ static int alloc_fd(void) {
 #define WEAK_ALIAS
 #endif
 
-WEAK_ALIAS int eos_fs_open(const char *path, int flags);
+/* These prototypes must match eos/filesystem.h. That header is not included
+ * because the filesystem is optional here, so a mismatch is not diagnosed:
+ * eos_fs_stat() once appeared below as (path, buf) while the filesystem's is
+ * the volume-wide eos_fs_stat(eos_fs_stat_t *), so stat() wrote volume
+ * totals over the caller's path string. There is no per-path stat in the
+ * filesystem API; stat() is built from open/seek/tell instead. */
+WEAK_ALIAS int eos_fs_open(const char *path, uint32_t flags);
 WEAK_ALIAS int eos_fs_close(int fh);
 WEAK_ALIAS int eos_fs_read(int fh, void *buf, size_t len);
 WEAK_ALIAS int eos_fs_write(int fh, const void *buf, size_t len);
 WEAK_ALIAS int eos_fs_seek(int fh, int32_t offset, int whence);
-WEAK_ALIAS int eos_fs_stat(const char *path, void *stat_buf);
+WEAK_ALIAS int eos_fs_tell(int fh, uint32_t *pos);
 WEAK_ALIAS int eos_fs_fstat(int fh, void *stat_buf);
 
 WEAK_ALIAS int eos_console_write(const void *buf, size_t len);
 WEAK_ALIAS int eos_console_read(void *buf, size_t len);
+
+/* eos_open_flags_t from eos/filesystem.h, mirrored for the same reason as
+ * the prototypes above. The POSIX EOS_O_*_IO values are a different
+ * encoding (an access mode in the low two bits, then 0x100/0x200/0x400) and
+ * must be translated, not passed through. */
+#define EOS_FS_O_READ    (1u << 0)
+#define EOS_FS_O_WRITE   (1u << 1)
+#define EOS_FS_O_CREATE  (1u << 2)
+#define EOS_FS_O_APPEND  (1u << 3)
+#define EOS_FS_O_TRUNC   (1u << 4)
+
+static uint32_t posix_to_fs_flags(int flags) {
+    uint32_t fs;
+    switch (flags & 0x3) {
+    case EOS_O_WRONLY_IO: fs = EOS_FS_O_WRITE; break;
+    case EOS_O_RDWR_IO:   fs = EOS_FS_O_READ | EOS_FS_O_WRITE; break;
+    default:              fs = EOS_FS_O_READ; break;
+    }
+    if (flags & EOS_O_CREAT_IO)  fs |= EOS_FS_O_CREATE;
+    if (flags & EOS_O_TRUNC_IO)  fs |= EOS_FS_O_TRUNC;
+    if (flags & EOS_O_APPEND_IO) fs |= EOS_FS_O_APPEND;
+    return fs;
+}
 
 /* ============================================================
  * open / close
@@ -86,7 +115,7 @@ int open(const char *path, int flags) {
 
     if (!eos_fs_open) return -ENOSYS;
 
-    int fh = eos_fs_open(path, flags);
+    int fh = eos_fs_open(path, posix_to_fs_flags(flags));
     if (fh < 0) return -ENOENT;
 
     int fd = alloc_fd();
@@ -164,8 +193,12 @@ int32_t lseek(int fd, int32_t offset, int whence) {
     posix_fd_entry_t *e = &posix_fd_table[fd];
     if (e->type != EOS_FD_TYPE_FILE) return -EBADF;
 
-    if (!eos_fs_seek) return -ENOSYS;
-    return eos_fs_seek(e->handle, offset, whence);
+    if (!eos_fs_seek || !eos_fs_tell) return -ENOSYS;
+    /* eos_fs_seek() returns 0 on success, not the offset lseek() reports. */
+    if (eos_fs_seek(e->handle, offset, whence) != 0) return -EINVAL;
+    uint32_t pos;
+    if (eos_fs_tell(e->handle, &pos) != 0) return -EBADF;
+    return (int32_t)pos;
 }
 
 /* ============================================================
@@ -174,8 +207,20 @@ int32_t lseek(int fd, int32_t offset, int whence) {
 
 int stat(const char *path, struct eos_stat *buf) {
     if (!path || !buf) return -EINVAL;
-    if (!eos_fs_stat) return -ENOSYS;
-    return eos_fs_stat(path, buf);
+    if (!eos_fs_open || !eos_fs_close || !eos_fs_seek || !eos_fs_tell)
+        return -ENOSYS;
+
+    int fh = eos_fs_open(path, EOS_FS_O_READ);
+    if (fh < 0) return -ENOENT;
+    uint32_t size = 0;
+    int rc = (eos_fs_seek(fh, 0, EOS_SEEK_END) == 0 &&
+              eos_fs_tell(fh, &size) == 0) ? 0 : -EINVAL;
+    eos_fs_close(fh);
+    if (rc != 0) return rc;
+
+    memset(buf, 0, sizeof(*buf));
+    buf->st_size = size;
+    return 0;
 }
 
 int fstat(int fd, struct eos_stat *buf) {
