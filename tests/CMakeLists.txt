@@ -459,6 +459,29 @@ add_executable(test_exec_argv test_exec_argv.c ../cmd/eos/exec_argv.c)
 target_include_directories(test_exec_argv PRIVATE ../cmd/eos)
 add_test(NAME test_exec_argv COMMAND test_exec_argv)
 
+# --- test_posix_io: POSIX file layer flags, lseek and stat over the RAM fs ---
+# #includes services/posix/src/posix_io.c with its POSIX names renamed (it
+# defines open/read/write/... which would otherwise replace the host libc's),
+# so that source is not listed here and eos_posix -- off by default, and not
+# buildable on every host -- is not needed. UNIX only: the harness keeps the
+# host ssize_t from <sys/types.h>, which MSVC does not provide.
+if(UNIX)
+    add_executable(test_posix_io test_posix_io.c)
+    target_include_directories(test_posix_io PRIVATE
+        ${EoS_SOURCE_DIR}/services/posix/include
+        ${EoS_SOURCE_DIR}/kernel/include
+        ${EoS_SOURCE_DIR}/hal/include)
+    target_link_libraries(test_posix_io PRIVATE eos_filesystem)
+    # The console hooks and eos_fs_fstat() are weak references nothing here
+    # defines. ELF linkers leave those NULL; ld64 needs to be told to.
+    if(APPLE)
+        target_link_options(test_posix_io PRIVATE
+            -Wl,-U,_eos_console_read -Wl,-U,_eos_console_write
+            -Wl,-U,_eos_fs_fstat)
+    endif()
+    add_test(NAME test_posix_io COMMAND test_posix_io)
+endif()
+
 # --- Fuzz targets ---
 # Opt-in (-DEOS_ENABLE_FUZZING=ON, Clang only); the subdirectory guards itself.
 add_subdirectory(fuzz)
