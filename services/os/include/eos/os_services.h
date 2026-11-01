@@ -72,13 +72,16 @@ typedef struct {
     char pubkey_path[512];
 } EosOtaUpdate;
 
-void eos_ota_init(EosOtaUpdate *ota);
+/* File-based updater. init/verify/rollback carry an _update_ infix because
+ * eos/ota.h owns eos_ota_init(), eos_ota_verify() and eos_ota_rollback() for
+ * the A/B slot service; both headers must be includable together. */
+void eos_ota_update_init(EosOtaUpdate *ota);
 int  eos_ota_set_source(EosOtaUpdate *ota, const char *url,
                         const char *expected_hash);
 int  eos_ota_download(EosOtaUpdate *ota);
-int  eos_ota_verify(EosOtaUpdate *ota);
+int  eos_ota_update_verify(EosOtaUpdate *ota);
 int  eos_ota_install(EosOtaUpdate *ota, const char *target_path);
-int  eos_ota_rollback(EosOtaUpdate *ota);
+int  eos_ota_update_rollback(EosOtaUpdate *ota);
 void eos_ota_dump(const EosOtaUpdate *ota);
 
 /* ---- Audit Trail ---- */

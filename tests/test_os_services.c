@@ -255,7 +255,7 @@ TEST(test_ota_download_refuses_a_url_that_is_not_an_http_url) {
     };
     remove(OTA_SENTINEL_DL);
     for (size_t i = 0; i < sizeof(bad) / sizeof(bad[0]); i++) {
-        eos_ota_init(&ota);
+        eos_ota_update_init(&ota);
         eos_ota_set_source(&ota, bad[i], NULL);
         ASSERT(eos_ota_download(&ota) == -1);
         ASSERT(ota.state == EOS_OTA_FAILED);
@@ -271,7 +271,7 @@ TEST(test_ota_url_check_accepts_url_characters) {
      * PATH the state is DOWNLOADING or FAILED, never a refusal-before-start:
      * the refusal leaves local_path empty, a started fetch fills it. */
     EosOtaUpdate ota;
-    eos_ota_init(&ota);
+    eos_ota_update_init(&ota);
     eos_ota_set_source(&ota, "https://example.invalid/fw.bin?X-Sig=a%2Fb&Expires=1;v=2", NULL);
     (void)eos_ota_download(&ota);
     ASSERT(ota.local_path[0] != '\0');
@@ -287,7 +287,7 @@ TEST(test_ota_install_copies_the_file_and_runs_nothing) {
 
     remove(OTA_SENTINEL_IN);
     remove(target);
-    eos_ota_init(&ota);
+    eos_ota_update_init(&ota);
     snprintf(ota.local_path, sizeof(ota.local_path), "%s", "eos_ota_test_source.bin");
     f = create_fixture(ota.local_path);
     ASSERT(f != NULL);
@@ -322,18 +322,18 @@ TEST(test_ota_install_copies_the_file_and_runs_nothing) {
 
 TEST(test_ota_install_refuses_a_missing_source_or_target) {
     EosOtaUpdate ota;
-    eos_ota_init(&ota);
+    eos_ota_update_init(&ota);
     ASSERT(eos_ota_install(&ota, "eos_ota_never_written") == -1);   /* no local_path */
     ASSERT(ota.state == EOS_OTA_FAILED);
     ASSERT(!file_exists("eos_ota_never_written"));
 
-    eos_ota_init(&ota);
+    eos_ota_update_init(&ota);
     snprintf(ota.local_path, sizeof(ota.local_path), "%s", "eos_ota_does_not_exist.bin");
     ASSERT(eos_ota_install(&ota, "eos_ota_never_written") == -1);
     ASSERT(ota.state == EOS_OTA_FAILED);
     ASSERT(!file_exists("eos_ota_never_written"));
 
-    eos_ota_init(&ota);
+    eos_ota_update_init(&ota);
     ASSERT(eos_ota_install(&ota, NULL) == -1);
     ASSERT(eos_ota_install(&ota, "") == -1);
 }
@@ -424,18 +424,18 @@ TEST(test_ota_verify_refuses_without_an_expected_hash) {
     ASSERT(fwrite("abc", 1, 3, f) == 3);
     fclose(f);
 
-    eos_ota_init(&ota);
+    eos_ota_update_init(&ota);
     eos_ota_set_source(&ota, "https://example.invalid/fw.bin", NULL);
     snprintf(ota.local_path, sizeof(ota.local_path), "%s", "eos_ota_verify_test.bin");
-    ASSERT(eos_ota_verify(&ota) == -1);
+    ASSERT(eos_ota_update_verify(&ota) == -1);
     ASSERT(ota.state == EOS_OTA_FAILED);
 
     /* The matching digest still passes: SHA-256("abc"). */
-    eos_ota_init(&ota);
+    eos_ota_update_init(&ota);
     eos_ota_set_source(&ota, "https://example.invalid/fw.bin",
         "ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad");
     snprintf(ota.local_path, sizeof(ota.local_path), "%s", "eos_ota_verify_test.bin");
-    ASSERT(eos_ota_verify(&ota) == 0);
+    ASSERT(eos_ota_update_verify(&ota) == 0);
     remove("eos_ota_verify_test.bin");
 }
 
