@@ -68,7 +68,6 @@ uint32_t **g_next_sp = NULL;
 #define EOS_TASK_STACK_POOL_SIZE  (EOS_MAX_TASKS * 1024)
 #endif
 static uint32_t g_stack_pool[EOS_TASK_STACK_POOL_SIZE / sizeof(uint32_t)];
-static uint32_t g_stack_pool_offset = 0;
 
 /* Idle task stack */
 static uint32_t g_idle_stack[IDLE_STACK_SIZE / sizeof(uint32_t)];
@@ -94,19 +93,50 @@ static swtimer_t g_timers[EOS_MAX_TIMERS];
  * Stack Allocation
  * ============================================================ */
 
+/*
+ * The pool keeps no free list of its own: the task table is the allocation
+ * table. A region is in use while the task holding it is alive, and also
+ * while it is still the task executing -- a task that deletes itself keeps
+ * running on its stack until the switch away. Everything else is free, so a
+ * deleted task's stack becomes reusable without a separate free call.
+ */
+static bool task_stack_in_use(int i)
+{
+    const eos_task_t *t = &g_tasks[i];
+    if (t->stack_base == NULL) return false;
+    if (i == g_current) return true;
+    return t->entry != NULL && t->state != EOS_TASK_DELETED;
+}
+
 static uint32_t *alloc_task_stack(uint32_t size_bytes)
 {
+    const uint32_t pool_words = EOS_TASK_STACK_POOL_SIZE / sizeof(uint32_t);
     uint32_t words = size_bytes / sizeof(uint32_t);
-    if (g_stack_pool_offset + words > EOS_TASK_STACK_POOL_SIZE / sizeof(uint32_t)) {
-        return NULL;  /* Pool exhausted */
+    uint32_t start = 0;
+
+    /* First fit. On overlap with a live stack, retry just past its end;
+     * `start` strictly increases, so the search terminates. Slot 0 is the
+     * idle task, whose stack is not in the pool. */
+    while (words <= pool_words && start <= pool_words - words) {
+        uint32_t next = start;
+        for (int i = 1; i < EOS_MAX_TASKS; i++) {
+            if (!task_stack_in_use(i)) continue;
+            uint32_t s = (uint32_t)(g_tasks[i].stack_base - g_stack_pool);
+            uint32_t e = s + g_tasks[i].stack_size / sizeof(uint32_t);
+            if (start < e && s < start + words) {
+                next = e;
+                break;
+            }
+        }
+        if (next == start) {
+            uint32_t *base = &g_stack_pool[start];
+            /* Place canary at the bottom of the stack */
+            base[0] = EOS_STACK_CANARY;
+            return base;
+        }
+        start = next;
     }
-    uint32_t *base = &g_stack_pool[g_stack_pool_offset];
-    g_stack_pool_offset += words;
-
-    /* Place canary at the bottom of the stack */
-    base[0] = EOS_STACK_CANARY;
-
-    return base;
+    return NULL;  /* Pool exhausted */
 }
 
 /* ============================================================
@@ -239,7 +269,6 @@ int eos_kernel_init(void)
     g_current = -1;
     g_running = 0;
     g_tick = 0;
-    g_stack_pool_offset = 0;
     g_current_sp = NULL;
     g_next_sp = NULL;
 
