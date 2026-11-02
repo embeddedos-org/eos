@@ -21,10 +21,11 @@
 #include <stdio.h>
 #include "eos/config.h"
 
-/* Measured 1,333,872 after #148 Step 2a (package options moved to the
- * config-owned string table), rounded up slightly. Previous ceiling
- * 3,960,000 guarded the 3,953,236 inline-array layout. */
-#define EOS_CONFIG_SIZE_CEILING 1340000u
+/* Measured 1,251,936 after the #148 RTOS dead-array removal
+ * (EosRtosConfig's never-read options array + option_count, -81,936 B
+ * from the Step 2a size of 1,333,872), rounded up slightly. Previous
+ * ceiling 1,340,000 guarded the post-Step-2a layout. */
+#define EOS_CONFIG_SIZE_CEILING 1260000u
 
 int main(void) {
     size_t size = sizeof(EosConfig);

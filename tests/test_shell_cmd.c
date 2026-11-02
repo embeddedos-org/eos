@@ -233,19 +233,21 @@ TEST(test_configure_refuses_a_hostile_option_and_quotes_a_spaced_one)
     EosBackend b;
     eos_backend_cmake_init(&b);
 
+    /* #148 Step 2b: fixture options go through eos_pkg_option_add();
+     * each package owns its table, disposed at the end of the test. */
     EosPackage hostile;
     memset(&hostile, 0, sizeof(hostile));
-    strncpy(hostile.options[0].key, "CMAKE_C_FLAGS", EOS_MAX_NAME - 1);
-    strncpy(hostile.options[0].value, "-O2\"; touch pwned; \"", EOS_MAX_PATH - 1);
-    hostile.option_count = 1;
+    ASSERT(eos_pkg_option_add(&hostile, "CMAKE_C_FLAGS",
+                              "-O2\"; touch pwned; \"") == EOS_OK);
     ASSERT(b.configure(&b, "/src", "/build", NULL, &hostile) == EOS_ERR_INVALID);
 
     EosPackage bad_key;
     memset(&bad_key, 0, sizeof(bad_key));
-    strncpy(bad_key.options[0].key, "X Y", EOS_MAX_NAME - 1);   /* not one word */
-    strncpy(bad_key.options[0].value, "1", EOS_MAX_PATH - 1);
-    bad_key.option_count = 1;
+    ASSERT(eos_pkg_option_add(&bad_key, "X Y", "1") == EOS_OK);   /* not one word */
     ASSERT(b.configure(&b, "/src", "/build", NULL, &bad_key) == EOS_ERR_INVALID);
+
+    eos_pkg_options_dispose(&hostile);
+    eos_pkg_options_dispose(&bad_key);
 
     /* The shape of the line a spaced value produces, checked on the builder
      * rather than by running cmake. */

@@ -40,6 +40,11 @@ int eos_gps_parse_gprmc(const char *nmea, eos_gps_data_t *data) {
         data->fix_valid = false;
         return 0;
     }
+
+    if (tokens[3][0] == '\0' || tokens[5][0] == '\0') {
+        data->fix_valid = false;
+        return 0;
+    }
     
     /* Parse Latitude: DDMM.MMMM */
     double raw_lat = (tokens[3][0] != '\0') ? atof(tokens[3]) : 0.0;

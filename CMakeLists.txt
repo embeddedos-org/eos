@@ -212,6 +212,7 @@ target_link_libraries(eos_power PUBLIC eos_hal)
 # ====================================================================
 add_library(eos_net STATIC
     net/src/net.c
+    net/src/mqtt_codec.c
 )
 
 # ADR-014 point 3 — on a host OS the eNet API maps onto POSIX sockets.

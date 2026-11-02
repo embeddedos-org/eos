@@ -47,6 +47,13 @@ if(CMAKE_C_COMPILER_ID MATCHES "GNU|Clang")
 endif()
 
 # EoS Unit Tests
+# --- test_toolchain_path_overflow: reject truncated target descriptor paths ---
+add_executable(test_toolchain_path_overflow test_toolchain_path_overflow.c)
+target_include_directories(test_toolchain_path_overflow PRIVATE
+    ${EoS_SOURCE_DIR}/core/include)
+target_link_libraries(test_toolchain_path_overflow PRIVATE eos_toolchains)
+add_test(NAME test_toolchain_path_overflow COMMAND test_toolchain_path_overflow)
+
 # --- test_board_configs: Board YAML schema shape ---
 add_executable(test_board_configs test_board_configs.c)
 add_test(NAME test_board_configs COMMAND test_board_configs boards)
@@ -68,6 +75,12 @@ add_test(NAME test_config COMMAND test_config)
 add_executable(test_config_size test_config_size.c)
 target_link_libraries(test_config_size PRIVATE eos_core)
 add_test(NAME test_config_size COMMAND test_config_size)
+
+# --- test_cache: cache marker validation (#205) ---
+# Implementation is core/src/cache.c, which lives in eos_core.
+add_executable(test_cache test_cache.c)
+target_link_libraries(test_cache PRIVATE eos_core)
+add_test(NAME test_cache COMMAND test_cache)
 
 # --- test_scheduler_cache_key: the cache key against oversized options ---
 # #includes core/src/scheduler.c to reach its static compute_cache_key(), the
@@ -304,6 +317,12 @@ target_link_libraries(test_power PRIVATE eos_power)
 add_test(NAME test_power COMMAND test_power)
 
 # --- test_net: Networking abstraction ---
+# --- test_mqtt_codec: MQTT 3.1.1 codec fixtures (#199 slice 1) ---
+add_executable(test_mqtt_codec test_mqtt_codec.c)
+target_link_libraries(test_mqtt_codec PRIVATE eos_net)
+target_include_directories(test_mqtt_codec PRIVATE ${EoS_SOURCE_DIR}/net/src)
+add_test(NAME test_mqtt_codec COMMAND test_mqtt_codec)
+
 add_executable(test_net test_net.c)
 target_link_libraries(test_net PRIVATE eos_net)
 # The POSIX round-trip cases need the same switch the library was built with,
@@ -312,6 +331,26 @@ if(NOT CMAKE_CROSSCOMPILING AND UNIX)
     target_compile_definitions(test_net PRIVATE EOS_NET_POSIX=1)
     find_package(Threads REQUIRED)
     target_link_libraries(test_net PRIVATE Threads::Threads)
+    # A bad EOS_TEST_NET_DESTINATION is a configuration error, not a reason
+    # to fall back to loopback. Each case passes only on its own rejection
+    # message, not on any non-zero exit as WILL_FAIL would, and fails if any
+    # check ran first. test_net validates the variable before any socket
+    # work, so these cases bind no ports and can run beside test_net under
+    # ctest -j.
+    add_test(NAME test_net_invalid_destination COMMAND test_net)
+    set_tests_properties(test_net_invalid_destination PROPERTIES
+        ENVIRONMENT "EOS_TEST_NET_DESTINATION=not-an-ip"
+        PASS_REGULAR_EXPRESSION "EOS_TEST_NET_DESTINATION rejected: 'not-an-ip' is not a numeric IPv4 address"
+        FAIL_REGULAR_EXPRESSION "\\[PASS\\]"
+    )
+    # 192.0.2.1 (TEST-NET-1) is never on this host: the override must not
+    # send test traffic off the machine.
+    add_test(NAME test_net_nonlocal_destination COMMAND test_net)
+    set_tests_properties(test_net_nonlocal_destination PROPERTIES
+        ENVIRONMENT "EOS_TEST_NET_DESTINATION=192.0.2.1"
+        PASS_REGULAR_EXPRESSION "EOS_TEST_NET_DESTINATION rejected: '192[.]0[.]2[.]1' is not in 127[.]0[.]0[.]0/8 or assigned to a local interface"
+        FAIL_REGULAR_EXPRESSION "\\[PASS\\]"
+    )
 endif()
 add_test(NAME test_net COMMAND test_net)
 
@@ -419,6 +458,40 @@ add_test(NAME test_pkg_fetch COMMAND test_pkg_fetch)
 add_executable(test_exec_argv test_exec_argv.c ../cmd/eos/exec_argv.c)
 target_include_directories(test_exec_argv PRIVATE ../cmd/eos)
 add_test(NAME test_exec_argv COMMAND test_exec_argv)
+
+# --- test_posix_io: POSIX file layer flags, lseek and stat over the RAM fs ---
+# #includes services/posix/src/posix_io.c with its POSIX names renamed (it
+# defines open/read/write/... which would otherwise replace the host libc's),
+# so that source is not listed here and eos_posix -- off by default, and not
+# buildable on every host -- is not needed. UNIX only: the harness keeps the
+# host ssize_t from <sys/types.h>, which MSVC does not provide.
+if(UNIX)
+    add_executable(test_posix_io test_posix_io.c)
+    target_include_directories(test_posix_io PRIVATE
+        ${EoS_SOURCE_DIR}/services/posix/include
+        ${EoS_SOURCE_DIR}/kernel/include
+        ${EoS_SOURCE_DIR}/hal/include)
+    target_link_libraries(test_posix_io PRIVATE eos_filesystem)
+    # The console hooks and eos_fs_fstat() are weak references nothing here
+    # defines. ELF linkers leave those NULL; ld64 needs to be told to.
+    if(APPLE)
+        target_link_options(test_posix_io PRIVATE
+            -Wl,-U,_eos_console_read -Wl,-U,_eos_console_write
+            -Wl,-U,_eos_fs_fstat)
+    endif()
+    add_test(NAME test_posix_io COMMAND test_posix_io)
+endif()
+
+# --- example_secure_ota: examples/secure-ota must keep compiling ---
+# It includes eos/ota.h and eos/os_services.h together, which failed while
+# both declared eos_ota_init/verify/rollback with different signatures. It
+# is compiled, not linked: there is no host port for eos_kernel (only
+# kernel/src/arch/arm_cm), so no kernel example links on the host. The
+# object library is part of ALL, so a regression fails the build.
+add_library(example_secure_ota OBJECT
+    ${EoS_SOURCE_DIR}/examples/secure-ota/main.c)
+target_link_libraries(example_secure_ota PRIVATE
+    eos_hal eos_kernel eos_ota eos_crypto eos_os_services)
 
 # --- Fuzz targets ---
 # Opt-in (-DEOS_ENABLE_FUZZING=ON, Clang only); the subdirectory guards itself.

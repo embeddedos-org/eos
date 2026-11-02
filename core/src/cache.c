@@ -48,6 +48,16 @@ EosResult eos_cache_check(const EosCache *cache, const char *key, int *hit) {
     char path[EOS_MAX_PATH];
     cache_path(cache, key, path, sizeof(path));
 
+    char hash_input[EOS_MAX_PATH + sizeof(":built")];
+    int input_len = snprintf(hash_input, sizeof(hash_input), "%s:built", key);
+    if (input_len < 0 || (size_t)input_len >= sizeof(hash_input)) {
+        *hit = 0;
+        return EOS_OK;
+    }
+    char expected[EOS_HASH_LEN];
+    eos_cache_compute_hash(hash_input, (size_t)input_len, expected,
+                           sizeof(expected));
+
     FILE *fp = fopen(path, "r");
     if (!fp) {
         *hit = 0;
@@ -56,8 +66,8 @@ EosResult eos_cache_check(const EosCache *cache, const char *key, int *hit) {
 
     char stored[EOS_HASH_LEN] = {0};
     if (fgets(stored, sizeof(stored), fp)) {
-        *hit = 1;
-        EOS_DEBUG("Cache hit: %s", key);
+        *hit = strcmp(stored, expected) == 0 && fgetc(fp) == EOF;
+        if (*hit) EOS_DEBUG("Cache hit: %s", key);
     } else {
         *hit = 0;
     }

@@ -36,6 +36,12 @@ static void test_task_create(void) {
 static void test_task_create_invalid(void) {
     eos_kernel_init();
     assert(eos_task_create("t", NULL, NULL, 5, 1024) == EOS_KERN_INVALID);
+    /* Too small for the port's initial frame: it was written over the
+     * previous task's stack. */
+    assert(eos_task_create("t", test_entry, NULL, 5, 16) == EOS_KERN_INVALID);
+    assert(eos_task_create("t", test_entry, NULL, 5, EOS_MIN_STACK_SIZE - 1)
+           == EOS_KERN_INVALID);
+    assert(eos_task_create("t", test_entry, NULL, 5, EOS_MIN_STACK_SIZE) >= 0);
     printf("[PASS] task create invalid\n");
 }
 
@@ -115,6 +121,52 @@ static void test_task_delete(void) {
     assert(eos_task_get_state((eos_task_handle_t)h) == EOS_TASK_DELETED);
     assert(strcmp(eos_task_get_name((eos_task_handle_t)h), "invalid") == 0);
     printf("[PASS] task delete\n");
+}
+
+static int stacks_overlap(int a, int b) {
+    const uint32_t *as = g_tasks[a].stack_base;
+    const uint32_t *ae = as + g_tasks[a].stack_size / sizeof(uint32_t);
+    const uint32_t *bs = g_tasks[b].stack_base;
+    const uint32_t *be = bs + g_tasks[b].stack_size / sizeof(uint32_t);
+    return as < be && bs < ae;
+}
+
+/* The stack pool was a bump allocator that eos_task_delete() never gave
+ * memory back to, so after EOS_MAX_TASKS create/delete cycles of default-size
+ * stacks every eos_task_create() returned EOS_KERN_NO_MEMORY. */
+static void test_task_delete_frees_stack(void) {
+    eos_kernel_init();
+    for (int i = 0; i < 4 * EOS_MAX_TASKS; i++) {
+        int h = eos_task_create("cycle", test_entry, NULL, 5, 1024);
+        assert(h > 0);
+        assert(eos_task_delete((eos_task_handle_t)h) == EOS_KERN_OK);
+    }
+
+    /* A freed gap between live stacks is reused without overlapping them. */
+    int a = eos_task_create("a", test_entry, NULL, 5, 1024);
+    int b = eos_task_create("b", test_entry, NULL, 5, 2048);
+    int c = eos_task_create("c", test_entry, NULL, 5, 1024);
+    assert(a > 0 && b > 0 && c > 0);
+    assert(eos_task_delete((eos_task_handle_t)b) == EOS_KERN_OK);
+    int d = eos_task_create("d", test_entry, NULL, 5, 2048);
+    assert(d > 0);
+    assert(!stacks_overlap(d, a) && !stacks_overlap(d, c));
+
+    /* A task that deletes itself is still running on its stack until the
+     * switch away, so that region must not be handed out before then. */
+    eos_task_set_current_internal((eos_task_handle_t)d);
+    assert(eos_task_delete((eos_task_handle_t)d) == EOS_KERN_OK);
+    const uint32_t *d_lo = g_tasks[d].stack_base;
+    const uint32_t *d_hi = d_lo + g_tasks[d].stack_size / sizeof(uint32_t);
+    int e = eos_task_create("e", test_entry, NULL, 5, 2048);
+    assert(e > 0);
+    assert(!stacks_overlap(e, a) && !stacks_overlap(e, c));
+    const uint32_t *e_lo = g_tasks[e].stack_base;
+    const uint32_t *e_hi = e_lo + g_tasks[e].stack_size / sizeof(uint32_t);
+    assert(e_hi <= d_lo || d_hi <= e_lo);
+    eos_task_set_current_internal(0);
+
+    printf("[PASS] task delete frees its stack\n");
 }
 
 static void test_task_suspend_resume(void) {
@@ -433,6 +485,90 @@ static void test_wake_tick_zero(void) {
     printf("[PASS] wake_tick wrap to zero\n");
 }
 
+/* ---- A woken waiter whose resource was taken first keeps waiting ---- */
+
+/* Post/send dequeues and readies a waiter but does not reserve the count or
+ * item for it, so a task that runs first can take it. The woken waiter used
+ * to return EOS_KERN_TIMEOUT even under EOS_WAIT_FOREVER. Here the "other
+ * task" runs from the yield hook: on the first yield it gives and then takes
+ * back; on the second it gives for real. */
+static eos_sem_handle_t   st_sem;
+static eos_queue_handle_t st_q;
+static eos_task_handle_t  st_waiter, st_thief;
+static int st_yields;
+
+static void st_sem_hook(void)
+{
+    st_yields++;
+    eos_task_set_current_internal(st_thief);
+    assert(eos_sem_post(st_sem) == EOS_KERN_OK);
+    if (st_yields == 1)
+        assert(eos_sem_wait(st_sem, EOS_NO_WAIT) == EOS_KERN_OK);
+    eos_task_set_current_internal(st_waiter);
+}
+
+static void st_recv_hook(void)
+{
+    int v = 7, got;
+    st_yields++;
+    eos_task_set_current_internal(st_thief);
+    assert(eos_queue_send(st_q, &v, EOS_NO_WAIT) == EOS_KERN_OK);
+    if (st_yields == 1)
+        assert(eos_queue_receive(st_q, &got, EOS_NO_WAIT) == EOS_KERN_OK);
+    eos_task_set_current_internal(st_waiter);
+}
+
+static void st_send_hook(void)
+{
+    int got, v = 9;
+    st_yields++;
+    eos_task_set_current_internal(st_thief);
+    assert(eos_queue_receive(st_q, &got, EOS_NO_WAIT) == EOS_KERN_OK);
+    if (st_yields == 1)
+        assert(eos_queue_send(st_q, &v, EOS_NO_WAIT) == EOS_KERN_OK);
+    eos_task_set_current_internal(st_waiter);
+}
+
+static void test_wait_forever_survives_a_stolen_wakeup(void) {
+    eos_kernel_init();
+    st_waiter = (eos_task_handle_t)eos_task_create("w", test_entry, NULL, 5, 512);
+    st_thief  = (eos_task_handle_t)eos_task_create("t", test_entry, NULL, 1, 512);
+
+    assert(eos_sem_create(&st_sem, 0, 1) == EOS_KERN_OK);
+    eos_task_set_current_internal(st_waiter);
+    st_yields = 0;
+    q7_yield_hook = st_sem_hook;
+    assert(eos_sem_wait(st_sem, EOS_WAIT_FOREVER) == EOS_KERN_OK);
+    q7_yield_hook = NULL;
+    assert(st_yields == 2);
+    assert(eos_sem_get_count(st_sem) == 0);
+    assert(eos_sem_delete(st_sem) == EOS_KERN_OK);
+
+    int out = 0;
+    assert(eos_queue_create(&st_q, sizeof(int), 1) == EOS_KERN_OK);
+    st_yields = 0;
+    q7_yield_hook = st_recv_hook;
+    assert(eos_queue_receive(st_q, &out, EOS_WAIT_FOREVER) == EOS_KERN_OK);
+    q7_yield_hook = NULL;
+    assert(st_yields == 2 && out == 7);
+
+    int full = 1, mine = 2;
+    assert(eos_queue_send(st_q, &full, EOS_NO_WAIT) == EOS_KERN_OK);
+    st_yields = 0;
+    q7_yield_hook = st_send_hook;
+    assert(eos_queue_send(st_q, &mine, EOS_WAIT_FOREVER) == EOS_KERN_OK);
+    q7_yield_hook = NULL;
+    assert(st_yields == 2);
+    assert(eos_queue_receive(st_q, &out, EOS_NO_WAIT) == EOS_KERN_OK && out == mine);
+    assert(eos_queue_delete(st_q) == EOS_KERN_OK);
+
+    /* A real timeout still times out: nobody posts, the waiter stays queued. */
+    assert(eos_sem_create(&st_sem, 0, 1) == EOS_KERN_OK);
+    assert(eos_sem_wait(st_sem, 10) == EOS_KERN_TIMEOUT);
+    assert(eos_sem_delete(st_sem) == EOS_KERN_OK);
+    printf("[PASS] wait forever survives a stolen wakeup\n");
+}
+
 /* Mock port functions for host-based simulation/testing */
 uint32_t eos_port_enter_critical(void) {
     uint32_t previous = g_critical_depth;
@@ -502,6 +638,7 @@ int main(void) {
     RUN(test_task_create);
     RUN(test_task_create_invalid);
     RUN(test_task_delete);
+    RUN(test_task_delete_frees_stack);
     RUN(test_task_suspend_resume);
     RUN(test_mutex);
     RUN(test_mutex_pi_timeout_restores_priority);
@@ -510,6 +647,7 @@ int main(void) {
     RUN(test_queue_full);
     RUN(test_queue_send_waiter_overflow);
     RUN(test_queue_no_stale_send_waiter);
+    RUN(test_wait_forever_survives_a_stolen_wakeup);
     RUN(test_task_stats);
     RUN(test_tick_overflow);
     RUN(test_wake_tick_zero);

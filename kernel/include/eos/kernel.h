@@ -30,6 +30,14 @@ extern "C" {
 #define EOS_MAX_TASKS       16
 #endif
 
+/* Smallest stack eos_task_create() accepts, in bytes: the port's initial
+ * context frame (17 words on Cortex-M), 8-byte alignment slack and the
+ * canary word, with headroom. A smaller stack had its initial frame written
+ * over the previous task's stack. */
+#ifndef EOS_MIN_STACK_SIZE
+#define EOS_MIN_STACK_SIZE  128
+#endif
+
 #ifndef EOS_MAX_MUTEXES
 #define EOS_MAX_MUTEXES     8
 #endif
@@ -97,6 +105,8 @@ int  eos_kernel_init(void);
 void eos_kernel_start(void);
 bool eos_kernel_is_running(void);
 
+/* stack_size 0 selects 1024 bytes; any other value below
+ * EOS_MIN_STACK_SIZE returns EOS_KERN_INVALID. */
 int eos_task_create(const char *name, eos_task_func_t entry, void *arg,
                      uint8_t priority, uint32_t stack_size);
 

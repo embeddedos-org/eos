@@ -168,6 +168,8 @@ EosResult eos_scheduler_execute(EosScheduler *sched) {
         if (pkg) {
             strncpy(src_dir, pkg->src_dir, EOS_MAX_PATH - 1);
             strncpy(build_dir, pkg->build_dir, EOS_MAX_PATH - 1);
+            src_dir[EOS_MAX_PATH - 1] = '\0';
+            build_dir[EOS_MAX_PATH - 1] = '\0';
         } else {
             snprintf(src_dir, sizeof(src_dir), "%s/src/%s",
                      sched->build_dir, node->name);

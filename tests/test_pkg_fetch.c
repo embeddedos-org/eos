@@ -32,6 +32,19 @@ static int tests_passed = 0;
         }                                                                     \
     } while (0)
 
+/* Created only if an injected shell command runs; relative to the test's
+ * working directory (the build tree under ctest). */
+#define MARKER "eos_fetch_injected_marker"
+
+static int marker_exists(void)
+{
+    FILE *f = fopen(MARKER, "r");
+    if (!f) return 0;
+    fclose(f);
+    remove(MARKER);
+    return 1;
+}
+
 #define PASS(name) do { printf("[PASS] %s\n", name); tests_passed++; } while (0)
 
 int main(void)
@@ -88,6 +101,46 @@ int main(void)
     ASSERT(eos_fetch_source(NULL, "/tmp/eos_t", NULL) == EOS_OK);
     PASS("no URL is still a no-op rather than an error");
 
-    printf("\n%d/7 tests passed\n", tests_passed);
-    return tests_passed == 7 ? 0 : 1;
+    /* The URL is interpolated inside double quotes into a system() command.
+     * '"' was not on the deny-list, so a URL could close the quote and run
+     * its own command before any digest was compared. The return code alone
+     * cannot show this -- the injected command runs and the fetch still
+     * fails -- so each case checks that the injected command did not run.
+     * The payload is newline-separated so the shell would run it in the
+     * foreground, making the marker's absence a deterministic check. */
+    remove(MARKER);
+    ASSERT(eos_fetch_source("https://example.invalid/x\"\ntouch " MARKER
+                            "\n\"y.tar.gz", "/tmp/eos_t", "deadbeef")
+           == EOS_ERR_FETCH);
+    ASSERT(!marker_exists());
+    ASSERT(eos_fetch_source("https://example.invalid/r\"\ntouch " MARKER
+                            "\n\".git", "/tmp/eos_t", "deadbeef")
+           == EOS_ERR_FETCH);
+    ASSERT(!marker_exists());
+    ASSERT(eos_fetch_source("https://example.invalid/x\\y.tar.gz",
+                            "/tmp/eos_t", "deadbeef") == EOS_ERR_FETCH);
+    ASSERT(eos_fetch_source("--upload-pack=touch " MARKER ".git",
+                            "/tmp/eos_t", "deadbeef") == EOS_ERR_FETCH);
+    ASSERT(!marker_exists());
+    PASS("a URL that can break out of the shell quoting is refused");
+
+    /* dest_dir goes into the same commands and was never checked. */
+    ASSERT(eos_fetch_source("https://example.invalid/src.tar.gz",
+                            "/tmp/eos_t\"\ntouch " MARKER "\n\"",
+                            "deadbeef") == EOS_ERR_FETCH);
+    ASSERT(!marker_exists());
+    ASSERT(eos_fetch_source("https://example.invalid/src.tar.gz",
+                            "-rf", "deadbeef") == EOS_ERR_FETCH);
+    ASSERT(eos_fetch_source("https://example.invalid/src.tar.gz",
+                            NULL, "deadbeef") == EOS_ERR_FETCH);
+    PASS("an unsafe or missing destination directory is refused");
+
+    /* A URL that is neither git nor a known archive used to fall through to
+     * a download-and-extract path that compared no digest. */
+    ASSERT(eos_fetch_source("https://example.invalid/download/v1",
+                            "/tmp/eos_t", "deadbeef") == EOS_ERR_INVALID);
+    PASS("an unrecognised URL is refused rather than fetched unverified");
+
+    printf("\n%d/10 tests passed\n", tests_passed);
+    return tests_passed == 10 ? 0 : 1;
 }

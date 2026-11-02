@@ -105,7 +105,10 @@ EosResult eos_toolchain_detect_host(EosToolchain *tc) {
 EosResult eos_toolchain_load_by_target(EosToolchain *tc, const char *target,
                                             const char *search_dir) {
     char path[EOS_MAX_PATH];
-    snprintf(path, sizeof(path), "%s/%s.yaml", search_dir, target);
+    int path_length = snprintf(path, sizeof(path), "%s/%s.yaml", search_dir,
+                               target);
+    if (path_length < 0 || (size_t)path_length >= sizeof(path))
+        return EOS_ERR_OVERFLOW;
 
     FILE *fp = fopen(path, "r");
     if (fp) {

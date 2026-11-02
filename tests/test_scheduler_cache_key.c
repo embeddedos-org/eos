@@ -28,6 +28,7 @@
 
 #include <stdio.h>
 #include <string.h>
+#include <stdlib.h>
 
 #include "../core/src/scheduler.c"
 
@@ -41,14 +42,23 @@ static int tests_passed = 0;
     } \
 } while (0)
 
-/** Fill option `i` with a key of `k` characters and a value of `v`. */
+/** Fill option `i` with a key of `k` characters and a value of `v`.
+ * #148 Step 2b: options are interned through eos_pkg_option_add();
+ * the package owns the table (never disposed in these short-lived
+ * fixtures \u2014 one bounded table per package, freed at exit). */
 static void set_option(EosPackage *pkg, int i, int k, int v)
 {
-    memset(pkg->options[i].key, 'k', (size_t)k);
-    pkg->options[i].key[0] = (char)('A' + (i % 26));
-    pkg->options[i].key[k] = '\0';
-    memset(pkg->options[i].value, 'v', (size_t)v);
-    pkg->options[i].value[v] = '\0';
+    char key[EOS_MAX_NAME];
+    char value[EOS_MAX_PATH];
+    memset(key, 'k', (size_t)k);
+    key[0] = (char)('A' + (i % 26));
+    key[k] = '\0';
+    memset(value, 'v', (size_t)v);
+    value[v] = '\0';
+    if (eos_pkg_option_add(pkg, key, value) != EOS_OK) {
+        printf("[FAIL] set_option: eos_pkg_option_add failed\n");
+        exit(1);
+    }
 }
 
 /**
@@ -81,7 +91,7 @@ static void make_pkg(EosPackage *pkg, const char *hash, int medium, int add_max)
         set_option(pkg, n, 98, 100);            /* ":key=value" == 200 bytes */
     if (add_max && n < EOS_MAX_OPTIONS)
         set_option(pkg, n++, EOS_MAX_NAME - 1, EOS_MAX_PATH - 1);  /* 640 */
-    pkg->option_count = n;
+    /* eos_pkg_option_add() maintains option_count (== n here). */
 }
 
 /* Two packages identical but for the source hash must not share a cache key.

@@ -73,8 +73,10 @@ Reset_Handler:
 
 /* Default handler for unused interrupts */
     .section .text.Default_Handler,"ax",%progbits
+    .type Default_Handler, %function
 Default_Handler:
-    b Default_Handler
+.Ldefault_hang:
+    b .Ldefault_hang
     .size Default_Handler, .-Default_Handler
 
 /* Vector table */
