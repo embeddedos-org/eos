@@ -1,0 +1,65 @@
+{
+    "version": "1.0.0",
+        "entity": {
+          "type": "organisation",
+                "role": "owner",
+                "name": "EmbeddedOS Research Foundation",
+                "email": "kartikeydheer@embeddedos.org",
+                "phone": "+917567114807",
+                "description": "501(c)(3) nonprofit developing formally verified open-source embedded operating systems and secure bootloaders for RISC-V and ARM microcontrollers.",
+                "webpageUrl": {
+                  "url": "https://embeddedos.org"
+          }
+    },
+  "projects": [
+    {
+            "guid": "eos-rtos",
+            "name": "eos — Embedded Real-Time Operating System",
+            "description": "MIT-licensed RTOS for RISC-V RV32IM and ARM Cortex-M. 15.8 KB flash, 171 MCU families, AES-128/256, SHA-256/512.",
+            "webpageUrl": {
+                      "url": "https://embeddedos.org"
+            },
+            "repositoryUrl": {
+                      "url": "https://github.com/embeddedos-org/eos"
+            },
+            "licenses": ["spdx:MIT"],
+            "tags": ["rtos", "embedded", "risc-v", "arm", "security", "formal-verification"]
+    },
+    {
+            "guid": "eboot-bootloader",
+            "name": "eBoot — Secure Bootloader",
+            "description": "MIT-licensed secure bootloader with Ed25519 + SHA-512 chain-of-trust. 83 board configurations.",
+            "webpageUrl": {
+                      "url": "https://embeddedos.org"
+            },
+            "repositoryUrl": {
+                      "url": "https://github.com/embeddedos-org/eboot"
+            },
+            "licenses": ["spdx:MIT"],
+            "tags": ["bootloader", "embedded", "security", "risc-v", "arm"]
+    }
+      ],
+      "funding": {
+        "channels": [
+          {
+                    "guid": "bank-transfer",
+                    "type": "bank",
+                    "address": "kartikeydheer@embeddedos.org",
+                    "description": "Contact us for wire transfer details"
+          }
+              ],
+              "plans": [
+          {
+                    "guid": "research-grant",
+                    "status": "active",
+                    "name": "Research Grant",
+                    "description": "Support formal verification research for eos and eBoot. Funds cover PI research effort, tooling, hardware, and publication.",
+                    "amount": 100000,
+                    "currency": "USD",
+                    "frequency": "one-time",
+                    "channels": ["bank-transfer"]
+          }
+              ],
+              "history": null
+  }
+}
