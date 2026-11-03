@@ -1,0 +1,52 @@
+{
+  "$schema": "https://floss.fund/schema/v1.0.0.json",
+  "version": "v1.0.0",
+  "entity": {
+    "type": "organisation",
+    "role": "owner",
+    "name": "EmbeddedOS Research Foundation",
+    "email": "kartikeydheer@embeddedos.org",
+    "phone": "",
+    "description": "EmbeddedOS Research Foundation is a US 501(c)(3) nonprofit developing MIT-licensed open-source real-time operating system (RTOS) and secure bootloader firmware for resource-constrained microcontrollers (RISC-V RV32IM, ARM Cortex-M). Our mission is to provide formally verified, open-source firmware infrastructure for critical embedded systems in medical devices, industrial control, and IoT.",
+    "webpages": ["https://embeddedos.org"],
+    "social": [
+      "https://github.com/embeddedos-org"
+    ],
+    "licences": ["MIT"]
+  },
+  "projects": [
+    {
+      "guid": "eos-rtos-embeddedos-org",
+      "name": "eos",
+      "description": "MIT-licensed RTOS for RISC-V RV32IM and ARM Cortex-M. 15.8 KB flash, 84 board descriptors, AES-128/256, SHA-256/512, Ed25519 secure boot. Deployed in medical devices, water treatment, and industrial control systems.",
+      "webpages": ["https://github.com/embeddedos-org/eos"],
+      "repositories": ["https://github.com/embeddedos-org/eos"],
+      "licences": ["MIT"],
+      "tags": ["rtos", "embedded", "risc-v", "arm", "security", "firmware"],
+      "category": "security",
+      "funding": {
+        "channels": [
+          {
+            "guid": "github-sponsors-embeddedos-org",
+            "type": "payment-provider",
+            "address": "https://github.com/sponsors/embeddedos-org",
+            "currencies": ["USD"]
+          }
+        ],
+        "plans": [
+          {
+            "guid": "plan-eos-sustaining",
+            "status": "active",
+            "name": "Sustaining Sponsor",
+            "description": "Sustain ongoing development of eos RTOS and eBoot secure bootloader — formal verification, RISC-V/ARM platform support, CI/CD, documentation.",
+            "amount": 500,
+            "currency": "USD",
+            "frequency": "monthly",
+            "channels": ["github-sponsors-embeddedos-org"]
+          }
+        ],
+        "history": []
+      }
+    }
+  ]
+}
