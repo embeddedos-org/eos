@@ -109,8 +109,16 @@ EosResult eos_system_build_image(EosSystem *sys) {
         eos_shell_cmd_text(&cmd, " ");
         eos_shell_cmd_text(&cmd, num);
         eos_shell_cmd_text(&cmd, "M");
-        if (eos_shell_cmd_run(&cmd, "QCOW2 image creation") != EOS_OK) {
-            EOS_WARN("  qemu-img not available, creating placeholder");
+        {
+            EosResult result = eos_shell_cmd_run(&cmd, "QCOW2 image creation");
+            if (result == EOS_ERR_INVALID) {
+                /* Refused argument: a refused path must not report success
+                 * with no image created (RAW returns the refusal likewise). */
+                return result;
+            }
+            if (result != EOS_OK) {
+                EOS_WARN("  qemu-img not available, creating placeholder");
+            }
         }
         break;
     }
