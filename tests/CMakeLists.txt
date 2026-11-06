@@ -200,6 +200,16 @@ target_include_directories(test_ed25519_contract PRIVATE
     ${CMAKE_CURRENT_SOURCE_DIR})
 add_test(NAME test_ed25519_contract COMMAND test_ed25519_contract)
 
+# --- test_ed25519_rfc8032_kat: keygen and signing are bit-exact ---
+# The contract corpus pins what the verifier accepts; this pins what the
+# signer emits, so a change to the ref10 field/scalar arithmetic that broke
+# both sides alike cannot round-trip its way to green.
+add_executable(test_ed25519_rfc8032_kat test_ed25519_rfc8032_kat.c)
+target_link_libraries(test_ed25519_rfc8032_kat PRIVATE eos_crypto)
+target_include_directories(test_ed25519_rfc8032_kat PRIVATE
+    ${CMAKE_CURRENT_SOURCE_DIR})
+add_test(NAME test_ed25519_rfc8032_kat COMMAND test_ed25519_rfc8032_kat)
+
 # --- test_crypto_sha512: SHA-512 against NIST vectors ---
 add_executable(test_crypto_sha512 test_crypto_sha512.c)
 target_link_libraries(test_crypto_sha512 PRIVATE eos_crypto)
