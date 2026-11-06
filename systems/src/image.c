@@ -3,6 +3,7 @@
 // ISO/IEC 25000 | ISO/IEC/IEEE 15288:2023
 
 #include "eos/system.h"
+#include "eos/shell_cmd.h"
 #include "eos/log.h"
 #include <stdio.h>
 #include <stdlib.h>
@@ -50,29 +51,47 @@ EosResult eos_system_build_image(EosSystem *sys) {
     switch (sys->image_format) {
     case EOS_IMG_RAW: {
         EOS_INFO("  Creating raw disk image...");
-        char cmd[2048];
+        EosShellCmd cmd;
+        EosResult result;
+        char num[32];
 
-        /* Create empty image file */
+        /* Create empty image file. Paths come from configuration, so they
+         * go through eos_shell_cmd_arg() (double-quoted, metacharacters
+         * refused) instead of being interpolated into a system() string:
+         * a path such as $(id) previously ran as shell inside the quotes. */
 #ifdef _WIN32
-        snprintf(cmd, sizeof(cmd), "fsutil file createnew \"%s\" %zu",
-                 sys->image_output, sys->image_size_mb * 1024 * 1024);
+        snprintf(num, sizeof(num), "%zu", sys->image_size_mb * 1024 * 1024);
+        eos_shell_cmd_init(&cmd);
+        eos_shell_cmd_text(&cmd, "fsutil file createnew ");
+        eos_shell_cmd_arg(&cmd, sys->image_output);
+        eos_shell_cmd_text(&cmd, " ");
+        eos_shell_cmd_text(&cmd, num);
+        result = eos_shell_cmd_run(&cmd, "Image creation");
 #else
-        snprintf(cmd, sizeof(cmd), "dd if=/dev/zero of=\"%s\" bs=1M count=%zu 2>/dev/null",
-                 sys->image_output, sys->image_size_mb);
+        snprintf(num, sizeof(num), "%zu", sys->image_size_mb);
+        eos_shell_cmd_init(&cmd);
+        eos_shell_cmd_text(&cmd, "dd if=/dev/zero of=");
+        eos_shell_cmd_arg(&cmd, sys->image_output);
+        eos_shell_cmd_text(&cmd, " bs=1M count=");
+        eos_shell_cmd_text(&cmd, num);
+        eos_shell_cmd_text(&cmd, " 2>/dev/null");
+        result = eos_shell_cmd_run(&cmd, "Image creation");
 #endif
-        EOS_INFO("  %s", cmd);
-        int rc = system(cmd);
-        if (rc != 0) {
-            EOS_WARN("  Image creation command returned %d (may need elevated privileges)", rc);
+        if (result == EOS_ERR_INVALID) {
+            /* Refused argument: do not continue to partitioning. */
+            return result;
+        }
+        if (result != EOS_OK) {
+            EOS_WARN("  Image creation command failed (may need elevated privileges)");
         }
 
 #ifndef _WIN32
-        /* Create partition table (Linux only) */
-        snprintf(cmd, sizeof(cmd),
-                 "echo -e 'o\\nn\\np\\n1\\n\\n\\nw' | fdisk \"%s\" 2>/dev/null || true",
-                 sys->image_output);
-        EOS_DEBUG("  Partitioning: %s", cmd);
-        system(cmd);
+        /* Create partition table (Linux only). */
+        eos_shell_cmd_init(&cmd);
+        eos_shell_cmd_text(&cmd, "echo -e 'o\\nn\\np\\n1\\n\\n\\nw' | fdisk ");
+        eos_shell_cmd_arg(&cmd, sys->image_output);
+        eos_shell_cmd_text(&cmd, " 2>/dev/null || true");
+        (void)eos_shell_cmd_run(&cmd, "Partitioning");
 #endif
 
         EOS_INFO("  Raw image created: %s (%zu MB)", sys->image_output, sys->image_size_mb);
@@ -80,24 +99,46 @@ EosResult eos_system_build_image(EosSystem *sys) {
     }
 
     case EOS_IMG_QCOW2: {
-        char cmd[1024];
-        snprintf(cmd, sizeof(cmd), "qemu-img create -f qcow2 \"%s\" %zuM",
-                 sys->image_output, sys->image_size_mb);
-        EOS_INFO("  %s", cmd);
-        int rc = system(cmd);
-        if (rc != 0) {
-            EOS_WARN("  qemu-img not available, creating placeholder");
+        EosShellCmd cmd;
+        char num[32];
+
+        snprintf(num, sizeof(num), "%zu", sys->image_size_mb);
+        eos_shell_cmd_init(&cmd);
+        eos_shell_cmd_text(&cmd, "qemu-img create -f qcow2 ");
+        eos_shell_cmd_arg(&cmd, sys->image_output);
+        eos_shell_cmd_text(&cmd, " ");
+        eos_shell_cmd_text(&cmd, num);
+        eos_shell_cmd_text(&cmd, "M");
+        {
+            EosResult result = eos_shell_cmd_run(&cmd, "QCOW2 image creation");
+            if (result == EOS_ERR_INVALID) {
+                /* Refused argument: a refused path must not report success
+                 * with no image created (RAW returns the refusal likewise). */
+                return result;
+            }
+            if (result != EOS_OK) {
+                EOS_WARN("  qemu-img not available, creating placeholder");
+            }
         }
         break;
     }
 
     case EOS_IMG_TAR: {
-        char cmd[1024];
-        snprintf(cmd, sizeof(cmd), "tar czf \"%s\" -C \"%s\" .",
-                 sys->image_output, sys->rootfs_dir);
-        EOS_INFO("  %s", cmd);
-        int rc = system(cmd);
-        return (rc == 0) ? EOS_OK : EOS_ERR_SYSTEM;
+        EosShellCmd cmd;
+        EosResult result;
+
+        eos_shell_cmd_init(&cmd);
+        eos_shell_cmd_text(&cmd, "tar czf ");
+        eos_shell_cmd_arg(&cmd, sys->image_output);
+        eos_shell_cmd_text(&cmd, " -C ");
+        eos_shell_cmd_arg(&cmd, sys->rootfs_dir);
+        eos_shell_cmd_text(&cmd, " .");
+        result = eos_shell_cmd_run(&cmd, "Tar image creation");
+        if (result == EOS_ERR_BUILD) {
+            /* Preserve the previous failure code for a failing tool. */
+            return EOS_ERR_SYSTEM;
+        }
+        return result;
     }
 
     default:
