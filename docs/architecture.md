@@ -1,12 +1,5 @@
 # 🏗 EoS — Architecture
 
-> **DRAFT — first full draft, for review as a loop PR.**
-> This is the proposed replacement text for `docs/architecture.md` in
-> `embeddedos-org/eos`, the platform's canonical living architecture
-> document. In `mkdocs.yml` it occupies the existing nav slot
-> `Architecture: architecture.md` (Home → Getting Started →
-> **Architecture**); no nav change is needed for this draft.
->
 > **How to read this document.** Part I (§1–§9) is **present state**:
 > only what was verified from the code and documents named in the
 > Verification notes appendix. Part II (§10) is **planned state**:
@@ -15,7 +8,7 @@
 > Maturity words (`Planned`, `Experimental`, `Implemented`,
 > `Validated`) are used in the §25 sense defined in `STATUS.md`.
 >
-> Snapshot this draft was written against: eos `master` at the
+> Snapshot this document was written against: eos `master` at the
 > 2026-11-01 foundation-review snapshot (see appendix). The document
 > is *living*: the daily loop updates it by PR whenever an
 > architecture-level change lands.
@@ -36,14 +29,22 @@ Any architecture description that names only one half is wrong.
 | **A. RTOS framework** | A lightweight RTOS kernel, HAL, driver framework, networking/power abstractions and runtime services, built as static libraries (`libeos_*.a`) for host (Linux/POSIX) and bare-metal targets | `kernel/`, `hal/`, `drivers/`, `net/`, `power/`, most of `services/`, `debug/`, `boards/`, `products/` |
 | **B. Build & system tool** | A build orchestrator: parses a project config, resolves a package/layer graph, drives external build backends (CMake, Ninja, Make, Kbuild, Zephyr, FreeRTOS, NuttX, Buildroot, Cargo, Meson, Autotools), and assembles Linux images, RTOS firmware, and hybrid systems through a CLI | `core/`, `backends/`, `cmd/eos/`, `pkg/`, `systems/`, `toolchains/`, `layers/` |
 
-The halves meet at three seams, all verified in the root
-`CMakeLists.txt` and in code:
+The halves meet at two seams, verified in the root
+`CMakeLists.txt` and in code — and configuration is *not* a third
+shared seam:
 
 1. The RTOS libraries are ordinary CMake targets that the build
    tool's CMake backend can build like any other package.
-2. Both halves are configured by the same product/board selection
-   (§6): `EOS_PRODUCT` chooses a profile header from `products/`;
-   `boards/*.yaml` describes a target board.
+2. The halves are configured **separately** (§6): half A selects a
+   product profile via the `EOS_PRODUCT` CMake definition (root
+   `CMakeLists.txt`: `add_compile_definitions(EOS_PRODUCT_...)`),
+   which chooses a profile header from `products/`; half B takes
+   target/board config through its own path (`EosConfig` /
+   `EosRtosConfig` board string) and loads no `boards/*.yaml` —
+   code search on master finds 0 `EOS_PRODUCT` hits in `core/`,
+   `backends/`, `cmd/`, `systems/`, `pkg/`, and 0 `boards` hits in
+   `core/`. One product/board selection spanning both halves would
+   be a planned unification, not present state.
 3. The build tool's config types (`core/include/eos/config.h`,
    the `EosConfig` family) describe *projects that may contain*
    RTOS firmware targets (`EosRtosConfig`: provider, board, core,
@@ -209,7 +210,7 @@ document.
 | Config types | `core/include/eos/types.h`, `error.h` | `EosArch`, `EosBuildType`, `EosSystemKind` (linux/rtos/hybrid), `EosRtosProvider`, `EosResult` — the `Eos*` PascalCase type world (see §8.3) |
 | Backends | `backends/src/` | One adapter TU per external build system: `cmake`, `ninja`, `make`, `kbuild`, `autotools`, `buildroot`, `cargo`, `meson`, `freertos`, `nuttx`, `zephyr`; registry in `backends/src/Backend.c` — registry API declared in `include/eos/backend.h` (`EosBackend` vtable: configure → build → install → clean) |
 | Packages | `pkg/` (+ `services/pkg/` for the on-device `.eapp` manager) | Metadata, dependency resolution, source fetching (git/tarball, checksum) — declared in the `eos/package.h` header pair (gap G-1). Root entry point for a project: `build.yaml` (name `eos`, version `0.5.0`, backend `cmake`) |
-| Systems | `systems/src/` (`system.c`, `rootfs.c`, `image.c`, `firmware.c`, `docs.c`) | Assembly pipelines per system kind: Linux (kernel → rootfs → image), RTOS (configure → build → firmware bin/elf/hex/uf2), Hybrid (Linux phase + one firmware phase per RTOS target, then combine) |
+| Systems | `systems/src/` (`system.c`, `rootfs.c`, `image.c`, `firmware.c`, `docs.c`) | Assembly pipelines per system kind — **scaffold/partial, not working end to end**: Linux (kernel → rootfs → image) is a scaffold: `eos_system_build_kernel()` warns "Kernel build requires kernel source tree — skipping in scaffold" / "Buildroot integration not yet implemented" and still returns `EOS_OK`; the RAW image case creates only an empty zero-filled file plus a partition table (no kernel or rootfs is written into it); `rootfs.c` builds only an FHS skeleton + hostname/fstab, no packages. RTOS (configure → build → firmware bin/elf/hex/uf2) is the real phase. Hybrid runs the Linux phase + one firmware phase per RTOS target and returns — there is no combine step. A working Linux/hybrid image pipeline is planned state (§10). |
 | Toolchains | `toolchains/` | Cross-compile definitions: six CMake toolchain files (`arm-cortex-m4`, `arm-none-eabi-stm32f4`, `arm-none-eabi-r5` exercised per `README.md`; RISC-V and AArch64 files present, unverified per `STATUS.md`) plus YAML toolchain descriptors |
 | Layers | `layers/` | Configuration layering — see §6.2 |
 | Debug | `debug/` → `eos_debug` | GDB stub + core dump (`debug/include/eos/gdb_stub.h`, `coredump.h`) |
@@ -413,10 +414,13 @@ marked `(eos doc)`.
 
 - eos's kernel IPC (`kernel/src/ipc.c`, declared in
   `kernel.h`) is the in-OS primitive. The org-level eIPC
-  attachment visible *from eos* is the AI bridge (§8.4):
-  `layers/ai/include/eos_ai.h` frames eIPC as the transport
-  between ENI (input) and EAI (agent), with the bridge config
-  carrying an `eipc_address` and `eipc_hmac_key`.
+  attachment visible *from eos* is the AI bridge (§8.4) — but
+  only as **API scaffolding**: `layers/ai/include/eos_ai.h`
+  frames eIPC as the intended transport between ENI (input)
+  and EAI (agent), with the bridge config carrying an
+  `eipc_address` and `eipc_hmac_key`, while the implementation
+  sends and receives nothing (§8.4). The working connection
+  is planned state (§10).
 - A design cross-link, not code: `docs/track1/
   accelerator-hal-profiles.md` cites an eIPC design document
   ("zero-copy tensor IPC") as a companion to the accelerator
@@ -431,9 +435,17 @@ marked `(eos doc)`.
   `eos_ai_send_tool_request`, `eos_ai_receive_result`), and
   config naming the counterpart services (`eni_service_id`,
   `eai_service_id`, `eipc_address`). `layers/ai/src/eos_ai.c`
-  is its implementation TU. Header placement breaks the
-  `eos/` convention (gap G-6), and `eos_ai.h` sits outside
-  every `EOS_ENABLE_*` gate.
+  is its implementation TU — but the bridge functions are
+  success-returning stubs: `eos_ai_send_intent()` returns
+  `EOS_AI_OK` having sent nothing (comment: "In full build:
+  eni_eipc_bridge_send_intent(...); This stub ..."),
+  `eos_ai_send_tool_request()` likewise returns `EOS_AI_OK`
+  with its arguments discarded, and `eos_ai_receive_result()`
+  writes `buf[0] = '\0'` and returns `EOS_AI_OK`. The bridge
+  is therefore an API scaffold, not a live eIPC attachment;
+  the working connection is planned state (§10). Header
+  placement breaks the `eos/` convention (gap G-6), and
+  `eos_ai.h` sits outside every `EOS_ENABLE_*` gate.
 - Everything beyond that bridge — inference itself — is
   design material in eos (`docs/track1/
   accelerator-hal-profiles.md`, a self-described "design
@@ -483,7 +495,7 @@ marked `(eos doc)`.
   `EOS_PRODUCT=vbox_test`), fuzz targets (`tests/fuzz/`),
   and Python suites (`tests/unit`, `functional`, `performance`,
   `simulation`, driven by root `run_all_tests.py` / pytest).
-  CI is 18 workflows under `.github/workflows/` (build, CI,
+  CI is 18 workflows under `.github/workflows/` (20 `.yml` files in master, minus `auto-assign.yml` and `linked-issue.yml` — issue automation, not CI) (build, CI,
   CodeQL, scorecard, release, simulation, cross-repo dispatch,
   docs/book and video builds, nightly/weekly).
 - **Examples.** 13 directories; 10 contain `main.c` +
@@ -529,6 +541,16 @@ means "the repo records this intent", never "this works".
   same code runs on POSIX today and lwIP later. HTTP and CoAP
   are explicitly *separate* adoption decisions in the same
   documents and have no design in the tree yet.
+- **[PLANNED — source: `systems/src/image.c`,
+  `systems/src/rootfs.c`, `systems/src/firmware.c` scaffold
+  admissions (§5)]** A working Linux / hybrid image pipeline:
+  kernel build from a kernel source tree (or a real Buildroot
+  integration) instead of the scaffold skip, rootfs package
+  installation beyond the FHS skeleton, writing kernel and
+  rootfs into the image instead of an empty file plus partition
+  table, and a hybrid combine step joining the Linux image with
+  the per-target firmware outputs. Until then §5's Linux and
+  hybrid pipelines are scaffold/partial.
 - **[PLANNED — source: `docs/adr/` index, all status
   Proposed]** The ADR programme itself: ADR-012 cryptographic
   provider selection (the recorded direction for replacing the
@@ -549,6 +571,15 @@ means "the repo records this intent", never "this works".
   eAI, eosllm, eIPC, and ebuild (inference service, zero-copy
   tensor IPC, quantize step). No accelerator API exists in
   eos headers today.
+- **[PLANNED — source: `layers/ai/src/eos_ai.c` stub comments
+  ("In full build: ...") + `layers/ai/include/eos_ai.h`]**
+  The working eIPC AI bridge: wire `eos_ai_send_intent()` /
+  `eos_ai_send_tool_request()` / `eos_ai_receive_result()` to
+  a real eIPC transport between ENI (input) and EAI (agent)
+  (`eni_eipc_bridge_*`), so intents and results actually cross
+  between the services instead of returning success with
+  nothing sent. Until then the bridge is API scaffolding
+  (§8.4).
 - **[PLANNED — source: `docs/safety/
   robot-control-contract.md`, PROPOSED sections]** The robot
   control + safety contract's proposed values and mechanisms,
@@ -586,7 +617,7 @@ concurrent sweep — see the coherency review for the record).
 
 | Claim area | Files read |
 |---|---|
-| Two halves, build wiring, targets, links, counts | root `CMakeLists.txt`; recursive tree listing (1,058 entries — all counts computed from it); `build.yaml`; `sbom.json` |
+| Two halves, build wiring, targets, links, counts | root `CMakeLists.txt`; recursive tree listing (1,058 entries — all counts computed from it); `build.yaml`; `sbom.json`; code search for `EOS_PRODUCT` / `boards` (§1 — 0 hits in half-B dirs / `core/`) |
 | RTOS overview, board/product/example counts as *documented* | `README.md`; `AGENTS.md` |
 | Maturity states, evidence, stub admissions | `STATUS.md` (measured 2026-08-29 per its header — its HAL-backend row is stale vs current `hal.h`/`hal_common.c`, §4 follows the code) |
 | Kernel surface, wait constants | `kernel/include/eos/kernel.h`; `docs/safety/robot-control-contract.md` §1–§2 (for tick/priority facts read there from `kernel/src/task.c`) |
@@ -596,9 +627,9 @@ concurrent sweep — see the coherency review for the record).
 | Guard collisions, duplicate headers | `core/include/eos/config.h`; `include/eos/package.h` vs `pkg/include/eos/package.h` (`diff` — diverged); `drivers/include/eos/gps_nmea.h` vs `services/gps/include/eos/gps_nmea.h` (`diff` — incompatible) |
 | Driver frameworks | `drivers/include/eos/driver.h` vs `drivers.h`; root `CMakeLists.txt` `eos_drivers` sources |
 | Crypto stub posture | `services/crypto/include/eos/crypto.h`; `services/crypto/src/rsa_ecc_sha512.c` (fail-closed guard) |
-| Build-tool half | `core/include/eos/types.h`, `error.h`, `config.h`; `include/eos/backend.h`, `quality.h` (API version 0.1.0); previous `docs/architecture.md` (Half-B diagram/tables — carried forward where consistent with the tree) |
+| Build-tool half | `core/include/eos/types.h`, `error.h`, `config.h`; `include/eos/backend.h`, `quality.h` (API version 0.1.0); previous `docs/architecture.md` (Half-B diagram/tables — carried forward where consistent with the tree); `systems/src/image.c`, `rootfs.c`, `firmware.c` (pipeline scaffold admissions, §5) |
 | eBoot / ebuild attachment | `docs/integration-guide.md`; `GETTING_STARTED.md`; `DEPLOYMENT.md` (pinned SHAs noted as historical); `build.yaml`; `docs/adr/README.md` (ADR-019 title/status) |
-| eIPC / eAI attachment | `layers/ai/include/eos_ai.h`; tree/code-search presence of `layers/ai/src/eos_ai.c`; `docs/track1/accelerator-hal-profiles.md` (cross-links) |
+| eIPC / eAI attachment | `layers/ai/include/eos_ai.h`; `layers/ai/src/eos_ai.c` read in full (bridge functions are success-returning stubs, §8.4); `docs/track1/accelerator-hal-profiles.md` (cross-links) |
 | EoSim attachment | Tree listing: `.github/actions/install-eosim/`, `.github/workflows/eosim-sanity.yml`, `eos-simulation.yml`; `docs/safety/robot-control-contract.md` (companion reference) |
 | Docs conventions followed by this draft | `docs/architecture.md` (heading style, tables), `docs/getting-started.md`, `docs/api-reference.md`, `docs/integration-guide.md` (title/section/`---` style), `mkdocs.yml` (nav slot) |
 | MCP absence in eos | Full recursive tree listing — no `*mcp*` path, no `server.json` in eos |
