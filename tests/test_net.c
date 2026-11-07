@@ -174,6 +174,7 @@ static void test_mdns_init(void) {
 #include <pthread.h>
 #include <sys/socket.h>
 #include <time.h>
+#include <unistd.h>
 
 #define EOS_TEST_NET_DESTINATION_ENV "EOS_TEST_NET_DESTINATION"
 /* Distinct from CHECK()'s exit(1), so a rejected destination is never
@@ -225,6 +226,38 @@ static void configure_test_destination(void) {
         reject_test_destination(override,
                                 "is not in 127.0.0.0/8 or assigned to a local interface");
     g_test_destination_ip = parsed.s_addr;
+}
+
+typedef struct {
+    eos_socket_t sock;
+    long delay_ms;
+} delayed_sender_t;
+
+static void *send_after_delay(void *arg) {
+    delayed_sender_t *sender = (delayed_sender_t *)arg;
+    struct timespec ts = {0, sender->delay_ms * 1000000L};
+    nanosleep(&ts, NULL);
+    eos_net_send(sender->sock, "x", 1);
+    return NULL;
+}
+
+static void test_net_recv_clears_timeout(void) {
+    int sockets[2];
+    CHECK(socketpair(AF_UNIX, SOCK_STREAM, 0, sockets) == 0);
+
+    char byte = 0;
+    CHECK(eos_net_recv(sockets[0], &byte, 1, 20) == 0);
+
+    delayed_sender_t sender = {sockets[1], 150};
+    pthread_t thread;
+    CHECK(pthread_create(&thread, NULL, send_after_delay, &sender) == 0);
+    CHECK(eos_net_recv(sockets[0], &byte, 1, 0) == 1);
+    CHECK(byte == 'x');
+    CHECK(pthread_join(thread, NULL) == 0);
+
+    close(sockets[0]);
+    close(sockets[1]);
+    PASS("net recv clears previous timeout");
 }
 
 static void *echo_server(void *arg) {
@@ -591,6 +624,7 @@ int main(void) {
     test_mqtt_connect();
     test_mdns_init();
 #ifdef EOS_NET_POSIX
+    test_net_recv_clears_timeout();
     test_net_tcp_round_trip();
     test_net_resolve_localhost();
     test_net_connect_refused();
