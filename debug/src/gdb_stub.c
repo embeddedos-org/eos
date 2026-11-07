@@ -3,8 +3,15 @@
 // ISO/IEC 25000 | ISO/IEC/IEEE 15288:2023
 
 #include "eos/gdb_stub.h"
+#include "eos/eos_config.h"
 #include <string.h>
 #include <stdio.h>
+
+/* Compiled out unless EOS_ENABLE_GDB_STUB is 1 (eos_config.h defaults it
+ * to 0; no product profile sets it). A production build contains no stub
+ * code at all; the header stays declarative so a stale caller fails at
+ * link time, loudly. */
+#if EOS_ENABLE_GDB_STUB
 
 static uint8_t hex_val(char c) {
     if (c >= '0' && c <= '9') return (uint8_t)(c - '0');
@@ -323,16 +330,56 @@ void eos_gdb_clear_breakpoints(EosGdbStub *stub) {
     if (stub) stub->bp_count = 0;
 }
 
-/* Default memory access — portable (no weak attribute for MSVC) */
+/* Default memory access — portable (no weak attribute for MSVC).
+ *
+ * Range-checked: the address must lie entirely inside a range registered
+ * with eos_gdb_set_mem_ranges(); with no ranges registered nothing is
+ * accessible. The cast below is still a uint32_t truncation on a 64-bit
+ * host -- the stub is a firmware debug aid, not a host tool -- so the
+ * in-range accept path is exercised only on target; the refusing side is
+ * covered by tests/test_debug.c. */
 int eos_gdb_read_mem(uint32_t addr, uint8_t *buf, int len) {
+    if (!buf || !eos_gdb_mem_allowed(addr, len)) return -1;
     const uint8_t *p = (const uint8_t *)(uintptr_t)addr;
     memcpy(buf, p, (size_t)len);
     return 0;
 }
 
 int eos_gdb_write_mem(uint32_t addr, const uint8_t *buf, int len) {
+    if (!buf || !eos_gdb_mem_allowed(addr, len)) return -1;
     uint8_t *p = (uint8_t *)(uintptr_t)addr;
     memcpy(p, buf, (size_t)len);
+    return 0;
+}
+
+/* The ranges the stub may touch. Empty by default: nothing is accessible
+ * until the integrator registers ranges explicitly. Process-wide, shared
+ * by every EosGdbStub in the image (the memory hooks take no stub). */
+static EosGdbMemRange gdb_mem_ranges[EOS_GDB_MAX_MEM_RANGES];
+static int gdb_mem_range_count;
+
+int eos_gdb_set_mem_ranges(const EosGdbMemRange *ranges, int count) {
+    if (count < 0 || count > EOS_GDB_MAX_MEM_RANGES) return -1;
+    if (count > 0 && !ranges) return -1;
+    if (count > 0)
+        memcpy(gdb_mem_ranges, ranges, (size_t)count * sizeof(*ranges));
+    gdb_mem_range_count = count;
+    return 0;
+}
+
+int eos_gdb_mem_allowed(uint32_t addr, int len) {
+    if (len < 0) return 0;
+    for (int i = 0; i < gdb_mem_range_count; i++) {
+        uint32_t base = gdb_mem_ranges[i].base;
+        uint32_t size = gdb_mem_ranges[i].size;
+        /* Overflow-safe without a wider type: addr >= base, so addr - base
+         * cannot underflow; (uint32_t)len <= size, so size - len cannot
+         * underflow. An end address that wraps past 2^32 fails the second
+         * comparison and is refused. */
+        if (addr >= base && (uint32_t)len <= size &&
+            (addr - base) <= (size - (uint32_t)len))
+            return 1;
+    }
     return 0;
 }
 
@@ -356,3 +403,5 @@ void eos_gdb_breakpoint(void) {
 int eos_gdb_is_connected(EosGdbStub *stub) {
     return stub ? stub->connected : 0;
 }
+
+#endif /* EOS_ENABLE_GDB_STUB */
