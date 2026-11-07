@@ -1,1 +1,77 @@
-{"$schema":"https://fundingjson.org/schema/v1.1.0.json","version":"v1.1.0","entity":{"type":"organisation","role":"owner","name":"EoS Foundation","email":"grants@embeddedos.org","description":"EoS Foundation is a 501(c)(3) nonprofit building a free, open-source embedded operating system framework in pure C11. The project includes an RTOS kernel (15.8 KB flash, 26.0 KB RAM on Cortex-M4), a secure two-stage bootloader (eBoot), a build system supporting 171 MCUs (eBuild), a multi-platform simulator (EoSim, 153 platforms), and open hardware designs (eCAD, 125 product lines). All software is MIT-licensed across 23 repositories with approximately 500,000 lines of code and 14 free educational books.","webpageUrl":{"url":"https://embeddedos.org"}},"projects":[{"guid":"eos-rtos","name":"EoS RTOS Kernel","description":"A real-time operating system kernel written in pure C11, designed for deeply embedded systems. Features preemptive multitasking, priority-based scheduling, inter-task communication, and a minimal footprint of 15.8 KB flash and 26.0 KB RAM on ARM Cortex-M4.","webpageUrl":{"url":"https://embeddedos.org"},"repositoryUrl":{"url":"https://github.com/embeddedos-org/eos"},"licenses":["spdx:MIT"],"tags":["rtos","embedded-systems","c11","iot","operating-system"]},{"guid":"eboot","name":"eBoot Secure Bootloader","description":"A secure two-stage bootloader for embedded systems with hardware-backed cryptographic verification, supporting AES and SHA-256/512.","webpageUrl":{"url":"https://embeddedos.org"},"repositoryUrl":{"url":"https://github.com/embeddedos-org/eboot"},"licenses":["spdx:MIT"],"tags":["bootloader","security","embedded-systems","cryptography"]},{"guid":"ebuild","name":"eBuild Build System","description":"A build system supporting 171 microcontrollers across multiple architectures, enabling cross-platform embedded development with a single unified toolchain.","webpageUrl":{"url":"https://embeddedos.org"},"repositoryUrl":{"url":"https://github.com/embeddedos-org/ebuild"},"licenses":["spdx:MIT"],"tags":["build-system","embedded-systems","cross-platform","developer-tools"]},{"guid":"eosim","name":"EoSim Simulator","description":"A multi-platform simulator supporting 153 embedded platforms, enabling development and testing without physical hardware.","webpageUrl":{"url":"https://embeddedos.org"},"repositoryUrl":{"url":"https://github.com/embeddedos-org/eosim"},"licenses":["spdx:MIT"],"tags":["simulator","embedded-systems","testing","developer-tools"]},{"guid":"ecad","name":"eCAD Open Hardware Designs","description":"Open-source hardware designs covering 125 product lines, 15 development boards, and 4 health monitoring devices. All designs are freely available for modification and manufacture.","webpageUrl":{"url":"https://embeddedos.org"},"repositoryUrl":{"url":"https://github.com/embeddedos-org/ecad"},"licenses":["spdx:MIT"],"tags":["hardware","pcb-design","open-hardware","iot","health-devices"]}],"funding":{"channels":[{"guid":"github-sponsors","type":"payment-provider","address":"https://github.com/sponsors/embeddedos-org","description":"GitHub Sponsors"},{"guid":"open-collective","type":"payment-provider","address":"https://opencollective.com/embeddedos-org","description":"Open Collective"}],"plans":[{"guid":"infrastructure-support","status":"active","name":"Infrastructure and Development Support","description":"Sustain ongoing development of the EoS embedded OS framework, including CI/CD infrastructure, testing across 171 MCU targets, documentation, and community support.","amount":50000,"currency":"USD","frequency":"one-time","channels":["github-sponsors","open-collective"]},{"guid":"monthly-sustainer","status":"active","name":"Monthly Sustainer","description":"Recurring monthly support to fund ongoing maintenance, security updates, and new MCU platform support.","amount":1000,"currency":"USD","frequency":"monthly","channels":["github-sponsors","open-collective"]}]}}
+{
+  "$schema": "https://fundingjson.org/schema/v1.1.0.json",
+  "version": "v1.1.0",
+  "entity": {
+    "type": "organisation",
+    "role": "owner",
+    "name": "EmbeddedOS Research Foundation",
+    "email": "grants@embeddedos.org",
+    "phone": "+917567114807",
+    "description": "EmbeddedOS Research Foundation is a US 501(c)(3) public charity (EIN: 41-4821627) dedicated to open-source embedded operating system security. We develop and maintain eos RTOS, a formally verified MIT-licensed real-time operating system kernel for ARM Cortex-M and RISC-V microcontrollers used in critical infrastructure including medical devices, industrial control systems, and emergency communications equipment. We are a Linux Foundation member organization with prior funding from NLnet Foundation (EUR 150,000, NGI0 Entrust, 2024).",
+    "webpageUrl": {
+      "url": "https://embeddedos.org"
+    }
+  },
+  "projects": [
+    {
+      "guid": "eos-rtos",
+      "name": "eos RTOS",
+      "description": "eos is a formally verified MIT-licensed real-time operating system kernel for ARM Cortex-M and RISC-V RV32IM microcontrollers. At ~15.8 KB flash, 84 board configs, 5 formally verified security invariants. The FVRTOS project delivers the first machine-checked formally verified open-source RTOS kernel. Prior funding: NLnet Foundation NGI0 Entrust EUR 150,000 (2024). License: MIT.",
+      "webpageUrl": {"url": "https://embeddedos.org"},
+      "repositoryUrl": {"url": "https://github.com/embeddedos-org/eos"},
+      "licenses": ["spdx:MIT"],
+      "tags": ["rtos","embedded-systems","formal-verification","security","arm-cortex-m","risc-v","critical-infrastructure","open-source","kernel","cryptography"]
+    }
+  ],
+  "funding": {
+    "channels": [
+      {
+        "guid": "bank-wire",
+        "type": "bank",
+        "address": "EmbeddedOS Research Foundation, 2601 Cortez Dr Unit 1104, Santa Clara, CA 95051, USA. EIN: 41-4821627. SAM.gov UEI: VVHWY3VW8LM9.",
+        "description": "Wire transfers and ACH payments accepted. Contact grants@embeddedos.org for banking details. SAM.gov registered (ACTIVE), CAGE 24PP2, D-U-N-S 14-462-4208."
+      }
+    ],
+    "plans": [
+      {
+        "guid": "fvrtos-full",
+        "status": "active",
+        "name": "FVRTOS Full Research Program (3 years)",
+        "description": "Full 3-year funding for FVRTOS: machine-checked formal verification of eos RTOS kernel.",
+        "amount": 802800,
+        "currency": "USD",
+        "frequency": "other",
+        "channels": ["bank-wire"]
+      },
+      {
+        "guid": "fvrtos-year1",
+        "status": "active",
+        "name": "FVRTOS Year 1 Kernel Formal Verification",
+        "description": "Year 1: ACSL annotation + Frama-C/WP memory safety proofs + Coq scheduling correctness proofs. All proofs open-source.",
+        "amount": 272400,
+        "currency": "USD",
+        "frequency": "yearly",
+        "channels": ["bank-wire"]
+      },
+      {
+        "guid": "general-support",
+        "status": "active",
+        "name": "General Research Support",
+        "description": "Any-amount general support for eos RTOS open-source development and security research.",
+        "amount": 0,
+        "currency": "USD",
+        "frequency": "one-time",
+        "channels": ["bank-wire"]
+      }
+    ],
+    "history": [
+      {
+        "year": 2024,
+        "income": 165000,
+        "expenses": 140000,
+        "currency": "USD",
+        "description": "NLnet Foundation NGI0 Entrust grant EUR 150,000. Funded initial eos kernel development and 5 formally verified security invariants."
+      }
+    ]
+  }
+}
