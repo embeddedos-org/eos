@@ -129,6 +129,7 @@ resolver assertions are unchanged.
 - [`AGENTS.md`](AGENTS.md) — repo orientation map (targets, options, file map, gotchas)
 - [`DEPLOYMENT.md`](DEPLOYMENT.md) — deployment notes
 - [`docs/`](docs/) — full documentation set (`mkdocs.yml`); API docs via `Doxyfile`
+- [`docs/architecture.md`](docs/architecture.md) — canonical living architecture document: present state verified from code, planned state marked, updated by PR when architecture-level changes land
 
 ## License
 
