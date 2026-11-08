@@ -53,8 +53,12 @@ static void test_gdb_start_stop(void) {
  * These cases deliberately cover only packets the stub must *reject*.
  * eos_gdb_read_mem()/eos_gdb_write_mem() cast a uint32_t straight to a
  * pointer, so any packet the stub accepts would dereference a truncated
- * address on a 64-bit host. The accept path is therefore not exercised
- * here; see the note in the pull request.
+ * address on a 64-bit host. The accept path is therefore exercised here
+ * only from the refusing side: out-of-range memory access is answered E02
+ * without dereferencing (test_gdb_memory_access_out_of_range_is_refused),
+ * and the range table itself is unit-tested directly
+ * (test_gdb_mem_ranges). The in-range dereference still runs only on
+ * target; see the note in the pull request.
  */
 
 #define GDB_RX_CAP 4096
@@ -327,6 +331,77 @@ static void test_gdb_memory_transfer_one_past_the_cap_is_refused(void) {
     printf("[PASS] gdb memory transfer one past the cap is refused\n");
 }
 
+/* With no ranges registered -- the default -- every address is refused,
+ * and the hooks refuse without dereferencing, so this is safe on a 64-bit
+ * host. The stub's memory access is deny-by-default: an image that
+ * enables the stub but registers no ranges cannot be read or written. */
+static void test_gdb_mem_allowed_default_deny(void) {
+    assert(eos_gdb_set_mem_ranges(NULL, 0) == 0);
+    assert(!eos_gdb_mem_allowed(0x00000000u, 4));
+    assert(!eos_gdb_mem_allowed(0x20000000u, 4));
+    assert(!eos_gdb_mem_allowed(0xFFFFFFFFu, 4));
+    assert(!eos_gdb_mem_allowed(0x20000000u, 0));
+    uint8_t buf[4] = {0};
+    assert(eos_gdb_read_mem(0x20000000u, buf, 4) != 0);
+    assert(eos_gdb_write_mem(0x20000000u, buf, 4) != 0);
+    assert(eos_gdb_read_mem(0x20000000u, NULL, 4) != 0);
+    assert(eos_gdb_write_mem(0x20000000u, NULL, 4) != 0);
+    printf("[PASS] gdb memory access is denied with no ranges registered\n");
+}
+
+static void test_gdb_mem_ranges(void) {
+    EosGdbMemRange ranges[2] = {
+        { 0x20000000u, 0x1000u },   /* SRAM */
+        { 0x08000000u, 0x8000u },   /* flash */
+    };
+    assert(eos_gdb_set_mem_ranges(ranges, 2) == 0);
+    assert(eos_gdb_mem_allowed(0x20000000u, 4));        /* start of range */
+    assert(eos_gdb_mem_allowed(0x20000FFCu, 4));        /* last word */
+    assert(!eos_gdb_mem_allowed(0x20001000u, 4));       /* one past the end */
+    assert(!eos_gdb_mem_allowed(0x20000FFDu, 4));       /* straddles the end */
+    assert(!eos_gdb_mem_allowed(0x1FFFFFFFu, 4));       /* just below the range */
+    assert(eos_gdb_mem_allowed(0x08000000u, 0x8000));   /* whole flash range */
+    assert(!eos_gdb_mem_allowed(0x08000000u, 0x8001));  /* one byte over */
+    assert(!eos_gdb_mem_allowed(0x20000000u, -1));      /* negative length */
+    assert(!eos_gdb_mem_allowed(0x10000000u, 4));       /* between the ranges */
+    /* A range whose end wraps past 2^32 must not admit the wrapped bytes. */
+    EosGdbMemRange wrap = { 0xFFFFFF00u, 0x100u };
+    assert(eos_gdb_set_mem_ranges(&wrap, 1) == 0);
+    assert(eos_gdb_mem_allowed(0xFFFFFF00u, 0x100));    /* exactly the range */
+    assert(!eos_gdb_mem_allowed(0xFFFFFFF0u, 0x20));    /* end wraps to 0x10 */
+    assert(!eos_gdb_mem_allowed(0x00000000u, 4));       /* the wrapped address */
+    /* Bad registrations are refused and leave the table alone. */
+    assert(eos_gdb_set_mem_ranges(NULL, 1) == -1);
+    assert(eos_gdb_set_mem_ranges(ranges, EOS_GDB_MAX_MEM_RANGES + 1) == -1);
+    assert(eos_gdb_set_mem_ranges(ranges, -1) == -1);
+    assert(eos_gdb_mem_allowed(0xFFFFFF00u, 0x100));    /* still the wrap range */
+    /* Clearing restores default-deny. */
+    assert(eos_gdb_set_mem_ranges(NULL, 0) == 0);
+    assert(!eos_gdb_mem_allowed(0x20000000u, 4));
+    printf("[PASS] gdb memory ranges\n");
+}
+
+/* With no ranges registered, an m/M packet that passes the length and
+ * payload checks reaches eos_gdb_read_mem()/eos_gdb_write_mem() and is
+ * refused with E02 -- without dereferencing the address, so this runs
+ * safely on a 64-bit host. This is the accept path's refusing side: the
+ * packet is well-formed, the length fits, and still nothing is read or
+ * written. */
+static void test_gdb_memory_access_out_of_range_is_refused(void) {
+    assert(eos_gdb_set_mem_ranges(NULL, 0) == 0);
+    gdb_reset();
+    gdb_push("m20000000,4");
+    gdb_push("D");
+    gdb_run();
+    assert(tx_has("E02"));
+    gdb_reset();
+    gdb_push("M20000000,4:deadbeef");
+    gdb_push("D");
+    gdb_run();
+    assert(tx_has("E02"));
+    printf("[PASS] gdb refuses out-of-range memory access\n");
+}
+
 static void test_coredump_init(void) {
     assert(eos_coredump_init(EOS_DUMP_TARGET_RAM) == 0);
     assert(!eos_coredump_exists());
@@ -388,6 +463,9 @@ int main(void) {
     test_gdb_corrupt_checksum_is_nacked_and_the_session_continues();
     test_gdb_body_that_never_ends_is_abandoned();
     test_gdb_memory_transfer_one_past_the_cap_is_refused();
+    test_gdb_mem_allowed_default_deny();
+    test_gdb_mem_ranges();
+    test_gdb_memory_access_out_of_range_is_refused();
     test_coredump_init();
     test_coredump_capture();
     test_coredump_clear();

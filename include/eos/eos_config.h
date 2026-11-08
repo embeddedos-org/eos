@@ -208,4 +208,15 @@
 #define EOS_ENABLE_PCIE_DRV     0
 #endif
 
+/* ---- Debug ---- */
+/* The GDB stub is compiled out unless this is 1. It has NO authentication:
+ * any peer that reaches the transport can read and write any registered
+ * memory range, set breakpoints, and resume execution. Enable it only on
+ * development images over a trusted link (point-to-point UART or loopback),
+ * never in a shipped/production image, and never on a network-reachable
+ * TCP port. No product profile sets this flag. */
+#ifndef EOS_ENABLE_GDB_STUB
+#define EOS_ENABLE_GDB_STUB     0
+#endif
+
 #endif /* EOS_CONFIG_H */

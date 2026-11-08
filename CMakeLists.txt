@@ -58,6 +58,19 @@ if(EOS_BUILD_TESTS AND NOT EOS_PRODUCT)
     message(STATUS "  Test features: multicore net power ota sensor filesystem motor_ctrl")
 endif()
 
+# The GDB stub is compiled out by default (EOS_ENABLE_GDB_STUB defaults to 0
+# in eos_config.h) and has no authentication, so no product build ever turns
+# it on. The test suite exercises it (test_debug links eos_debug), so test
+# builds enable it for the library translation unit itself -- a definition
+# on the test target alone would not reach gdb_stub.c. This is deliberately
+# NOT part of the block above: that block is skipped when a product is
+# selected, and the vbox_test CI job builds with EOS_BUILD_TESTS=ON *and* a
+# product, so test_debug would fail to link there. No product profile sets
+# the flag, so enabling it for test builds overrides nothing.
+if(EOS_BUILD_TESTS)
+    add_compile_definitions(EOS_ENABLE_GDB_STUB=1)
+endif()
+
 # Global include for eos_config.h and product profiles
 include_directories(
     ${EoS_SOURCE_DIR}/include
