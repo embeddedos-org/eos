@@ -340,7 +340,7 @@ part of the present architecture until a PR removes them:
 - **G-2 Duplicate GPS API.** `drivers/include/eos/gps_nmea.h`
   (15 lines, `eos_gps_parse_gga`, `int fix_valid`,
   `sat_count`) vs `services/gps/include/eos/gps_nmea.h`
-  (47 lines, `eos_gps_parse_gprmc`, `bool fix_valid`,
+  (48 lines, `eos_gps_parse_gprmc`, `bool fix_valid`,
   `satellites`, `speed_knots`) — same type name
   `eos_gps_data_t`, different layouts; implementations exist
   in both `drivers/src/gps_nmea.c` and
