@@ -265,6 +265,18 @@ EosResult eos_config_load(EosConfig *cfg, const char *path) {
             section = SEC_TOOLCHAIN;
         }
 
+        /* And for a package entry. Package keys sit at indent 2 (under
+         * "  - name:"); build/options children at 3. SEC_PKG_BUILD popped
+         * back for three named siblings and SEC_PKG_OPTIONS / SEC_PKG_DEPS
+         * for none, so `source:`/`hash:` after `build:` were dropped, any key
+         * after a `deps:` list was dropped, and a `deps:` after `options:`
+         * was interned as an option named "deps". */
+        if (indent <= 2 &&
+            (section == SEC_PKG_BUILD || section == SEC_PKG_OPTIONS ||
+             section == SEC_PKG_DEPS)) {
+            section = SEC_PKG_ENTRY;
+        }
+
         /* sub-sections */
         switch (section) {
         case SEC_PROJECT:
@@ -354,17 +366,12 @@ EosResult eos_config_load(EosConfig *cfg, const char *path) {
             if (strcmp(key, "hash") == 0)    strncpy(cfg->packages[pkg_idx].hash, val, EOS_HASH_LEN - 1);
             if (strcmp(key, "build") == 0)   { section = SEC_PKG_BUILD; continue; }
             if (strcmp(key, "deps") == 0)    { section = SEC_PKG_DEPS; continue; }
+            if (strcmp(key, "options") == 0) { section = SEC_PKG_OPTIONS; continue; }
             break;
         case SEC_PKG_BUILD:
             if (pkg_idx < 0 || pkg_idx >= EOS_MAX_PACKAGES) break;
             if (strcmp(key, "type") == 0) {
                 cfg->packages[pkg_idx].build_type = eos_build_type_from_str(val);
-            }
-            if (indent <= 2 && strcmp(key, "options") == 0) { section = SEC_PKG_OPTIONS; continue; }
-            if (indent <= 2 && strcmp(key, "deps") == 0) { section = SEC_PKG_DEPS; continue; }
-            if (indent <= 2 && strcmp(key, "version") == 0) {
-                section = SEC_PKG_ENTRY;
-                strncpy(cfg->packages[pkg_idx].version, val, EOS_MAX_NAME - 1);
             }
             break;
         case SEC_PKG_OPTIONS:
