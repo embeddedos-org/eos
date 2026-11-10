@@ -7,6 +7,13 @@
 #include <stddef.h>
 #include <stdbool.h>
 
+/* EOS_VERSION from project(EoS VERSION ...), via the generated eos/version.h:
+   add -I <eos build dir>/generated when compiling this file. */
+#include "eos/version.h"
+#ifndef EOS_VERSION
+#error "EOS_VERSION is not defined: add -I <eos build dir>/generated"
+#endif
+
 // ── BCM2711 PL011 UART0 ──────────────────────────────────────────────────────
 // On QEMU raspi3b the PL011 UART is at 0x3F201000 (raspi3 address)
 // On real RPi4 BCM2711 it is at 0xFE201000
@@ -223,7 +230,7 @@ void eos_kernel_entry_rpi4(void)
 
     uart_puts("\n");
     uart_puts("╔══════════════════════════════════════════════════════╗\n");
-    uart_puts("║   EoS v0.6.0 — Embedded OS Framework                ║\n");
+    uart_puts("║   EoS v" EOS_VERSION " — Embedded OS Framework                ║\n");
     uart_puts("║   Board: Raspberry Pi 4 (BCM2711, Cortex-A72)        ║\n");
     uart_puts("║   Boot:  eBoot v3.0.2 → EoS kernel handoff OK        ║\n");
     uart_puts("║   Tests: TC-01 through TC-13 (13 integration tests)  ║\n");
@@ -404,7 +411,7 @@ void eos_kernel_entry_rpi4(void)
     bool tc09 = (alloc_ok == 512 && canary_ok);
     uart_puts("\n");
     uart_puts("╔══════════════════════════════════════════════════════╗\n");
-    uart_puts("║   EoS RPi4 Simulation Results  v0.6.0               ║\n");
+    uart_puts("║   EoS RPi4 Simulation Results  v" EOS_VERSION "               ║\n");
     uart_puts("╠══════════════════════════════════════════════════════╣\n");
     uart_puts("║  TC-01  Process launch (11 processes)    PASS        ║\n");
     uart_puts("║  TC-02  VideoCore GPU framebuffer        PASS        ║\n");
