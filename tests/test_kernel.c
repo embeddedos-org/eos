@@ -569,6 +569,137 @@ static void test_wait_forever_survives_a_stolen_wakeup(void) {
     printf("[PASS] wait forever survives a stolen wakeup\n");
 }
 
+/* ---- A one-shot timer may restart itself from its own callback ---- */
+
+static int rs_fired;
+static void restart_once_cb(eos_swtimer_handle_t h, void *ctx) {
+    (void)ctx;
+    if (++rs_fired == 1)
+        assert(eos_swtimer_start(h) == EOS_KERN_OK);
+}
+
+static void test_swtimer_one_shot_restart_from_callback(void) {
+    eos_kernel_init();
+    eos_swtimer_handle_t t;
+    rs_fired = 0;
+    assert(eos_swtimer_create(&t, "rs", 5, false, restart_once_cb, NULL) == EOS_KERN_OK);
+    g_tick = 100;
+    assert(eos_swtimer_start(t) == EOS_KERN_OK);      /* due at 105 */
+
+    g_tick = 105;
+    eos_swtimer_tick(105);                            /* fires, restarts: due at 110 */
+    assert(rs_fired == 1);
+
+    g_tick = 110;
+    eos_swtimer_tick(110);                            /* the restart must stand */
+    assert(rs_fired == 2);
+
+    eos_swtimer_tick(200);                            /* one-shot, not restarted again */
+    assert(rs_fired == 2);
+    assert(eos_swtimer_delete(t) == EOS_KERN_OK);
+    printf("[PASS] one-shot timer restarted from its callback\n");
+}
+
+/* ---- Deleting a blocked task removes it from the wait list ----
+ * On target a deleted task never runs again. On the host the yield hook
+ * returns into the deleted task's wait call, which then times out; the
+ * tests ignore that return and check what the live tasks see. */
+
+static int dw_low, dw_high, dw_other;
+static eos_mutex_handle_t dw_m;
+static eos_sem_handle_t dw_sem;
+static eos_queue_handle_t dw_q;
+
+static void dw_mutex_hook(void) {
+    q7_yield_hook = NULL;
+    eos_task_set_current_internal((eos_task_handle_t)dw_low);
+    assert(eos_task_get_priority_internal((eos_task_handle_t)dw_low) == 1);
+    assert(eos_task_delete((eos_task_handle_t)dw_high) == EOS_KERN_OK);
+    /* The boost the dead waiter caused is gone... */
+    assert(eos_task_get_priority_internal((eos_task_handle_t)dw_low) == 10);
+    /* ...and the unlock frees the mutex instead of granting it to it. */
+    assert(eos_mutex_unlock(dw_m) == EOS_KERN_OK);
+    eos_task_set_current_internal((eos_task_handle_t)dw_other);
+    assert(eos_mutex_lock(dw_m, EOS_NO_WAIT) == EOS_KERN_OK);
+    assert(eos_mutex_unlock(dw_m) == EOS_KERN_OK);
+}
+
+static void dw_sem_post_hook(void) {
+    q7_yield_hook = NULL;
+    eos_task_set_current_internal((eos_task_handle_t)dw_low);
+    assert(eos_sem_post(dw_sem) == EOS_KERN_OK);
+    /* The deleted task had the better priority; the live one must wake. */
+    assert(eos_task_get_state((eos_task_handle_t)dw_other) == EOS_TASK_READY);
+}
+
+static void dw_sem_hook(void) {
+    eos_task_set_current_internal((eos_task_handle_t)dw_low);
+    assert(eos_task_delete((eos_task_handle_t)dw_high) == EOS_KERN_OK);
+    q7_yield_hook = dw_sem_post_hook;
+    eos_task_set_current_internal((eos_task_handle_t)dw_other);
+    assert(eos_sem_wait(dw_sem, EOS_WAIT_FOREVER) == EOS_KERN_OK);
+}
+
+static void dw_queue_send_hook(void) {
+    q7_yield_hook = NULL;
+    eos_task_set_current_internal((eos_task_handle_t)dw_low);
+    int item = 7;
+    assert(eos_queue_send(dw_q, &item, EOS_NO_WAIT) == EOS_KERN_OK);
+    assert(eos_task_get_state((eos_task_handle_t)dw_other) == EOS_TASK_READY);
+}
+
+static void dw_queue_hook(void) {
+    eos_task_set_current_internal((eos_task_handle_t)dw_low);
+    assert(eos_task_delete((eos_task_handle_t)dw_high) == EOS_KERN_OK);
+    q7_yield_hook = dw_queue_send_hook;
+    eos_task_set_current_internal((eos_task_handle_t)dw_other);
+    int got = 0;
+    assert(eos_queue_receive(dw_q, &got, EOS_WAIT_FOREVER) == EOS_KERN_OK);
+    assert(got == 7);
+}
+
+static void dw_setup(void) {
+    eos_kernel_init();
+    dw_low = eos_task_create("dw_low", test_entry, NULL, 10, 512);
+    dw_high = eos_task_create("dw_high", test_entry, NULL, 1, 512);
+    dw_other = eos_task_create("dw_other", test_entry, NULL, 5, 512);
+    assert(dw_low > 0 && dw_high > 0 && dw_other > 0);
+}
+
+static void test_delete_blocked_task_leaves_wait_lists(void) {
+    /* Mutex: high waits on a mutex low owns, then is deleted. */
+    dw_setup();
+    assert(eos_mutex_create(&dw_m) == EOS_KERN_OK);
+    eos_task_set_current_internal((eos_task_handle_t)dw_low);
+    assert(eos_mutex_lock(dw_m, EOS_NO_WAIT) == EOS_KERN_OK);
+    q7_yield_hook = dw_mutex_hook;
+    eos_task_set_current_internal((eos_task_handle_t)dw_high);
+    (void)eos_mutex_lock(dw_m, EOS_WAIT_FOREVER);
+    q7_yield_hook = NULL;
+    assert(eos_mutex_delete(dw_m) == EOS_KERN_OK);
+
+    /* Semaphore: high waits, is deleted, other waits behind it. */
+    dw_setup();
+    assert(eos_sem_create(&dw_sem, 0, 1) == EOS_KERN_OK);
+    q7_yield_hook = dw_sem_hook;
+    eos_task_set_current_internal((eos_task_handle_t)dw_high);
+    (void)eos_sem_wait(dw_sem, EOS_WAIT_FOREVER);
+    q7_yield_hook = NULL;
+    assert(eos_sem_delete(dw_sem) == EOS_KERN_OK);
+
+    /* Queue: the same with a receiver on an empty queue. */
+    dw_setup();
+    assert(eos_queue_create(&dw_q, sizeof(int), 1) == EOS_KERN_OK);
+    q7_yield_hook = dw_queue_hook;
+    eos_task_set_current_internal((eos_task_handle_t)dw_high);
+    int unused;
+    (void)eos_queue_receive(dw_q, &unused, EOS_WAIT_FOREVER);
+    q7_yield_hook = NULL;
+    assert(eos_queue_delete(dw_q) == EOS_KERN_OK);
+
+    printf("[PASS] deleting a blocked task leaves the wait lists\n");
+}
+
 /* Mock port functions for host-based simulation/testing */
 uint32_t eos_port_enter_critical(void) {
     uint32_t previous = g_critical_depth;
@@ -651,6 +782,8 @@ int main(void) {
     RUN(test_task_stats);
     RUN(test_tick_overflow);
     RUN(test_wake_tick_zero);
+    RUN(test_swtimer_one_shot_restart_from_callback);
+    RUN(test_delete_blocked_task_leaves_wait_lists);
     /* Counted rather than written out: the literal said 12/12 while a
      * thirteenth test sat in this file uncalled, so the number agreed
      * with the omission instead of exposing it. */

@@ -228,6 +228,15 @@ int eos_queue_peek(eos_queue_handle_t h, void *item)
     return EOS_KERN_OK;
 }
 
+void eos_ipc_forget_task(eos_task_handle_t h)
+{
+    for (int i = 0; i < EOS_MAX_QUEUES; i++) {
+        if (!g_q[i].in_use) continue;
+        q_remove_waiter(g_q[i].send_waiters, &g_q[i].send_waiter_count, h);
+        q_remove_waiter(g_q[i].recv_waiters, &g_q[i].recv_waiter_count, h);
+    }
+}
+
 int eos_queue_delete(eos_queue_handle_t h)
 {
     if (h >= EOS_MAX_QUEUES || !g_q[h].in_use) return EOS_KERN_INVALID;
