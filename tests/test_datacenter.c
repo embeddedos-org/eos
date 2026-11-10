@@ -33,6 +33,10 @@ static void test_raid_rebuild_rejects_bad_ids(void)
 {
     printf("test_raid_rebuild_rejects_bad_ids:\n");
     EosRaidArray *arr = malloc(sizeof(*arr));
+    if (!arr) {
+        printf("  FAIL: out of memory\n");
+        exit(1);
+    }
     eos_raid_init(arr, EOS_RAID_1, 2);
     ASSERT(eos_raid_add_disk(arr, 1000, "d0") == 0, "disk 0 added");
     ASSERT(eos_raid_add_disk(arr, 1000, "d1") == 1, "disk 1 added");

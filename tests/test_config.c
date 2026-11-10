@@ -387,6 +387,41 @@ static void test_package_keys_after_sub_blocks(void) {
 
     eos_config_dispose(&cfg);
     remove("test_pkg_key_order.yaml");
+
+    /* Compact layout: "- name:" at column 0, so package keys sit at indent
+     * 1 and build/options children at 2. A fixed "package keys are at 2"
+     * rule would read type:/FOO: as package keys and lose them. */
+    eos_config_init(&cfg);
+    fp = fopen("test_pkg_key_order_compact.yaml", "w");
+    if (!fp) {
+        printf("  SKIP: cannot create compact layout test file\n");
+        return;
+    }
+    fprintf(fp, "packages:\n");
+    fprintf(fp, "- name: tool\n");
+    fprintf(fp, "  build:\n");
+    fprintf(fp, "    type: make\n");
+    fprintf(fp, "  options:\n");
+    fprintf(fp, "    FOO: 1\n");
+    fprintf(fp, "  deps:\n");
+    fprintf(fp, "    - lib\n");
+    fprintf(fp, "  hash: beef\n");
+    fclose(fp);
+
+    res = eos_config_load(&cfg, "test_pkg_key_order_compact.yaml");
+    ASSERT(res == EOS_OK, "compact layout config loads");
+    ASSERT(cfg.package_count == 1, "compact: one package is parsed");
+    ASSERT(cfg.packages[0].build_type == EOS_BUILD_MAKE,
+           "compact: build type is parsed");
+    ASSERT(cfg.packages[0].option_count == 1 &&
+           eos_package_option_get(&cfg.packages[0], "FOO") != NULL,
+           "compact: option is parsed, deps is not an option");
+    ASSERT(cfg.packages[0].dep_count == 1, "compact: deps after options parsed");
+    ASSERT(strcmp(cfg.packages[0].hash, "beef") == 0,
+           "compact: hash after deps parsed");
+
+    eos_config_dispose(&cfg);
+    remove("test_pkg_key_order_compact.yaml");
 }
 
 /* #148 Step 0a: the options accessors over a loaded config — a

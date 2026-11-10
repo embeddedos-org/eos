@@ -142,6 +142,7 @@ EosResult eos_config_load(EosConfig *cfg, const char *path) {
     Section section = SEC_NONE;
     int pkg_idx = -1;
     int rtos_idx = -1;
+    int pkg_key_indent = 2; /* indent of the current package's own keys */
     int dropped_options = 0; /* #148 Step 0c: options dropped at the cap */
 
     while (fgets(line, sizeof(line), fp)) {
@@ -174,6 +175,7 @@ EosResult eos_config_load(EosConfig *cfg, const char *path) {
                 if (parse_kv(item, key, sizeof(key), val, sizeof(val)) == 0 &&
                     strcmp(key, "name") == 0) {
                     pkg_idx = cfg->package_count;
+                    pkg_key_indent = indent + 1;
                     if (pkg_idx < EOS_MAX_PACKAGES) {
                         strncpy(cfg->packages[pkg_idx].name, val, EOS_MAX_NAME - 1);
                         cfg->package_count++;
@@ -265,13 +267,16 @@ EosResult eos_config_load(EosConfig *cfg, const char *path) {
             section = SEC_TOOLCHAIN;
         }
 
-        /* And for a package entry. Package keys sit at indent 2 (under
-         * "  - name:"); build/options children at 3. SEC_PKG_BUILD popped
-         * back for three named siblings and SEC_PKG_OPTIONS / SEC_PKG_DEPS
-         * for none, so `source:`/`hash:` after `build:` were dropped, any key
-         * after a `deps:` list was dropped, and a `deps:` after `options:`
-         * was interned as an option named "deps". */
-        if (indent <= 2 &&
+        /* And for a package entry. Package keys sit one level below their
+         * "- name:" line (indent 2 under "  - name:", 1 under a compact
+         * "- name:"); build/options children one level deeper. SEC_PKG_BUILD
+         * popped back for three named siblings and SEC_PKG_OPTIONS /
+         * SEC_PKG_DEPS for none, so `source:`/`hash:` after `build:` were
+         * dropped, any key after a `deps:` list was dropped, and a `deps:`
+         * after `options:` was interned as an option named "deps". The level
+         * is taken from the entry rather than fixed at 2, so the compact
+         * layout's build/options children are not mistaken for package keys. */
+        if (indent <= pkg_key_indent &&
             (section == SEC_PKG_BUILD || section == SEC_PKG_OPTIONS ||
              section == SEC_PKG_DEPS)) {
             section = SEC_PKG_ENTRY;

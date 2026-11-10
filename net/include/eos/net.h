@@ -51,6 +51,9 @@ int  eos_net_bind(eos_socket_t sock, uint16_t port);
 int  eos_net_listen(eos_socket_t sock, int backlog);
 eos_socket_t eos_net_accept(eos_socket_t sock, eos_net_addr_t *client_addr);
 int  eos_net_send(eos_socket_t sock, const void *data, size_t len);
+/* eos_net_recv / eos_net_recvfrom: wait up to timeout_ms for data; a
+ * timeout_ms of 0 polls and returns at once. Returns the byte count, 0 on
+ * timeout (or an orderly close by the peer), or -1 on error. */
 int  eos_net_recv(eos_socket_t sock, void *buf, size_t len, uint32_t timeout_ms);
 int  eos_net_sendto(eos_socket_t sock, const void *data, size_t len,
                      const eos_net_addr_t *dest);
