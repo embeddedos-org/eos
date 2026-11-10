@@ -507,3 +507,27 @@ target_link_libraries(example_secure_ota PRIVATE
 # Opt-in (-DEOS_ENABLE_FUZZING=ON, Clang only); the subdirectory guards itself.
 add_subdirectory(fuzz)
 
+# --- eos_cli_version: the CLI banner prints the version from project() ---
+# The banner used to print a literal "0.2.0" from cmd/eos/main.c while the
+# project was at 0.5.0. Registered here because enable_testing() runs after
+# add_subdirectory(cmd/eos); the target only exists on non-cross builds.
+if(TARGET eos)
+    string(REPLACE "." "\\." _eos_version_re "${EoS_VERSION}")
+    add_test(NAME eos_cli_version COMMAND eos help)
+    set_tests_properties(eos_cli_version PROPERTIES
+        PASS_REGULAR_EXPRESSION "EoS v${_eos_version_re} "
+    )
+endif()
+
+# --- eos_sim_banner_version: the sim/ boot banners use the same version ---
+# They used to hard-code "EoS v0.6.0". Preprocess-only (-E), so no cross
+# toolchain is needed; MSVC's cl spells -E differently, so it is skipped there.
+if(NOT MSVC)
+    add_test(NAME eos_sim_banner_version
+        COMMAND ${CMAKE_COMMAND}
+            -DCC=${CMAKE_C_COMPILER}
+            -DINC=${EOS_GENERATED_INCLUDE_DIR}
+            -DVERSION=${EoS_VERSION}
+            "-DSOURCES=${EoS_SOURCE_DIR}/sim/qemu_arm64/eos_entry.c;${EoS_SOURCE_DIR}/sim/rpi4/eos_entry_rpi4.c;${EoS_SOURCE_DIR}/sim/stm32mp1/eos_entry_stm32mp1.c;${EoS_SOURCE_DIR}/sim/stm32mp1/eos_entry_stm32mp1_qemu.c"
+            -P ${CMAKE_CURRENT_SOURCE_DIR}/check_sim_banner_version.cmake)
+endif()

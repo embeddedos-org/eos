@@ -7,6 +7,13 @@
 #include <stddef.h>
 #include <stdbool.h>
 
+/* EOS_VERSION from project(EoS VERSION ...), via the generated eos/version.h:
+   add -I <eos build dir>/generated when compiling this file. */
+#include "eos/version.h"
+#ifndef EOS_VERSION
+#error "EOS_VERSION is not defined: add -I <eos build dir>/generated"
+#endif
+
 // ── STM32MP1 UART4 (PL011 compatible in QEMU virt-a15) ───────────────────────
 // QEMU virt-a15 puts PL011 at 0x09000000
 #define UART_BASE   0x09000000UL
@@ -225,7 +232,7 @@ void eos_kernel_entry_stm32mp1_a7(void)
 
     uart_puts("\n");
     uart_puts("╔══════════════════════════════════════════════════════╗\n");
-    uart_puts("║   EoS v0.6.0 — Embedded OS Framework                ║\n");
+    uart_puts("║   EoS v" EOS_VERSION " — Embedded OS Framework                ║\n");
     uart_puts("║   Board: STM32MP157 (Cortex-A7 + Cortex-M4)         ║\n");
     uart_puts("║   Boot:  eBoot v3.0.2 → EoS kernel handoff OK        ║\n");
     uart_puts("║   Tests: TC-01 through TC-13 (13 integration tests)  ║\n");
@@ -415,7 +422,7 @@ void eos_kernel_entry_stm32mp1_a7(void)
     bool tc09 = (alloc_ok == 256 && canary_ok);
     uart_puts("\n");
     uart_puts("╔══════════════════════════════════════════════════════╗\n");
-    uart_puts("║   EoS STM32MP1 Simulation Results  v0.6.0           ║\n");
+    uart_puts("║   EoS STM32MP1 Simulation Results  v" EOS_VERSION "           ║\n");
     uart_puts("╠══════════════════════════════════════════════════════╣\n");
     uart_puts("║  TC-01  Process launch (11 A7 + 4 M4 tasks) PASS    ║\n");
     uart_puts("║  TC-02  LTDC framebuffer 800x480            PASS    ║\n");
