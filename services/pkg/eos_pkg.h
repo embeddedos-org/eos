@@ -32,6 +32,26 @@
 #define EAPP_CAP_BLUETOOTH  (1 << 5)
 #define EAPP_CAP_GPIO       (1 << 6)
 #define EAPP_CAP_USB        (1 << 7)
+/* Every capability bit this loader knows about. A package that sets a bit
+ * outside this mask declares a capability no released loader understands,
+ * and eos_pkg_run() refuses it: an unknown capability must never run
+ * unenforced by accident (foundation PR-EOS-3, S-03). */
+#define EAPP_CAP_KNOWN_MASK 0xFFu
+
+/* Largest combined binary + resources payload the loader will allocate
+ * before the signature is verified (foundation PR-EOS-3, S-04). The
+ * binary and the resources blob are both read into memory before the
+ * envelope signature is checked, so a header declaring a multi-GB
+ * binary_size could force that allocation on an unauthenticated claim.
+ * verify() and install() refuse a package whose declared payload is
+ * larger than this before allocating anything. 64 MiB is generous for
+ * the MCU-class packages this loader serves; a platform that genuinely
+ * ships larger packages raises it with -DEOS_PKG_MAX_PAYLOAD_BYTES=...
+ * The bound is on the combined size: both blobs are live at once while
+ * the signature is checked. */
+#ifndef EOS_PKG_MAX_PAYLOAD_BYTES
+#define EOS_PKG_MAX_PAYLOAD_BYTES (64u * 1024u * 1024u)
+#endif
 
 /* Package state */
 typedef enum {
@@ -214,6 +234,43 @@ void eos_pkg_envelope_digest(const eapp_header_t *hdr,
                              const uint8_t *binary_data, uint32_t binary_size,
                              const uint8_t *res_data, uint32_t res_size,
                              uint8_t digest[EAPP_HASH_LEN]);
+
+/**
+ * @brief Whether a declared binary + resources payload fits the
+ *        pre-authentication allocation bound.
+ *
+ * The loader reads both blobs into memory before the envelope signature
+ * is checked, so the check must run on the header's declared sizes --
+ * before any allocation, and before the signature. The bound is on the
+ * combined size (see EOS_PKG_MAX_PAYLOAD_BYTES): both blobs are live at
+ * once while the signature is checked. The sum is computed in 64 bits,
+ * so two near-4 GiB declarations cannot wrap past the bound.
+ *
+ * @return 0 when the combined size is within the bound, -1 otherwise.
+ */
+int eos_pkg_check_payload_sizes(uint32_t binary_size, uint32_t resources_size);
+
+/**
+ * @brief Launch an installed package binary, within its signed capabilities.
+ *
+ * The #162 v2 envelope signs the capabilities, so the bits in the package
+ * record are the ones its publisher asked for -- but signing is not
+ * enforcement: this loader runs the binary with the caller's full
+ * privileges and has no confinement mechanism (no seccomp, landlock,
+ * namespace, uid separation, or chroot in this translation unit), so
+ * today it can enforce no capability at all. eos_pkg_run() therefore
+ * refuses -- fail-closed -- any package whose capabilities are not within
+ * the enforceable set (currently empty), including unknown capability
+ * bits: a package that needs a device capability cannot run until the
+ * loader can confine it to that capability. A package that declares no
+ * capabilities runs: it asks for nothing the loader would have to
+ * enforce. The refusal leaves the package installed, not in error: the
+ * package is fine, this loader cannot run it yet.
+ *
+ * @return 0 when the package launched, -1 when it was not found, is
+ *         disabled or already running, has no binary, or declares
+ *         capabilities the loader cannot enforce.
+ */
 int  eos_pkg_run(const eapp_db_t *db, const char *package_id, int argc, char **argv);
 int  eos_pkg_stop(const eapp_db_t *db, const char *package_id);
 int  eos_pkg_enable(eapp_db_t *db, const char *package_id);
