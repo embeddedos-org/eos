@@ -387,6 +387,13 @@ if(NOT CMAKE_CROSSCOMPILING)
     add_executable(test_pkg_install_paths test_pkg_install_paths.c)
     target_link_libraries(test_pkg_install_paths PRIVATE eos_eapp eos_crypto)
     add_test(NAME test_pkg_install_paths COMMAND test_pkg_install_paths)
+
+    # --- test_pkg_envelope_caps: eos_pkg_run enforces the #162 capabilities ---
+    # A signed capability the loader cannot enforce must refuse the run, and
+    # the pre-authentication allocation from hdr.binary_size is capped.
+    add_executable(test_pkg_envelope_caps test_pkg_envelope_caps.c)
+    target_link_libraries(test_pkg_envelope_caps PRIVATE eos_eapp eos_crypto)
+    add_test(NAME test_pkg_envelope_caps COMMAND test_pkg_envelope_caps)
 endif()
 
 # --- test_package: Package management ---
