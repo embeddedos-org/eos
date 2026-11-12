@@ -134,12 +134,22 @@ int eos_sensor_get_calibration(uint8_t id, eos_sensor_calib_t *c) {
 
 int eos_sensor_auto_calibrate(uint8_t id) {
     if (!g_init || id >= EOS_SENSOR_MAX || !g_s[id].in_use) return -1;
+    /* Average the raw readings: eos_sensor_read() applies the stored offset
+     * and scale, and the new offset replaces the old one rather than adding
+     * to it. The scale is kept. */
+    const eos_sensor_calib_t saved = g_s[id].calib;
+    g_s[id].calib.offset = 0.0f;
+    g_s[id].calib.scale = 1.0f;
     float sum = 0;
     for (int i = 0; i < 16; i++) {
         eos_sensor_reading_t r;
-        if (eos_sensor_read(id, &r) != 0) return -1;
+        if (eos_sensor_read(id, &r) != 0) {
+            g_s[id].calib = saved;
+            return -1;
+        }
         sum += r.value;
     }
+    g_s[id].calib.scale = saved.scale;
     g_s[id].calib.offset = -(sum / 16.0f);
     g_s[id].calib.calibrated = true;
     return 0;

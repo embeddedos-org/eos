@@ -249,6 +249,39 @@ static void test_sensor_null(void) {
     printf("[PASS] sensor null\n");
 }
 
+/* Auto-calibration zeroes the sensor at its current raw reading. It used to
+ * average readings that already had the stored offset and scale applied, so
+ * a sensor that was calibrated before, or had a scale other than 1, was not
+ * zeroed: with offset 5, scale 2 and a raw 42 it read -104 afterwards, and
+ * a second auto-calibration moved it again. */
+static void test_sensor_auto_calibrate_uses_raw_value(void) {
+    eos_sensor_init();
+    eos_sensor_config_t cfg; memset(&cfg, 0, sizeof(cfg));
+    cfg.id = 0;
+    cfg.read_fn = test_sensor_read_fn;
+    assert(eos_sensor_register(&cfg) == 0);
+    sensor_read_fails = 0;
+
+    eos_sensor_calib_t calibration = {.offset = 5.0f, .scale = 2.0f, .calibrated = true};
+    assert(eos_sensor_calibrate(0, &calibration) == 0);
+
+    eos_sensor_reading_t reading;
+    for (int pass = 0; pass < 2; pass++) {
+        assert(eos_sensor_auto_calibrate(0) == 0);
+        eos_sensor_calib_t after;
+        assert(eos_sensor_get_calibration(0, &after) == 0);
+        assert(after.offset == -42.0f);
+        assert(after.scale == 2.0f);
+        assert(after.calibrated);
+        assert(eos_sensor_read(0, &reading) == 0);
+        assert(reading.value == 0.0f);
+    }
+
+    sensor_read_fails = 1;
+    eos_sensor_deinit();
+    printf("[PASS] sensor auto-calibrate zeroes the raw reading\n");
+}
+
 int main(void) {
     printf("=== EoS Sensor Tests ===\n");
     test_sensor_init();
@@ -257,6 +290,7 @@ int main(void) {
     test_sensor_read();
     test_sensor_read_callback_failure();
     test_sensor_calibrate();
+    test_sensor_auto_calibrate_uses_raw_value();
     test_sensor_filter();
     test_sensor_filter_window();
     test_sensor_filter_window_one();
@@ -265,6 +299,6 @@ int main(void) {
     test_sensor_filter_invalid_window();
     test_sensor_filter_invalid_type();
     test_sensor_null();
-    printf("=== ALL SENSOR TESTS PASSED (14/14) ===\n");
+    printf("=== ALL SENSOR TESTS PASSED (15/15) ===\n");
     return 0;
 }
