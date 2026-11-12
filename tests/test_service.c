@@ -110,6 +110,46 @@ static void test_svc_start_failure(void) {
     printf("[PASS] service start failure\n");
 }
 
+/* A service whose dependency is down when its auto-restart comes due cannot
+ * start yet. eos_svc_tick() used to mark it RESTARTING before calling
+ * eos_svc_start(), which refuses without touching the state while a
+ * dependency is not running. The service was left in RESTARTING, a state
+ * the tick never revisits, so it was not restarted even after the
+ * dependency came back. */
+static int svc_health_flag(void *ctx) { return *(int *)ctx; }
+
+static void test_svc_restart_waits_for_dependency(void) {
+    EosSvcManager mgr; eos_svc_init(&mgr);
+    int db_health = 0, app_health = 0;
+    EosSvcOps db_ops  = { .start = svc_start, .stop = svc_stop,
+                          .health = svc_health_flag, .ctx = &db_health };
+    EosSvcOps app_ops = { .start = svc_start, .stop = svc_stop,
+                          .health = svc_health_flag, .ctx = &app_health };
+    assert(eos_svc_register(&mgr, "db", &db_ops) == 0);
+    assert(eos_svc_register(&mgr, "app", &app_ops) == 0);
+    assert(eos_svc_add_dependency(&mgr, "app", "db") == 0);
+    assert(eos_svc_set_restart_policy(&mgr, "db", EOS_SVC_RESTART_NEVER, 0, 0) == 0);
+    assert(eos_svc_start_all(&mgr) == 0);
+    assert(eos_svc_get_state(&mgr, "db") == EOS_SVC_RUNNING);
+    assert(eos_svc_get_state(&mgr, "app") == EOS_SVC_RUNNING);
+
+    /* Both health checks fail on the same tick: db stays down (NEVER),
+     * and app's restart comes due while db is not running. */
+    db_health = -1; app_health = -1;
+    eos_svc_tick(&mgr, mgr.health_interval_ms);
+    assert(eos_svc_get_state(&mgr, "db") == EOS_SVC_FAILED);
+    assert(eos_svc_get_state(&mgr, "app") == EOS_SVC_FAILED);
+
+    /* Once db is back, the next tick restarts app. */
+    db_health = 0; app_health = 0;
+    assert(eos_svc_start(&mgr, "db") == 0);
+    eos_svc_tick(&mgr, mgr.health_interval_ms + 1);
+    assert(eos_svc_get_state(&mgr, "app") == EOS_SVC_RUNNING);
+
+    eos_svc_stop_all(&mgr);
+    printf("[PASS] service restart waits for its dependency\n");
+}
+
 int main(void) {
     printf("=== EoS Service Manager Tests ===\n");
     test_svc_init();
@@ -119,6 +159,7 @@ int main(void) {
     test_svc_dependencies();
     test_svc_start_all();
     test_svc_restart();
+    test_svc_restart_waits_for_dependency();
     printf("=== ALL SERVICE TESTS PASSED ===\n");
     return 0;
 }
