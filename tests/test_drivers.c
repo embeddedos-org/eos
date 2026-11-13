@@ -115,10 +115,37 @@ TEST(test_open_before_init_fails) {
     };
     eos_driver_register(&fresh);
     ASSERT(eos_driver_open(&fresh) != 0);
+    /* `fresh` lives on this stack frame; leaving it registered left a
+     * dangling pointer in the table for every later init_all. */
+    ASSERT(eos_driver_unregister("fresh") == 0);
 }
 
 TEST(test_register_null) {
     ASSERT(eos_driver_register(NULL) != 0);
+}
+
+/* A second init_all (after a hot-plug register) must leave an open driver
+ * alone: it used to re-run init and reset ACTIVE to READY, so the device
+ * could no longer be closed through the API. */
+TEST(test_init_all_skips_open_driver) {
+    static eos_driver_t a = {
+        .name = "hp_a", .type = EOS_DRIVER_I2C, .instance = 7, .ops = &mock_ops,
+    };
+    static eos_driver_t b = {
+        .name = "hp_b", .type = EOS_DRIVER_I2C, .instance = 8, .ops = &mock_ops,
+    };
+    ASSERT(eos_driver_register(&a) == 0);
+    eos_driver_init_all();
+    ASSERT(eos_driver_open(&a) == 0);
+    ASSERT(a.state == EOS_DRV_STATE_ACTIVE);
+
+    ASSERT(eos_driver_register(&b) == 0);
+    mock_drv_init_called = 0;
+    ASSERT(eos_driver_init_all() == 0);
+    ASSERT(mock_drv_init_called == 1);              /* only b */
+    ASSERT(b.state == EOS_DRV_STATE_READY);
+    ASSERT(a.state == EOS_DRV_STATE_ACTIVE);
+    ASSERT(eos_driver_close(&a) == 0);
 }
 
 int main(void) {
@@ -131,7 +158,8 @@ int main(void) {
     run_test_open_close_lifecycle();
     run_test_open_before_init_fails();
     run_test_register_null();
-    tests_run = 8;
+    run_test_init_all_skips_open_driver();
+    tests_run = 9;
     printf("\n%d/%d tests passed\n", tests_passed, tests_run);
     return (tests_passed == tests_run) ? 0 : 1;
 }

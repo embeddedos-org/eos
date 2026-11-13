@@ -128,7 +128,13 @@ int eos_raid_add_disk(EosRaidArray *arr, uint64_t size, const char *model) {
     case EOS_RAID_0: arr->usable_capacity = arr->total_capacity; break;
     case EOS_RAID_1: arr->usable_capacity = arr->total_capacity / 2; break;
     case EOS_RAID_5: arr->usable_capacity = arr->total_capacity * (uint64_t)(arr->disk_count - 1) / (uint64_t)arr->disk_count; break;
-    case EOS_RAID_6: arr->usable_capacity = arr->total_capacity * (uint64_t)(arr->disk_count - 2) / (uint64_t)arr->disk_count; break;
+    case EOS_RAID_6:
+        /* Two parity disks: below three disks there is no usable space, and
+         * (uint64_t)(1 - 2) wrapped to nearly 2^64. */
+        arr->usable_capacity = arr->disk_count > 2
+            ? arr->total_capacity * (uint64_t)(arr->disk_count - 2) / (uint64_t)arr->disk_count
+            : 0;
+        break;
     case EOS_RAID_10: arr->usable_capacity = arr->total_capacity / 2; break;
     }
     return d->id;
@@ -142,7 +148,10 @@ int eos_raid_remove_disk(EosRaidArray *arr, int disk_id) {
 }
 
 int eos_raid_rebuild(EosRaidArray *arr, int failed_id, int spare_id) {
-    if (failed_id < 0 || spare_id < 0) return -1;
+    /* Both ids index disks[]; only the lower bound used to be checked. */
+    if (failed_id < 0 || failed_id >= arr->disk_count ||
+        spare_id < 0 || spare_id >= arr->disk_count ||
+        failed_id == spare_id) return -1;
     arr->disks[spare_id].state = EOS_DISK_REBUILDING;
     arr->rebuilding = 1;
     arr->rebuild_pct = 0;

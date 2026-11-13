@@ -81,6 +81,17 @@ void eos_task_block_with_timeout(eos_task_handle_t h, uint32_t timeout_ms);
  */
 void eos_task_unblock(eos_task_handle_t h);
 
+/**
+ * @brief Drop a task that is being deleted from every wait list.
+ *
+ * eos_sync_forget_task() covers mutex and semaphore waiters (sync.c) and
+ * re-derives the priority of any mutex owner the task was boosting;
+ * eos_ipc_forget_task() covers queue send/receive waiters (ipc.c).
+ * Called by eos_task_delete() inside its critical section.
+ */
+void eos_sync_forget_task(eos_task_handle_t h);
+void eos_ipc_forget_task(eos_task_handle_t h);
+
 #ifdef __cplusplus
 }
 #endif

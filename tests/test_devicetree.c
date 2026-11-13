@@ -305,6 +305,44 @@ static void test_lookup_matches_whole_entries(void)
     free(dt); free(dtb);
 }
 
+/* A node name longer than EOS_DT_NAME_MAX - 1 is stored truncated. A path
+ * naming it in full must still step over the whole component: the walk used
+ * to take the characters past the cut as the next component. */
+static void test_find_long_component(void)
+{
+    printf("test_find_long_component:\n");
+    static Blob st, str;
+    char long_name[EOS_DT_NAME_MAX + 8];
+    memset(long_name, 'a', sizeof(long_name) - 1);
+    long_name[sizeof(long_name) - 1] = '\0';
+    b_reset(&st); b_reset(&str);
+    (void)b_str(&str, "unused");   /* the parser wants a non-empty strings block */
+
+    b_u32(&st, EOS_DT_BEGIN_NODE); b_str_pad(&st, "");
+    b_u32(&st, EOS_DT_BEGIN_NODE); b_str_pad(&st, long_name);
+    b_u32(&st, EOS_DT_BEGIN_NODE); b_str_pad(&st, "child");
+    b_u32(&st, EOS_DT_END_NODE);   /* child */
+    b_u32(&st, EOS_DT_END_NODE);   /* long */
+    b_u32(&st, EOS_DT_END_NODE);   /* root */
+    b_u32(&st, EOS_DT_END);
+
+    uint32_t size = 0;
+    uint8_t *dtb = compose(&st, &str, &size);
+    EosDeviceTree *dt = malloc(sizeof(*dt));
+    ASSERT(eos_dt_parse(dt, dtb, size) == 0, "long-name blob parses");
+
+    char path[2 * EOS_DT_NAME_MAX + 32];
+    snprintf(path, sizeof(path), "/%s", long_name);
+    EosDtNode *node = eos_dt_find(dt, path);
+    ASSERT(node != NULL && node->child_count == 1,
+           "node named in full resolves");
+    snprintf(path, sizeof(path), "/%s/child", long_name);
+    EosDtNode *child = eos_dt_find(dt, path);
+    ASSERT(child != NULL && strcmp(child->name, "child") == 0,
+           "child of a long-named node resolves");
+    free(dt); free(dtb);
+}
+
 /* ------------------------------------------------------------------
  * Malformed input — each of these was an out-of-bounds read
  * ------------------------------------------------------------------ */
@@ -505,6 +543,7 @@ int main(void)
     test_parse_valid_blob();
     test_lookup_and_property_access();
     test_lookup_matches_whole_entries();
+    test_find_long_component();
     test_rejects_malformed_blobs();
     test_truncations_never_overrun();
     test_single_byte_corruption_is_safe();

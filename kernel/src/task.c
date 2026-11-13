@@ -388,9 +388,18 @@ int eos_task_delete(eos_task_handle_t h)
     if (h == 0 || h >= EOS_MAX_TASKS) return EOS_KERN_INVALID;
     if (g_tasks[h].state == EOS_TASK_DELETED || g_tasks[h].entry == NULL)
         return EOS_KERN_INVALID;
+
+    uint32_t crit = eos_port_enter_critical();
     g_tasks[h].state = EOS_TASK_DELETED;
     g_tasks[h].entry = NULL;
+    g_tasks[h].wake_armed = 0;
     g_task_count--;
+    /* A task deleted while blocked is still on a wait list. Left there, an
+     * unlock hands the mutex to the dead task and a post or send wakes it
+     * instead of a live waiter. */
+    eos_sync_forget_task(h);
+    eos_ipc_forget_task(h);
+    eos_port_exit_critical(crit);
 
     if (h == (eos_task_handle_t)g_current) {
         eos_port_yield();
@@ -533,12 +542,16 @@ void eos_swtimer_tick(uint32_t current_tick)
         swtimer_t *t = &g_timers[i];
         if (!t->in_use || !t->active) continue;
         if (tick_expired(current_tick, t->next_tick)) {
-            t->callback((eos_swtimer_handle_t)i, t->ctx);
+            /* Re-arm or retire before the callback, so whatever the callback
+             * does to its own timer (start, stop, reset, delete) is what
+             * stands. A one-shot that restarted itself used to be switched
+             * off again here on return. */
             if (t->auto_reload) {
                 t->next_tick = current_tick + t->period_ticks;
             } else {
                 t->active = 0;
             }
+            t->callback((eos_swtimer_handle_t)i, t->ctx);
         }
     }
 }

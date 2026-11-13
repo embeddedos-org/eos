@@ -230,9 +230,14 @@ EosDtNode *eos_dt_find(EosDeviceTree *dt, const char *path) {
     while (*p && current) {
         char component[EOS_DT_NAME_MAX];
         const char *slash = strchr(p, '/');
-        int len = slash ? (int)(slash - p) : (int)strlen(p);
+        size_t comp_len = slash ? (size_t)(slash - p) : strlen(p);
+        /* Compare at most what the parser stored (dt_copy_str truncates node
+         * names to EOS_DT_NAME_MAX - 1), but step over the whole component:
+         * advancing by the truncated length used to read the rest of a long
+         * name as the next path component. */
+        size_t len = comp_len;
         if (len >= EOS_DT_NAME_MAX) len = EOS_DT_NAME_MAX - 1;
-        memcpy(component, p, (size_t)len);
+        memcpy(component, p, len);
         component[len] = '\0';
 
         EosDtNode *found = NULL;
@@ -243,7 +248,7 @@ EosDtNode *eos_dt_find(EosDeviceTree *dt, const char *path) {
             }
         }
         current = found;
-        p += len;
+        p += comp_len;
         if (*p == '/') p++;
     }
     return current;

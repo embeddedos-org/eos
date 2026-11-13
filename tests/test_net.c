@@ -174,6 +174,7 @@ static void test_mdns_init(void) {
 #include <pthread.h>
 #include <sys/socket.h>
 #include <time.h>
+#include <unistd.h>
 
 #define EOS_TEST_NET_DESTINATION_ENV "EOS_TEST_NET_DESTINATION"
 /* Distinct from CHECK()'s exit(1), so a rejected destination is never
@@ -303,6 +304,42 @@ static void test_net_connect_refused(void) {
     eos_net_close(c);
     eos_net_deinit();
     PASS("net connect to a closed port fails");
+}
+
+static double elapsed_ms(const struct timespec *a, const struct timespec *b) {
+    return (double)(b->tv_sec - a->tv_sec) * 1000.0 +
+           (double)(b->tv_nsec - a->tv_nsec) / 1e6;
+}
+
+/* timeout_ms == 0 is a poll: with nothing to read it returns 0 at once. It
+ * used to block forever on a fresh socket, and on a socket an earlier call
+ * gave a timeout it waited out that stale timeout. An alarm turns a
+ * regression into a failure instead of a hung test. */
+static void test_net_recv_zero_timeout_polls(void) {
+    int sv[2];
+    CHECK(socketpair(AF_UNIX, SOCK_STREAM, 0, sv) == 0);
+    char buf[8];
+    struct timespec t0, t1;
+
+    alarm(5);
+    clock_gettime(CLOCK_MONOTONIC, &t0);
+    CHECK(eos_net_recv(sv[0], buf, sizeof(buf), 0) == 0);
+    clock_gettime(CLOCK_MONOTONIC, &t1);
+    CHECK(elapsed_ms(&t0, &t1) < 100.0);
+
+    CHECK(eos_net_recv(sv[0], buf, sizeof(buf), 300) == 0);   /* times out */
+    clock_gettime(CLOCK_MONOTONIC, &t0);
+    CHECK(eos_net_recv(sv[0], buf, sizeof(buf), 0) == 0);
+    clock_gettime(CLOCK_MONOTONIC, &t1);
+    CHECK(elapsed_ms(&t0, &t1) < 100.0);
+
+    CHECK(write(sv[1], "x", 1) == 1);
+    CHECK(eos_net_recv(sv[0], buf, sizeof(buf), 0) == 1 && buf[0] == 'x');
+    alarm(0);
+
+    close(sv[0]);
+    close(sv[1]);
+    PASS("net recv with zero timeout polls");
 }
 
 /* ── MQTT client over a fake broker (#199 slice 2) ────────────────────────
@@ -594,6 +631,7 @@ int main(void) {
     test_net_tcp_round_trip();
     test_net_resolve_localhost();
     test_net_connect_refused();
+    test_net_recv_zero_timeout_polls();
     test_mqtt_connect_disconnect_lifecycle();
     test_mqtt_connect_credentials();
     test_mqtt_reconnect_after_disconnect();

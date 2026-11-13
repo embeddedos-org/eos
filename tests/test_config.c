@@ -327,6 +327,103 @@ static void test_dependencies_after_build(void) {
     remove("test_dependencies_after_build.yaml");
 }
 
+/* Package keys may come in any order. A key at the package's own indent
+ * after a build:, deps: or options: block belongs to the package. */
+static void test_package_keys_after_sub_blocks(void) {
+    printf("test_package_keys_after_sub_blocks:\n");
+    static EosConfig cfg;
+    eos_config_init(&cfg);
+
+    FILE *fp = fopen("test_pkg_key_order.yaml", "w");
+    if (!fp) {
+        printf("  SKIP: cannot create package key order test file\n");
+        return;
+    }
+    fprintf(fp, "packages:\n");
+    /* source/hash after build */
+    fprintf(fp, "  - name: zlib\n");
+    fprintf(fp, "    version: 1.2.13\n");
+    fprintf(fp, "    build:\n");
+    fprintf(fp, "      type: cmake\n");
+    fprintf(fp, "    source: https://example.invalid/zlib.tar.gz\n");
+    fprintf(fp, "    hash: abcd\n");
+    /* version and build after deps */
+    fprintf(fp, "  - name: app\n");
+    fprintf(fp, "    deps:\n");
+    fprintf(fp, "      - zlib\n");
+    fprintf(fp, "    version: 1.2.3\n");
+    fprintf(fp, "    build:\n");
+    fprintf(fp, "      type: make\n");
+    /* deps after options */
+    fprintf(fp, "  - name: tool\n");
+    fprintf(fp, "    options:\n");
+    fprintf(fp, "      FOO: 1\n");
+    fprintf(fp, "    deps:\n");
+    fprintf(fp, "      - app\n");
+    fclose(fp);
+
+    EosResult res = eos_config_load(&cfg, "test_pkg_key_order.yaml");
+    ASSERT(res == EOS_OK, "package key order config loads");
+    ASSERT(cfg.package_count == 3, "three packages are parsed");
+
+    ASSERT(strcmp(cfg.packages[0].source, "https://example.invalid/zlib.tar.gz") == 0,
+           "source after build is parsed");
+    ASSERT(strcmp(cfg.packages[0].hash, "abcd") == 0,
+           "hash after build is parsed");
+
+    ASSERT(strcmp(cfg.packages[1].version, "1.2.3") == 0,
+           "version after deps is parsed");
+    ASSERT(cfg.packages[1].build_type == EOS_BUILD_MAKE,
+           "build after deps is parsed");
+    ASSERT(cfg.packages[1].dep_count == 1, "deps before version kept");
+
+    ASSERT(cfg.packages[2].option_count == 1,
+           "deps after options is not taken as an option");
+    ASSERT(eos_package_option_get(&cfg.packages[2], "FOO") != NULL,
+           "option before deps is parsed");
+    ASSERT(cfg.packages[2].dep_count == 1 &&
+           strcmp(cfg.packages[2].deps[0], "app") == 0,
+           "deps after options is parsed");
+
+    eos_config_dispose(&cfg);
+    remove("test_pkg_key_order.yaml");
+
+    /* Compact layout: "- name:" at column 0, so package keys sit at indent
+     * 1 and build/options children at 2. A fixed "package keys are at 2"
+     * rule would read type:/FOO: as package keys and lose them. */
+    eos_config_init(&cfg);
+    fp = fopen("test_pkg_key_order_compact.yaml", "w");
+    if (!fp) {
+        printf("  SKIP: cannot create compact layout test file\n");
+        return;
+    }
+    fprintf(fp, "packages:\n");
+    fprintf(fp, "- name: tool\n");
+    fprintf(fp, "  build:\n");
+    fprintf(fp, "    type: make\n");
+    fprintf(fp, "  options:\n");
+    fprintf(fp, "    FOO: 1\n");
+    fprintf(fp, "  deps:\n");
+    fprintf(fp, "    - lib\n");
+    fprintf(fp, "  hash: beef\n");
+    fclose(fp);
+
+    res = eos_config_load(&cfg, "test_pkg_key_order_compact.yaml");
+    ASSERT(res == EOS_OK, "compact layout config loads");
+    ASSERT(cfg.package_count == 1, "compact: one package is parsed");
+    ASSERT(cfg.packages[0].build_type == EOS_BUILD_MAKE,
+           "compact: build type is parsed");
+    ASSERT(cfg.packages[0].option_count == 1 &&
+           eos_package_option_get(&cfg.packages[0], "FOO") != NULL,
+           "compact: option is parsed, deps is not an option");
+    ASSERT(cfg.packages[0].dep_count == 1, "compact: deps after options parsed");
+    ASSERT(strcmp(cfg.packages[0].hash, "beef") == 0,
+           "compact: hash after deps parsed");
+
+    eos_config_dispose(&cfg);
+    remove("test_pkg_key_order_compact.yaml");
+}
+
 /* #148 Step 0a: the options accessors over a loaded config — a
  * two-option package, a zero-option package, and NULL safety. */
 static void test_package_option_accessors(void) {
@@ -449,6 +546,7 @@ int main(void) {
     test_config_load();
     test_package_after_dependencies();
     test_dependencies_after_build();
+    test_package_keys_after_sub_blocks();
     test_config_missing_file();
     test_config_load_package_overflow();
     test_package_option_accessors();
