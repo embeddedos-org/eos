@@ -430,6 +430,26 @@ marked `(eos doc)`.
   HAL sketch. That is a **planned-state** reference (§10); no
   zero-copy tensor API exists in eos headers today.
 
+- Session & secrets hygiene on the eIPC side (foundation
+  PR-EIPC-4, eIPC #66, merged 2026-11-13): the legacy
+  no-secret `Authenticate()` is now refused by default and
+  available only as an explicit per-authenticator opt-in
+  (`SetAllowLegacyAuth`) for migration — challenge-response
+  (`CreateChallenge`/`VerifyResponse`) is the auth path;
+  challenges expire (default 5m TTL, `SetChallengeTTL`) and
+  are consumed one-shot, expired ones included; server and
+  client logs no longer carry any session-token material
+  (only service + granted capabilities); and the server
+  re-arms a 5-minute read deadline before every post-auth
+  `Receive` (`SetReadDeadline` on `transport.Connection`),
+  so a silent authenticated peer is dropped instead of
+  holding a connection slot. Still open: pre-auth challenge
+  clobbering / `CreateChallenge` rate limiting, and the C
+  SDK server HMAC / ebuild re-vendor fail-open noted in the
+  foundation review. The eos-side eIPC attachment itself
+  remains API scaffolding (§8.4), so none of this is live
+  in eos code yet.
+
 ### 8.4 eAI / eNI — the AI layer bridge
 
 - The only AI code in eos is `layers/ai/`:
