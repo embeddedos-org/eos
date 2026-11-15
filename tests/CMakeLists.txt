@@ -76,6 +76,13 @@ add_executable(test_config_size test_config_size.c)
 target_link_libraries(test_config_size PRIVATE eos_core)
 add_test(NAME test_config_size COMMAND test_config_size)
 
+# --- test_config_headers: both config headers in one translation unit (#260) ---
+# eos/config.h (eos_core) and eos/eos_config.h (eos_hal's include/) shared an
+# include guard; this is the first translation unit that needs both.
+add_executable(test_config_headers test_config_headers.c)
+target_link_libraries(test_config_headers PRIVATE eos_core eos_hal)
+add_test(NAME test_config_headers COMMAND test_config_headers)
+
 # --- test_cache: cache marker validation (#205) ---
 # Implementation is core/src/cache.c, which lives in eos_core.
 add_executable(test_cache test_cache.c)
@@ -525,6 +532,16 @@ if(TARGET eos)
         PASS_REGULAR_EXPRESSION "EoS v${_eos_version_re} "
     )
 endif()
+
+# --- eos_include_guards: no two headers share an include guard ---
+# Three guards were each used by two headers (#260), so whichever header of a
+# pair was included first silently suppressed the other. Pure CMake script:
+# it reads the headers, compiles nothing, and runs on every host.
+add_test(NAME eos_include_guards
+    COMMAND ${CMAKE_COMMAND}
+        -DROOT=${EoS_SOURCE_DIR}
+        -DBINARY=${EoS_BINARY_DIR}
+        -P ${CMAKE_CURRENT_SOURCE_DIR}/check_include_guards.cmake)
 
 # --- eos_sim_banner_version: the sim/ boot banners use the same version ---
 # They used to hard-code "EoS v0.6.0". Preprocess-only (-E), so no cross
