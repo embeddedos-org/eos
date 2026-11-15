@@ -295,7 +295,8 @@ is the union of:
   `debug/include/eos/*.h`, `toolchains/include/eos/toolchain.h`.
 
 Conventions of that surface, as observed: C11; `eos_` prefix
-for functions in the RTOS half; include guards `EOS_<NAME>_H`;
+for functions in the RTOS half; include guards `EOS_<NAME>_H`
+(path-qualified for the three headers of G-1);
 `extern "C"` guards in most (not all — §9) headers; returns are
 `0`/`-1` in the RTOS half and `EosResult` in the build-tool
 half. Doxygen comments in headers feed the `Doxyfile` build
@@ -341,8 +342,11 @@ part of the present architecture until a PR removes them:
   `EOS_CORE_CONFIG_H`; `pkg/include/eos/package.h`:
   `EOS_PKG_PACKAGE_H`; `drivers/include/eos/gps_nmea.h`:
   `EOS_DRIVERS_GPS_NMEA_H`), and the `eos_include_guards` test
-  (`tests/check_include_guards.cmake`) fails the suite on any
-  reuse. What unique guards do not change: two include names
+  (`tests/check_include_guards.cmake`) fails the suite when two
+  tracked headers open with the same `#ifndef X` / `#define X`
+  pair. A guard written any other way is not compared; the test
+  names the four headers that open without that pair. What
+  unique guards do not change: two include names
   still have two files each. `eos/package.h` resolves to
   `include/eos/` for every target; `pkg/include/eos/package.h`
   is on no target's include path and has diverged (69 lines
@@ -660,7 +664,7 @@ concurrent sweep — see the coherency review for the record).
 | Net / MQTT / HTTP / mDNS truth table | `net/include/eos/net.h`; `net/src/net.c` (incl. `TODO(#199 slice 3)`); `net/src/net_posix.c`; `docs/eos-mqtt-client-design.md`; `docs/adr/ADR-014-tcpip-via-lwip.md` |
 | Config collision, product reachability | `include/eos/eos_config.h` (42 profile branches) vs `products/` tree count (48) vs root `CMakeLists.txt` cache string (41 names) |
 | Guard collisions, duplicate headers | `core/include/eos/config.h`; `include/eos/package.h` vs `pkg/include/eos/package.h` (`diff` — diverged); `drivers/include/eos/gps_nmea.h` vs `services/gps/include/eos/gps_nmea.h` (`diff` — incompatible) |
-| Guard uniqueness; which duplicate header is in use (re-read 2026-11-15 at `dc4a40ed`, #260) | `tests/check_include_guards.cmake` over the tree (124 headers, 120 guards); compiler dependency lists of the 130 translation units of the default host build with tests (0 include both config headers, 0 reach `pkg/include/eos/package.h` or `drivers/include/eos/gps_nmea.h`); `pkg/CMakeLists.txt`; root `CMakeLists.txt` `eos_drivers` |
+| Guard uniqueness; which duplicate header is in use (re-read 2026-11-15, #260) | `tests/check_include_guards.cmake` over the tree with #260 applied (124 tracked headers, 120 guards, each used once; at `dc4a40ed` it reported the three collisions); compiler dependency lists of the 130 translation units of the default host build with tests at `dc4a40ed` (0 included both config headers — `tests/test_config_headers.c`, added by #260, is now the one that does; 0 reach `pkg/include/eos/package.h` or `drivers/include/eos/gps_nmea.h`); `pkg/CMakeLists.txt`; root `CMakeLists.txt` `eos_drivers` |
 | Driver frameworks | `drivers/include/eos/driver.h` vs `drivers.h`; root `CMakeLists.txt` `eos_drivers` sources |
 | Crypto stub posture | `services/crypto/include/eos/crypto.h`; `services/crypto/src/rsa_ecc_sha512.c` (fail-closed guard) |
 | Build-tool half | `core/include/eos/types.h`, `error.h`, `config.h`; `include/eos/backend.h`, `quality.h` (API version 0.1.0); previous `docs/architecture.md` (Half-B diagram/tables — carried forward where consistent with the tree); `systems/src/image.c`, `rootfs.c`, `firmware.c` (pipeline scaffold admissions, §5) |
