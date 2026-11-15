@@ -14,7 +14,10 @@
  *
  * This file is the first translation unit in the tree that needs both. It
  * includes them in the order that used to lose the feature macros silently,
- * and fails to compile if either header's contents are missing.
+ * and fails to COMPILE if either header's contents are missing. A build
+ * that passes EOS_ENABLE_CAMERA and EOS_ENABLE_PCIE_DRV with -D would hide
+ * the second case; no configuration in the tree does, and eos_include_guards
+ * catches the shared guard itself either way.
  */
 
 #include <stdio.h>
@@ -31,13 +34,10 @@
 #endif
 
 int main(void) {
-    static EosConfig cfg; /* a complete type only if eos/config.h was read */
-
-    printf("  %-58s ", "config_headers_coexist");
-    if (sizeof(cfg) == 0u) {
-        printf("FAIL\n");
-        return 1;
-    }
-    printf("PASS\n");
+    /* sizeof needs the complete type: this line compiles only if the body
+     * of eos/config.h was read. The test is the compilation; running it
+     * only reports that it happened. */
+    printf("  %-58s PASS (sizeof(EosConfig) = %lu)\n",
+           "config_headers_coexist", (unsigned long)sizeof(EosConfig));
     return 0;
 }

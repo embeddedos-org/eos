@@ -77,10 +77,11 @@ target_link_libraries(test_config_size PRIVATE eos_core)
 add_test(NAME test_config_size COMMAND test_config_size)
 
 # --- test_config_headers: both config headers in one translation unit (#260) ---
-# eos/config.h (eos_core) and eos/eos_config.h (eos_hal's include/) shared an
-# include guard; this is the first translation unit that needs both.
+# eos/config.h and eos/eos_config.h shared an include guard; this is the
+# first translation unit that needs both. A compile-time test: eos_core gives
+# core/include, the root include_directories() gives include/.
 add_executable(test_config_headers test_config_headers.c)
-target_link_libraries(test_config_headers PRIVATE eos_core eos_hal)
+target_link_libraries(test_config_headers PRIVATE eos_core)
 add_test(NAME test_config_headers COMMAND test_config_headers)
 
 # --- test_cache: cache marker validation (#205) ---
@@ -536,7 +537,8 @@ endif()
 # --- eos_include_guards: no two headers share an include guard ---
 # Three guards were each used by two headers (#260), so whichever header of a
 # pair was included first silently suppressed the other. Pure CMake script:
-# it reads the headers, compiles nothing, and runs on every host.
+# it reads the tracked headers (git ls-files; a directory scan where there is
+# no git work tree), compiles nothing, and runs on every host.
 add_test(NAME eos_include_guards
     COMMAND ${CMAKE_COMMAND}
         -DROOT=${EoS_SOURCE_DIR}
