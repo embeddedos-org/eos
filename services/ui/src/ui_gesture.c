@@ -69,6 +69,7 @@ typedef enum {
     GS_TOUCH_DOWN,
     GS_MOVING,
     GS_WAIT_DOUBLE,
+    GS_LONG_HELD,       /* long press reported; finger still down */
 } gesture_state_t;
 
 static struct {
@@ -178,7 +179,12 @@ void eos_ui_gesture_feed(const eos_touch_point_t *pts, uint8_t count)
 
                 if (now - s_gs.down_tick >= s_gesture_cfg.long_press_time_ms) {
                     emit(EOS_GESTURE_LONG_PRESS);
-                    s_gs.state = GS_IDLE;
+                    /* Wait for the finger to lift: going to IDLE here
+                     * restarted the touch on the next sample, so a held
+                     * finger gave a long press every long_press_time_ms
+                     * and a tap on release. */
+                    s_gs.state = GS_LONG_HELD;
+                    s_gs.last_tap_tick = 0;
                 }
             }
             break;
@@ -203,6 +209,13 @@ void eos_ui_gesture_feed(const eos_touch_point_t *pts, uint8_t count)
                 }
                 s_gs.state = GS_IDLE;
             }
+            break;
+
+        case GS_LONG_HELD:
+            s_gs.cur_x = x;
+            s_gs.cur_y = y;
+            if (!pressed)
+                s_gs.state = GS_IDLE;
             break;
 
         case GS_WAIT_DOUBLE:
