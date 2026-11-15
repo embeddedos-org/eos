@@ -791,13 +791,20 @@ pin by commit/repository state, not by a contract version.
 These are verified in the foundation coherency review and are
 part of the present architecture until a PR removes them:
 
-- **G-1 Guard collisions.** `EOS_CONFIG_H` is the guard of
-  *both* `include/eos/eos_config.h` and
-  `core/include/eos/config.h`; `EOS_PACKAGE_H` guards two
-  *diverged* `package.h` files (`include/eos/` vs
-  `pkg/include/eos/`); `EOS_GPS_NMEA_H` guards two
-  incompatible GPS headers. First inclusion silently suppresses
-  the second header.
+- **G-1 Guard collisions — closed (#260); two duplicate
+  headers remain.** `EOS_CONFIG_H`, `EOS_PACKAGE_H` and
+  `EOS_GPS_NMEA_H` were each the guard of two headers, so the
+  first one included suppressed the other. Each header now has
+  its own guard (`core/include/eos/config.h`:
+  `EOS_CORE_CONFIG_H`; `pkg/include/eos/package.h`:
+  `EOS_PKG_PACKAGE_H`; `drivers/include/eos/gps_nmea.h`:
+  `EOS_DRIVERS_GPS_NMEA_H`), and the `eos_include_guards` test
+  (`tests/check_include_guards.cmake`) fails the suite on any
+  reuse. What unique guards do not change: two include names
+  still have two files each. `eos/package.h` resolves to
+  `include/eos/` for every target; `pkg/include/eos/package.h`
+  is on no target's include path and has diverged (69 lines
+  against 114). `eos/gps_nmea.h` is G-2.
 - **G-2 Duplicate GPS API.** `drivers/include/eos/gps_nmea.h`
   (15 lines, `eos_gps_parse_gga`, `int fix_valid`,
   `sat_count`) vs `services/gps/include/eos/gps_nmea.h`
@@ -805,7 +812,12 @@ part of the present architecture until a PR removes them:
   `satellites`, `speed_knots`) — same type name
   `eos_gps_data_t`, different layouts; implementations exist
   in both `drivers/src/gps_nmea.c` and
-  `services/gps/src/gps_nmea.c`.
+  `services/gps/src/gps_nmea.c`. Only the services one is
+  built: `drivers/src/gps_nmea.c` is compiled by no target and
+  `eos_gps_parse_gga` has no caller. Its header still sits on
+  `eos_drivers`' public include path, so a target that links
+  both `eos_drivers` and `eos_gps` gets whichever directory
+  comes first.
 - **G-3 Orphaned HAL implementation.** `hal/src/hal_extended.c`
   is compiled by no target in the root build.
 - **G-4 Two driver frameworks.** `drivers/include/eos/driver.h`
@@ -1086,6 +1098,7 @@ concurrent sweep — see the coherency review for the record).
 | Net / MQTT / HTTP / mDNS truth table | `net/include/eos/net.h`; `net/src/net.c` (incl. `TODO(#199 slice 3)`); `net/src/net_posix.c`; `docs/eos-mqtt-client-design.md`; `docs/adr/ADR-014-tcpip-via-lwip.md` |
 | Config collision, product reachability | `include/eos/eos_config.h` (42 profile branches) vs `products/` tree count (48) vs root `CMakeLists.txt` cache string (41 names) |
 | Guard collisions, duplicate headers | `core/include/eos/config.h`; `include/eos/package.h` vs `pkg/include/eos/package.h` (`diff` — diverged); `drivers/include/eos/gps_nmea.h` vs `services/gps/include/eos/gps_nmea.h` (`diff` — incompatible) |
+| Guard uniqueness; which duplicate header is in use (re-read 2026-11-15 at `dc4a40ed`, #260) | `tests/check_include_guards.cmake` over the tree (124 headers, 120 guards); compiler dependency lists of the 130 translation units of the default host build with tests (0 include both config headers, 0 reach `pkg/include/eos/package.h` or `drivers/include/eos/gps_nmea.h`); `pkg/CMakeLists.txt`; root `CMakeLists.txt` `eos_drivers` |
 | Driver frameworks | `drivers/include/eos/driver.h` vs `drivers.h`; root `CMakeLists.txt` `eos_drivers` sources |
 | Crypto stub posture | `services/crypto/include/eos/crypto.h`; `services/crypto/src/rsa_ecc_sha512.c` (fail-closed guard) |
 | Build-tool half | `core/include/eos/types.h`, `error.h`, `config.h`; `include/eos/backend.h`, `quality.h` (API version 0.1.0); previous `docs/architecture.md` (Half-B diagram/tables — carried forward where consistent with the tree); `systems/src/image.c`, `rootfs.c`, `firmware.c` (pipeline scaffold admissions, §5) |
