@@ -181,6 +181,37 @@ static void test_motor_update(void) {
     eos_motor_ctrl_deinit();
     PASS("motor update loop");
 }
+static void test_motor_update_moves_slow_motor(void) {
+    /* 500 steps/s at the 1 kHz update rate is half a step per tick. */
+    eos_motor_ctrl_init();
+    eos_motor_ctrl_config_t cfg = {0};
+    cfg.motor_id = 0;
+    cfg.pid_speed.kp = 1.0f;
+    cfg.pid_speed.output_min = -100.0f;
+    cfg.pid_speed.output_max = 100.0f;
+    cfg.encoder_cpr = 1024;
+    cfg.control_rate_hz = 1000;
+    eos_motor_ctrl_configure(&cfg);
+    eos_motor_ctrl_set_speed(0, 500);
+    for (int i = 0; i < 2000; i++) eos_motor_ctrl_update();
+    eos_motor_ctrl_status_t st;
+    assert(eos_motor_ctrl_get_status(0, &st) == 0);
+    printf("  speed %d steps/s, position %ld after 2000 ticks\n",
+           (int)st.current_speed, (long)st.current_position);
+    /* A P-only loop settles just under the target speed. */
+    assert(st.current_speed > 450 && st.current_speed <= 500);
+    /* About 2 s at about 500 steps/s, less the short ramp-up. */
+    assert(st.current_position > 900 && st.current_position <= 1000);
+
+    /* Reverse: the position comes back down, not stuck either. */
+    int32_t before = st.current_position;
+    eos_motor_ctrl_set_speed(0, -500);
+    for (int i = 0; i < 2000; i++) eos_motor_ctrl_update();
+    assert(eos_motor_ctrl_get_status(0, &st) == 0);
+    assert(st.current_position < before - 800);
+    eos_motor_ctrl_deinit();
+    PASS("motor update moves a motor slower than one step per tick");
+}
 static void test_motor_set_pid(void) {
     eos_motor_ctrl_init();
     eos_motor_ctrl_config_t cfg = {0};
@@ -230,6 +261,7 @@ int main(void) {
     test_motor_get_status_null();
     test_motor_remove();
     test_motor_update();
+    test_motor_update_moves_slow_motor();
     test_motor_set_pid();
     test_motor_trajectory();
     printf("\n=== ALL %d MOTOR TESTS PASSED ===\n", passed);
