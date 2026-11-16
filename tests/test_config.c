@@ -6,6 +6,9 @@
 #include <string.h>
 #include <fcntl.h>
 #include <sys/stat.h>
+#ifndef _WIN32
+#include <unistd.h>
+#endif
 #include "eos/config.h"
 #include "eos/lockfile.h"
 #include "eos/log.h"
@@ -23,6 +26,29 @@ static int tests_passed = 0;
             printf("  PASS: %s\n", msg);                         \
         }                                                         \
     } while (0)
+
+/* Create a test fixture file with owner-only permissions (0600) on POSIX,
+ * so CodeQL cpp/world-writable-file-creation does not fire on fopen("w").
+ * open() with 0600 only sets the mode at creation, so fchmod() also tightens
+ * a fixture left behind by an earlier run. Windows has no equivalent
+ * portable CRT mode; its branch uses the build directory's inherited ACL. */
+static FILE *create_test_config_file(const char *path)
+{
+#ifdef _WIN32
+    return fopen(path, "w");
+#else
+    int fd = open(path, O_WRONLY | O_CREAT | O_TRUNC, S_IRUSR | S_IWUSR);
+    if (fd < 0) {
+        return NULL;
+    }
+    (void)fchmod(fd, S_IRUSR | S_IWUSR);
+    FILE *fp = fdopen(fd, "w");
+    if (!fp) {
+        close(fd);
+    }
+    return fp;
+#endif
+}
 
 static void test_config_init(void) {
     printf("test_config_init:\n");
@@ -334,7 +360,7 @@ static void test_package_keys_after_sub_blocks(void) {
     static EosConfig cfg;
     eos_config_init(&cfg);
 
-    FILE *fp = fopen("test_pkg_key_order.yaml", "w");
+    FILE *fp = create_test_config_file("test_pkg_key_order.yaml");
     if (!fp) {
         printf("  SKIP: cannot create package key order test file\n");
         return;
@@ -392,7 +418,7 @@ static void test_package_keys_after_sub_blocks(void) {
      * 1 and build/options children at 2. A fixed "package keys are at 2"
      * rule would read type:/FOO: as package keys and lose them. */
     eos_config_init(&cfg);
-    fp = fopen("test_pkg_key_order_compact.yaml", "w");
+    fp = create_test_config_file("test_pkg_key_order_compact.yaml");
     if (!fp) {
         printf("  SKIP: cannot create compact layout test file\n");
         return;
