@@ -2,8 +2,8 @@
 // Copyright (c) 2026 EoS Project
 // ISO/IEC 25000 | ISO/IEC/IEEE 15288:2023
 
-#ifndef EOS_PACKAGE_H
-#define EOS_PACKAGE_H
+#ifndef EOS_PKG_PACKAGE_H
+#define EOS_PKG_PACKAGE_H
 
 #include "eos/types.h"
 #include "eos/error.h"
@@ -66,4 +66,4 @@ void eos_package_dump(const EosPackageSet *set);
 EosResult eos_fetch_source(const char *url, const char *dest_dir,
                                const char *expected_hash);
 
-#endif /* EOS_PACKAGE_H */
+#endif /* EOS_PKG_PACKAGE_H */

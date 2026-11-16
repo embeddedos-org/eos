@@ -2,8 +2,8 @@
 // Copyright (c) 2026 EoS Project
 // ISO/IEC 25000 | ISO/IEC/IEEE 15288:2023
 
-#ifndef EOS_CONFIG_H
-#define EOS_CONFIG_H
+#ifndef EOS_CORE_CONFIG_H
+#define EOS_CORE_CONFIG_H
 
 #include "eos/types.h"
 #include "eos/error.h"
@@ -133,4 +133,4 @@ void eos_config_init(EosConfig *cfg);
 void eos_config_dispose(EosConfig *cfg);
 void eos_config_dump(const EosConfig *cfg);
 
-#endif /* EOS_CONFIG_H */
+#endif /* EOS_CORE_CONFIG_H */
