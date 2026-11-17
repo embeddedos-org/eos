@@ -437,6 +437,11 @@ add_executable(test_crc test_crc.c)
 target_link_libraries(test_crc PRIVATE eos_crypto)
 add_test(NAME test_crc COMMAND test_crc)
 
+# --- test_datacenter_vm: VM ids stay bound to their VM across destroy ---
+add_executable(test_datacenter_vm test_datacenter_vm.c)
+target_link_libraries(test_datacenter_vm PRIVATE eos_datacenter)
+add_test(NAME test_datacenter_vm COMMAND test_datacenter_vm)
+
 add_executable(test_driver_recovery test_driver_recovery.c)
 target_link_libraries(test_driver_recovery PRIVATE eos_drivers)
 add_test(NAME test_driver_recovery COMMAND test_driver_recovery)
