@@ -61,9 +61,13 @@ typedef struct {
     uint32_t total_cpu_cores;
     uint32_t total_memory_mb;
     int isolation_enabled;
+    int next_id;   /* id for the next eos_vm_create(); ids are never reused */
 } EosVirtualization;
 
 void eos_vm_init(EosVirtualization *vm, uint32_t total_cores, uint32_t total_mem_mb);
+/* eos_vm_create() returns the new VM's id, or -1 when the table is full.
+ * The id names that VM until it is destroyed, whatever else is created or
+ * destroyed in the meantime; it is not an index into instances[]. */
 int  eos_vm_create(EosVirtualization *vm, const char *name, uint32_t cores, uint32_t mem_mb);
 int  eos_vm_start(EosVirtualization *vm, int id);
 int  eos_vm_stop(EosVirtualization *vm, int id);
