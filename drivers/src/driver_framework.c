@@ -84,7 +84,13 @@ int eos_driver_init_all(void)
 {
     int errors = 0;
     for (uint32_t i = 0; i < driver_count; i++) {
-        if (driver_table[i] && driver_table[i]->ops->init) {
+        /* Only drivers not yet initialised, or whose init failed (a retry).
+         * Calling it again on a READY/ACTIVE/SUSPENDED driver -- e.g. a second
+         * init_all after a hot-plug register -- re-ran init under an open
+         * device and reset ACTIVE to READY, after which close refused it. */
+        if (driver_table[i] && driver_table[i]->ops->init &&
+            (driver_table[i]->state == EOS_DRV_STATE_UNINIT ||
+             driver_table[i]->state == EOS_DRV_STATE_ERROR)) {
             int rc = driver_table[i]->ops->init(driver_table[i]);
             if (rc == 0) {
                 driver_table[i]->state = EOS_DRV_STATE_READY;

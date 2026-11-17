@@ -296,6 +296,20 @@ int eos_mutex_delete(eos_mutex_handle_t h)
     return EOS_KERN_OK;
 }
 
+void eos_sync_forget_task(eos_task_handle_t h)
+{
+    if (!task_valid(h)) return;
+    g_blocked_on[h] = 0;
+    for (int i = 0; i < EOS_MAX_MUTEXES; i++) {
+        if (g_mtx[i].in_use && mtx_remove_waiter(&g_mtx[i], h))
+            pi_propagate(g_mtx[i].owner);
+    }
+    for (int i = 0; i < EOS_MAX_SEMAPHORES; i++) {
+        if (g_sem[i].in_use)
+            sem_remove_waiter(&g_sem[i], h);
+    }
+}
+
 /* ============================================================
  * Semaphore — with timeout blocking
  * ============================================================ */

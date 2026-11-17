@@ -149,12 +149,17 @@ int eos_net_recv(eos_socket_t sock, void *buf, size_t len, uint32_t timeout_ms)
     tv.tv_sec = (time_t)(timeout_ms / 1000u);
     tv.tv_usec = (suseconds_t)((timeout_ms % 1000u) * 1000u);
     /* A zero timeout means "block forever" to SO_RCVTIMEO, which is the
-     * opposite of what a caller passing 0 expects. Only set it when non-zero. */
+     * opposite of what a caller passing 0 expects. Skipping the setsockopt
+     * was not enough: the socket then blocked on the default, or on the
+     * timeout an earlier call left behind. 0 is a poll, so use MSG_DONTWAIT. */
+    int flags = 0;
     if (timeout_ms > 0) {
         (void)setsockopt(sock, SOL_SOCKET, SO_RCVTIMEO, &tv, sizeof(tv));
+    } else {
+        flags = MSG_DONTWAIT;
     }
 
-    ssize_t n = recv(sock, buf, len, 0);
+    ssize_t n = recv(sock, buf, len, flags);
     if (n < 0 && (errno == EAGAIN || errno == EWOULDBLOCK)) return 0;  /* timed out */
     return n < 0 ? -1 : (int)n;
 }
@@ -174,16 +179,20 @@ int eos_net_recvfrom(eos_socket_t sock, void *buf, size_t len,
 {
     if (sock < 0 || (!buf && len > 0)) return -1;
 
+    /* 0 is a poll; see eos_net_recv(). */
+    int flags = 0;
     if (timeout_ms > 0) {
         struct timeval tv;
         tv.tv_sec = (time_t)(timeout_ms / 1000u);
         tv.tv_usec = (suseconds_t)((timeout_ms % 1000u) * 1000u);
         (void)setsockopt(sock, SOL_SOCKET, SO_RCVTIMEO, &tv, sizeof(tv));
+    } else {
+        flags = MSG_DONTWAIT;
     }
 
     struct sockaddr_in sa;
     socklen_t sl = sizeof(sa);
-    ssize_t n = recvfrom(sock, buf, len, 0, (struct sockaddr *)&sa, &sl);
+    ssize_t n = recvfrom(sock, buf, len, flags, (struct sockaddr *)&sa, &sl);
     if (n < 0 && (errno == EAGAIN || errno == EWOULDBLOCK)) return 0;
     if (n < 0) return -1;
     if (addr) from_sockaddr(&sa, addr);
