@@ -1,5 +1,9 @@
 add_executable(eos main.c exec_argv.c)
 
+# The banner prints the project version from the generated eos/version.h;
+# it used to be a literal in main.c that still said 0.2.0 at 0.5.0.
+target_include_directories(eos PRIVATE ${EOS_GENERATED_INCLUDE_DIR})
+
 target_link_libraries(eos PRIVATE
     eos_core
     eos_backends

@@ -8,6 +8,16 @@ project(EoS
 set(CMAKE_C_STANDARD 11)
 set(CMAKE_C_STANDARD_REQUIRED ON)
 
+# One version for everything that prints one: the eos CLI banner and the
+# sim/ boot banners include the generated eos/version.h.
+if(NOT EoS_VERSION)
+    message(FATAL_ERROR "project(EoS) has no VERSION: the eos banner and "
+                        "eos/version.h need one")
+endif()
+set(EOS_GENERATED_INCLUDE_DIR "${EoS_BINARY_DIR}/generated")
+configure_file(${EoS_SOURCE_DIR}/include/eos/version.h.in
+               ${EOS_GENERATED_INCLUDE_DIR}/eos/version.h @ONLY)
+
 if(MSVC)
     add_compile_definitions(_CRT_SECURE_NO_WARNINGS)
     add_compile_options(/W3)

@@ -19,7 +19,13 @@
 #include "eos/system.h"
 #include "exec_argv.h"
 
-#define EOS_VERSION "0.2.0"
+/* EOS_VERSION comes from project(EoS VERSION ...) in the top-level
+   CMakeLists.txt, through the generated eos/version.h, so the banner cannot
+   drift from the release again. */
+#include "eos/version.h"
+#ifndef EOS_VERSION
+#error "EOS_VERSION is not defined: build cmd/eos through CMake"
+#endif
 #define DEFAULT_CONFIG "eos.yaml"
 
 static void print_banner(void) {

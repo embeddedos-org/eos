@@ -7,6 +7,13 @@
 #include <stddef.h>
 #include <stdbool.h>
 
+/* EOS_VERSION from project(EoS VERSION ...), via the generated eos/version.h:
+   add -I <eos build dir>/generated when compiling this file. */
+#include "eos/version.h"
+#ifndef EOS_VERSION
+#error "EOS_VERSION is not defined: add -I <eos build dir>/generated"
+#endif
+
 // ── QEMU virt PL011 UART ─────────────────────────────────────────────────────
 #define UART0_BASE      0x09000000UL
 #define UART_DR         (*(volatile uint32_t *)(UART0_BASE + 0x000))
@@ -324,7 +331,7 @@ void eos_kernel_entry(void)
 
     uart_puts("\n");
     uart_puts("╔══════════════════════════════════════════════════════╗\n");
-    uart_puts("║   EoS v0.6.0 — Embedded OS Framework                ║\n");
+    uart_puts("║   EoS v" EOS_VERSION " — Embedded OS Framework                ║\n");
     uart_puts("║   Board: QEMU ARM64 virt (Cortex-A57)                ║\n");
     uart_puts("║   Boot:  eBoot v3.0.2 → EoS kernel handoff OK        ║\n");
     uart_puts("║   Tests: TC-01 through TC-13 (13 integration tests)  ║\n");
@@ -565,7 +572,7 @@ void eos_kernel_entry(void)
 
     uart_puts("\n");
     uart_puts("╔══════════════════════════════════════════════════════╗\n");
-    uart_puts("║   EoS Full-Stack Simulation Results  v0.6.0          ║\n");
+    uart_puts("║   EoS Full-Stack Simulation Results  v" EOS_VERSION "          ║\n");
     uart_puts("╠══════════════════════════════════════════════════════╣\n");
     uart_puts("║  TC-01  Process launch (11 processes)    PASS        ║\n");
     uart_puts("║  TC-02  eBrowser framebuffer render      PASS        ║\n");

@@ -1,5 +1,5 @@
-#ifndef EOS_GPS_NMEA_H
-#define EOS_GPS_NMEA_H
+#ifndef EOS_DRIVERS_GPS_NMEA_H
+#define EOS_DRIVERS_GPS_NMEA_H
 
 typedef struct {
     double latitude;

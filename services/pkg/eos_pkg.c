@@ -561,6 +561,18 @@ int eos_pkg_init(eapp_db_t *db, const char *apps_dir)
 /* --------------------------------------------------------------------------
  * eos_pkg_verify — validate .eapp file header, hash, and signature
  * -------------------------------------------------------------------------- */
+/* Pre-authentication allocation bound (S-04). The binary and the resources
+ * blob are both read into memory before the envelope signature is checked,
+ * so this runs on the header's declared sizes, before any allocation.
+ * The bound is on the combined size: both blobs are live at once while the
+ * signature is checked. The sum is 64-bit, so two near-4 GiB declarations
+ * cannot wrap past the bound. */
+int eos_pkg_check_payload_sizes(uint32_t binary_size, uint32_t resources_size)
+{
+    uint64_t total = (uint64_t)binary_size + (uint64_t)resources_size;
+    return total <= (uint64_t)EOS_PKG_MAX_PAYLOAD_BYTES ? 0 : -1;
+}
+
 int eos_pkg_verify(const char *eapp_path)
 {
     if (!eapp_path) return -1;
@@ -594,6 +606,17 @@ int eos_pkg_verify(const char *eapp_path)
 
     if (hdr.binary_size == 0) {
         fprintf(stderr, "eos-pkg: package has no binary data\n");
+        fclose(f);
+        return -1;
+    }
+
+    /* Before the allocation below, and before the signature: the sizes are
+     * still unauthenticated claims at this point. */
+    if (eos_pkg_check_payload_sizes(hdr.binary_size, hdr.resources_size) != 0) {
+        fprintf(stderr, "eos-pkg: package payload (%u binary + %u resources bytes) "
+                        "exceeds the pre-authentication limit (%u bytes)\n",
+                hdr.binary_size, hdr.resources_size,
+                (unsigned)EOS_PKG_MAX_PAYLOAD_BYTES);
         fclose(f);
         return -1;
     }
@@ -733,6 +756,17 @@ int eos_pkg_install(eapp_db_t *db, const char *eapp_path)
 
     if (hdr.binary_size == 0 || hdr.binary_offset == 0) {
         fprintf(stderr, "eos-pkg: package has no binary payload\n");
+        fclose(f);
+        return -1;
+    }
+
+    /* Before the allocation below, and before the signature: the sizes are
+     * still unauthenticated claims at this point. */
+    if (eos_pkg_check_payload_sizes(hdr.binary_size, hdr.resources_size) != 0) {
+        fprintf(stderr, "eos-pkg: package payload (%u binary + %u resources bytes) "
+                        "exceeds the pre-authentication limit (%u bytes)\n",
+                hdr.binary_size, hdr.resources_size,
+                (unsigned)EOS_PKG_MAX_PAYLOAD_BYTES);
         fclose(f);
         return -1;
     }
@@ -1078,6 +1112,27 @@ int eos_pkg_info(const eapp_db_t *db, const char *package_id)
 /* --------------------------------------------------------------------------
  * eos_pkg_run — launch a package binary
  * -------------------------------------------------------------------------- */
+/* Capabilities this loader build can actually enforce on a child process
+ * (foundation PR-EOS-3, S-03). The #162 envelope signs the capabilities,
+ * so the bits are authentic -- but signing is not enforcement, and this
+ * translation unit has no confinement mechanism to enforce them with: no
+ * seccomp, landlock, namespace, uid separation, or chroot, on any target
+ * it builds for. The child is fork+execv'd (or spawned) with the caller's
+ * full privileges, so a "network" package today gets the whole network,
+ * or nothing. The answer is therefore none, on every platform, and
+ * eos_pkg_run() refuses any package that declares a capability rather
+ * than run it unenforced.
+ *
+ * This function is the extension point: a platform that gains a real
+ * confinement mechanism adds its bits here AND the matching child-side
+ * enforcement in eos_pkg_run() next to the fork/spawn, in the same change,
+ * so the mask and the mechanism can never drift apart. Until then the
+ * mask stays 0 and the gate stays a refusal. */
+static uint32_t eos_pkg_enforceable_capabilities(void)
+{
+    return 0;
+}
+
 int eos_pkg_run(const eapp_db_t *db, const char *package_id, int argc, char **argv)
 {
     if (!db || !package_id) return -1;
@@ -1096,6 +1151,33 @@ int eos_pkg_run(const eapp_db_t *db, const char *package_id, int argc, char **ar
     if (pkg->state == EAPP_STATE_RUNNING) {
         fprintf(stderr, "eos-pkg: package '%s' is already running\n", package_id);
         return -1;
+    }
+
+    /* Capability enforcement: the signed capabilities are the contract, and
+     * this loader cannot confine the child to them, so refuse what cannot
+     * be enforced -- before the binary is touched. A package that declares
+     * a capability this loader does not know is refused on the same
+     * grounds: an unknown capability must never run unenforced by
+     * accident. The package stays installed: the refusal is about this
+     * loader, not the package, so its state is left alone. */
+    {
+        uint32_t unknown = pkg->capabilities & ~EAPP_CAP_KNOWN_MASK;
+        uint32_t unenforceable = pkg->capabilities & ~eos_pkg_enforceable_capabilities();
+        if (unknown != 0) {
+            fprintf(stderr, "eos-pkg: refusing to run '%s': unknown capability "
+                            "bits set (0x%08X); a capability this loader does "
+                            "not know cannot be enforced\n",
+                    package_id, unknown);
+            return -1;
+        }
+        if (unenforceable != 0) {
+            fprintf(stderr, "eos-pkg: refusing to run '%s': capabilities "
+                            "0x%08X cannot be enforced by this loader -- it "
+                            "runs packages with the caller's full privileges "
+                            "and has no confinement mechanism\n",
+                    package_id, unenforceable);
+            return -1;
+        }
     }
 
     char binary_path[EAPP_MAX_PATH];

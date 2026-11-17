@@ -76,6 +76,14 @@ add_executable(test_config_size test_config_size.c)
 target_link_libraries(test_config_size PRIVATE eos_core)
 add_test(NAME test_config_size COMMAND test_config_size)
 
+# --- test_config_headers: both config headers in one translation unit (#260) ---
+# eos/config.h and eos/eos_config.h shared an include guard; this is the
+# first translation unit that needs both. A compile-time test: eos_core gives
+# core/include, the root include_directories() gives include/.
+add_executable(test_config_headers test_config_headers.c)
+target_link_libraries(test_config_headers PRIVATE eos_core)
+add_test(NAME test_config_headers COMMAND test_config_headers)
+
 # --- test_cache: cache marker validation (#205) ---
 # Implementation is core/src/cache.c, which lives in eos_core.
 add_executable(test_cache test_cache.c)
@@ -392,6 +400,13 @@ if(NOT CMAKE_CROSSCOMPILING)
     add_executable(test_pkg_install_paths test_pkg_install_paths.c)
     target_link_libraries(test_pkg_install_paths PRIVATE eos_eapp eos_crypto)
     add_test(NAME test_pkg_install_paths COMMAND test_pkg_install_paths)
+
+    # --- test_pkg_envelope_caps: eos_pkg_run enforces the #162 capabilities ---
+    # A signed capability the loader cannot enforce must refuse the run, and
+    # the pre-authentication allocation from hdr.binary_size is capped.
+    add_executable(test_pkg_envelope_caps test_pkg_envelope_caps.c)
+    target_link_libraries(test_pkg_envelope_caps PRIVATE eos_eapp eos_crypto)
+    add_test(NAME test_pkg_envelope_caps COMMAND test_pkg_envelope_caps)
 endif()
 
 # --- test_package: Package management ---
@@ -512,3 +527,38 @@ target_link_libraries(example_secure_ota PRIVATE
 # Opt-in (-DEOS_ENABLE_FUZZING=ON, Clang only); the subdirectory guards itself.
 add_subdirectory(fuzz)
 
+# --- eos_cli_version: the CLI banner prints the version from project() ---
+# The banner used to print a literal "0.2.0" from cmd/eos/main.c while the
+# project was at 0.5.0. Registered here because enable_testing() runs after
+# add_subdirectory(cmd/eos); the target only exists on non-cross builds.
+if(TARGET eos)
+    string(REPLACE "." "\\." _eos_version_re "${EoS_VERSION}")
+    add_test(NAME eos_cli_version COMMAND eos help)
+    set_tests_properties(eos_cli_version PROPERTIES
+        PASS_REGULAR_EXPRESSION "EoS v${_eos_version_re} "
+    )
+endif()
+
+# --- eos_include_guards: no two headers share an include guard ---
+# Three guards were each used by two headers (#260), so whichever header of a
+# pair was included first silently suppressed the other. Pure CMake script:
+# it reads the tracked headers (git ls-files; a directory scan where there is
+# no git work tree), compiles nothing, and runs on every host.
+add_test(NAME eos_include_guards
+    COMMAND ${CMAKE_COMMAND}
+        -DROOT=${EoS_SOURCE_DIR}
+        -DBINARY=${EoS_BINARY_DIR}
+        -P ${CMAKE_CURRENT_SOURCE_DIR}/check_include_guards.cmake)
+
+# --- eos_sim_banner_version: the sim/ boot banners use the same version ---
+# They used to hard-code "EoS v0.6.0". Preprocess-only (-E), so no cross
+# toolchain is needed; MSVC's cl spells -E differently, so it is skipped there.
+if(NOT MSVC)
+    add_test(NAME eos_sim_banner_version
+        COMMAND ${CMAKE_COMMAND}
+            -DCC=${CMAKE_C_COMPILER}
+            -DINC=${EOS_GENERATED_INCLUDE_DIR}
+            -DVERSION=${EoS_VERSION}
+            "-DSOURCES=${EoS_SOURCE_DIR}/sim/qemu_arm64/eos_entry.c;${EoS_SOURCE_DIR}/sim/rpi4/eos_entry_rpi4.c;${EoS_SOURCE_DIR}/sim/stm32mp1/eos_entry_stm32mp1.c;${EoS_SOURCE_DIR}/sim/stm32mp1/eos_entry_stm32mp1_qemu.c"
+            -P ${CMAKE_CURRENT_SOURCE_DIR}/check_sim_banner_version.cmake)
+endif()

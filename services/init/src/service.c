@@ -179,7 +179,10 @@ void eos_svc_tick(EosSvcManager *mgr, uint32_t now_ms) {
             default:
                 break;
             }
-            if (should_restart) {
+            /* eos_svc_start() refuses without touching the state while a
+             * dependency is down. Leave the service FAILED until then, so a
+             * later tick retries it instead of leaving it in RESTARTING. */
+            if (should_restart && deps_satisfied(mgr, svc)) {
                 svc->state = EOS_SVC_RESTARTING;
                 eos_svc_start(mgr, svc->name);
             }

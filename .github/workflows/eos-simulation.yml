@@ -8,7 +8,6 @@ on:
   workflow_dispatch:
 
 env:
-  EOS_VERSION: "0.6.0"
   # The kernel job compiles eBoot and checks out ebuild. Those used to float on
   # `ref: master`, so the moment either repo's master stopped compiling, every
   # open eos PR went red for a reason no eos change caused and no eos change
@@ -127,7 +126,8 @@ jobs:
 
           aarch64-linux-gnu-gcc -c eos/sim/qemu_arm64/eos_entry.c -o eos_entry.o \
             -O0 -ffreestanding -nostdlib -fno-pic -march=armv8-a \
-            -I eos/core/include -I eos/include -I eBoot/include
+            -I eos/core/include -I eos/include -I eBoot/include \
+            -I eos/build_ci/generated
 
           aarch64-linux-gnu-gcc \
             -T eos/sim/qemu_arm64/eos_qemu_ram.ld \
@@ -167,7 +167,8 @@ jobs:
 
       - name: Run EoS in QEMU (ARM64 virt, Cortex-A57)
         run: |
-          echo "=== Booting EoS v${EOS_VERSION} in QEMU ==="
+          # No version here: the image prints its own (project VERSION).
+          echo "=== Booting EoS in QEMU ==="
           ls -la eos_qemu.elf eos_qemu.bin
           file eos_qemu.elf || true
           # Do NOT discard stderr: the last run exited in ~20ms with an empty

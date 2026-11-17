@@ -13,6 +13,7 @@ typedef struct {
     uint8_t in_use;
     float pid_integral_s, pid_prev_err_s;
     float pid_integral_p, pid_prev_err_p;
+    float pos_remainder;    /* steps travelled but not yet whole */
 } motor_t;
 
 static motor_t g_m[EOS_MOTOR_CTRL_MAX];
@@ -89,6 +90,7 @@ int eos_motor_ctrl_emergency_stop(uint8_t id) {
 int eos_motor_ctrl_reset_position(uint8_t id) {
     if (!g_init || id >= EOS_MOTOR_CTRL_MAX || !g_m[id].in_use) return -1;
     g_m[id].status.current_position = 0; g_m[id].status.target_position = 0;
+    g_m[id].pos_remainder = 0;
     return 0;
 }
 
@@ -116,7 +118,13 @@ void eos_motor_ctrl_update(void) {
         float out = pid_compute(&m->cfg.pid_speed, speed_err, &m->pid_integral_s, &m->pid_prev_err_s, dt);
         m->status.pid_output = out;
         m->status.current_speed += (int16_t)(out * 0.1f);
-        m->status.current_position += (int32_t)(m->status.current_speed * dt);
+        /* One tick moves current_speed * dt steps, which is less than one
+         * step for any speed under 1/dt. Carry the fraction to the next
+         * tick instead of truncating it, or a slow motor never moves. */
+        m->pos_remainder += (float)m->status.current_speed * dt;
+        int32_t whole = (int32_t)m->pos_remainder;
+        m->status.current_position += whole;
+        m->pos_remainder -= (float)whole;
     }
 }
 

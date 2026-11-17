@@ -295,7 +295,8 @@ is the union of:
   `debug/include/eos/*.h`, `toolchains/include/eos/toolchain.h`.
 
 Conventions of that surface, as observed: C11; `eos_` prefix
-for functions in the RTOS half; include guards `EOS_<NAME>_H`;
+for functions in the RTOS half; include guards `EOS_<NAME>_H`
+(path-qualified for the three headers of G-1);
 `extern "C"` guards in most (not all — §9) headers; returns are
 `0`/`-1` in the RTOS half and `EosResult` in the build-tool
 half. Doxygen comments in headers feed the `Doxyfile` build
@@ -315,9 +316,12 @@ include`).
 | mDNS (`net.h`) | **Planned** | All entry points `return -1` / no-op in all builds |
 | Crypto (`services/crypto/include/eos/crypto.h`) | Mixed | AES, SHA-256, SHA-512, CRC, Ed25519 implemented (NIST vectors pass per `STATUS.md`); **RSA/ECC sign/verify are stubs that refuse to run** unless built with `EOS_ALLOW_STUB_CRYPTO` — fail-closed by design (`services/crypto/src/rsa_ecc_sha512.c`) |
 | Security (`services/security/include/eos/security.h`) | Experimental | Keystore/ACL implemented per `STATUS.md`; secure-boot verify path exists in `services/security/src/security.c` and is only as strong as the crypto row above |
-| OTA (`services/ota/include/eos/ota.h`) | Experimental | Implemented; `eos_ota_apply()` refuses without a registered authenticator. **Not validated end-to-end against eBoot** (`STATUS.md`) |
+| OTA (`services/ota/include/eos/ota.h`) | Experimental | Implemented; `eos_ota_apply()` refuses without a registered authenticator. Foundation PR-EOS-4 (S-05): `eos_ota_mark_slot_valid()` requires a verified slot (a slot whose image failed verification can never be marked valid); `eos_ota_write_chunk()` persists bytes through an installed storage writer and `eos_ota_apply()` refuses an image whose bytes were not persisted (partial/empty included); the anti-rollback floor (`eos_ota_set_rollback_floor()`, monotonic `version_code` on the update source) is enforced at apply and the applied version + floor are exposed in `eos_ota_status_t` for eBoot's PR-EBT-2 verifier to consume -- `eos_ota_rollback()` is intentionally not floor-gated (recovery path; the boot-time downgrade decision is eBoot's). **Still not validated end-to-end against eBoot** (`STATUS.md`) |
+| Package manager / #162 envelope (`services/pkg/eos_pkg.h`) | Experimental | The v2 envelope signs capabilities + binary + resources, and its trust anchor fails closed. `eos_pkg_run()` enforces the signed capabilities fail-closed: it refuses any package whose capabilities fall outside the enforceable set — currently empty, because this loader has no confinement mechanism (no seccomp, landlock, namespace, uid separation, or chroot) — including unknown capability bits, so only capability-free packages run, and a refused package stays installed. `verify()` and `install()` refuse a declared binary + resources payload over 64 MiB (`EOS_PKG_MAX_PAYLOAD_BYTES`, overridable with `-DEOS_PKG_MAX_PAYLOAD_BYTES=…`) before allocating anything and before signature verification. Foundation PR-EOS-3 (S-03/S-04); issues #245, #246. |
 | Filesystem, power, sensor, motor, GPS, UI, init, compat/posix/linux/vxworks surfaces | Experimental (per `STATUS.md` where listed) | Implemented with unit tests named in `STATUS.md`; per-driver/per-service depth varies and is not uniform — see `STATUS.md` for the per-row evidence, which this document does not restate as stronger than it is |
 | Build-tool API (`core/include/eos/*.h`, `include/eos/backend.h`, `package.h`) | Experimental | The `Eos*`/`EosResult` C API of Half B (§5). Version macro drift exists: `include/eos/quality.h` carries `EOS_API_VERSION` **0.1.0** against project version 0.5.0 (gap G-8) |
+
+**Envelope enforcement, honestly:** signing is not enforcement. The loader can enforce no capability at all today, so refusal *is* the enforcement: a package that asks for a device capability cannot run until the loader can confine it to that capability. A platform that gains a real confinement mechanism adds its bits to `eos_pkg_enforceable_capabilities()` and the matching child-side enforcement in `eos_pkg_run()` in the same change, so the mask and the mechanism can never drift apart.
 
 **Versioning, honestly:** the project version is 0.5.0
 (`CMakeLists.txt`, `Doxyfile`, `build.yaml`, `sbom.json`).
@@ -330,13 +334,23 @@ pin by commit/repository state, not by a contract version.
 These are verified in the foundation coherency review and are
 part of the present architecture until a PR removes them:
 
-- **G-1 Guard collisions.** `EOS_CONFIG_H` is the guard of
-  *both* `include/eos/eos_config.h` and
-  `core/include/eos/config.h`; `EOS_PACKAGE_H` guards two
-  *diverged* `package.h` files (`include/eos/` vs
-  `pkg/include/eos/`); `EOS_GPS_NMEA_H` guards two
-  incompatible GPS headers. First inclusion silently suppresses
-  the second header.
+- **G-1 Guard collisions — closed (#260); two duplicate
+  headers remain.** `EOS_CONFIG_H`, `EOS_PACKAGE_H` and
+  `EOS_GPS_NMEA_H` were each the guard of two headers, so the
+  first one included suppressed the other. Each header now has
+  its own guard (`core/include/eos/config.h`:
+  `EOS_CORE_CONFIG_H`; `pkg/include/eos/package.h`:
+  `EOS_PKG_PACKAGE_H`; `drivers/include/eos/gps_nmea.h`:
+  `EOS_DRIVERS_GPS_NMEA_H`), and the `eos_include_guards` test
+  (`tests/check_include_guards.cmake`) fails the suite when two
+  tracked headers open with the same `#ifndef X` / `#define X`
+  pair. A guard written any other way is not compared; the test
+  names the four headers that open without that pair. What
+  unique guards do not change: two include names
+  still have two files each. `eos/package.h` resolves to
+  `include/eos/` for every target; `pkg/include/eos/package.h`
+  is on no target's include path and has diverged (69 lines
+  against 114). `eos/gps_nmea.h` is G-2.
 - **G-2 Duplicate GPS API.** `drivers/include/eos/gps_nmea.h`
   (15 lines, `eos_gps_parse_gga`, `int fix_valid`,
   `sat_count`) vs `services/gps/include/eos/gps_nmea.h`
@@ -344,7 +358,12 @@ part of the present architecture until a PR removes them:
   `satellites`, `speed_knots`) — same type name
   `eos_gps_data_t`, different layouts; implementations exist
   in both `drivers/src/gps_nmea.c` and
-  `services/gps/src/gps_nmea.c`.
+  `services/gps/src/gps_nmea.c`. Only the services one is
+  built: `drivers/src/gps_nmea.c` is compiled by no target and
+  `eos_gps_parse_gga` has no caller. Its header still sits on
+  `eos_drivers`' public include path, so a target that links
+  both `eos_drivers` and `eos_gps` gets whichever directory
+  comes first.
 - **G-3 Orphaned HAL implementation.** `hal/src/hal_extended.c`
   is compiled by no target in the root build.
 - **G-4 Two driver frameworks.** `drivers/include/eos/driver.h`
@@ -426,6 +445,26 @@ marked `(eos doc)`.
   ("zero-copy tensor IPC") as a companion to the accelerator
   HAL sketch. That is a **planned-state** reference (§10); no
   zero-copy tensor API exists in eos headers today.
+
+- Session & secrets hygiene on the eIPC side (foundation
+  PR-EIPC-4, eIPC #66, merged 2026-11-13): the legacy
+  no-secret `Authenticate()` is now refused by default and
+  available only as an explicit per-authenticator opt-in
+  (`SetAllowLegacyAuth`) for migration — challenge-response
+  (`CreateChallenge`/`VerifyResponse`) is the auth path;
+  challenges expire (default 5m TTL, `SetChallengeTTL`) and
+  are consumed one-shot, expired ones included; server and
+  client logs no longer carry any session-token material
+  (only service + granted capabilities); and the server
+  re-arms a 5-minute read deadline before every post-auth
+  `Receive` (`SetReadDeadline` on `transport.Connection`),
+  so a silent authenticated peer is dropped instead of
+  holding a connection slot. Still open: pre-auth challenge
+  clobbering / `CreateChallenge` rate limiting, and the C
+  SDK server HMAC / ebuild re-vendor fail-open noted in the
+  foundation review. The eos-side eIPC attachment itself
+  remains API scaffolding (§8.4), so none of this is live
+  in eos code yet.
 
 ### 8.4 eAI / eNI — the AI layer bridge
 
@@ -625,6 +664,7 @@ concurrent sweep — see the coherency review for the record).
 | Net / MQTT / HTTP / mDNS truth table | `net/include/eos/net.h`; `net/src/net.c` (incl. `TODO(#199 slice 3)`); `net/src/net_posix.c`; `docs/eos-mqtt-client-design.md`; `docs/adr/ADR-014-tcpip-via-lwip.md` |
 | Config collision, product reachability | `include/eos/eos_config.h` (42 profile branches) vs `products/` tree count (48) vs root `CMakeLists.txt` cache string (41 names) |
 | Guard collisions, duplicate headers | `core/include/eos/config.h`; `include/eos/package.h` vs `pkg/include/eos/package.h` (`diff` — diverged); `drivers/include/eos/gps_nmea.h` vs `services/gps/include/eos/gps_nmea.h` (`diff` — incompatible) |
+| Guard uniqueness; which duplicate header is in use (re-read 2026-11-15, #260) | `tests/check_include_guards.cmake` over the tree with #260 applied (124 tracked headers, 120 guards, each used once; at `dc4a40ed` it reported the three collisions); compiler dependency lists of the 130 translation units of the default host build with tests at `dc4a40ed` (0 included both config headers — `tests/test_config_headers.c`, added by #260, is now the one that does; 0 reach `pkg/include/eos/package.h` or `drivers/include/eos/gps_nmea.h`); `pkg/CMakeLists.txt`; root `CMakeLists.txt` `eos_drivers` |
 | Driver frameworks | `drivers/include/eos/driver.h` vs `drivers.h`; root `CMakeLists.txt` `eos_drivers` sources |
 | Crypto stub posture | `services/crypto/include/eos/crypto.h`; `services/crypto/src/rsa_ecc_sha512.c` (fail-closed guard) |
 | Build-tool half | `core/include/eos/types.h`, `error.h`, `config.h`; `include/eos/backend.h`, `quality.h` (API version 0.1.0); previous `docs/architecture.md` (Half-B diagram/tables — carried forward where consistent with the tree); `systems/src/image.c`, `rootfs.c`, `firmware.c` (pipeline scaffold admissions, §5) |

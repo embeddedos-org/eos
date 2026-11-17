@@ -286,6 +286,36 @@ TEST(test_long_press)
     ASSERT(captured[0].duration_ms == 450);
 }
 
+TEST(test_long_press_hold_then_release_emits_nothing_more)
+{
+    reset();
+    eos_ui_on_gesture(0xFFFFFFFF, capture_cb, NULL);
+
+    /* A touch controller keeps reporting the finger while it is held. */
+    eos_touch_point_t p = pt(200, 200, true);
+    for (s_mock_tick = 0; s_mock_tick <= 1000; s_mock_tick += 50)
+        eos_ui_gesture_feed(&p, 1);
+
+    s_mock_tick = 1050;
+    p = pt(200, 200, false);
+    eos_ui_gesture_feed(&p, 1);
+
+    /* One hold is one long press: no second long press while held,
+       and no tap when the finger lifts. */
+    ASSERT(capture_count == 1);
+    ASSERT(captured[0].type == EOS_GESTURE_LONG_PRESS);
+
+    /* The next quick touch is a plain tap, not a double tap. */
+    s_mock_tick = 1100;
+    p = pt(200, 200, true);
+    eos_ui_gesture_feed(&p, 1);
+    s_mock_tick = 1150;
+    p = pt(200, 200, false);
+    eos_ui_gesture_feed(&p, 1);
+    ASSERT(capture_count == 2);
+    ASSERT(captured[1].type == EOS_GESTURE_TAP);
+}
+
 /* ---- swipe left ----------------------------------------------------- */
 
 TEST(test_swipe_left)
@@ -708,6 +738,7 @@ int main(void)
     run_test_double_tap();
     run_test_double_tap_too_slow_becomes_two_taps();
     run_test_long_press();
+    run_test_long_press_hold_then_release_emits_nothing_more();
     run_test_swipe_left();
     run_test_swipe_right();
     run_test_swipe_up();
@@ -724,7 +755,7 @@ int main(void)
     run_test_multiple_callbacks_selective_delivery();
     run_test_diagonal_dominant_axis();
 
-    tests_run = 25;
+    tests_run = 26;
     printf("\n%d/%d tests passed\n", tests_passed, tests_run);
     return (tests_passed == tests_run) ? 0 : 1;
 }
