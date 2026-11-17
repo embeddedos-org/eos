@@ -6,6 +6,7 @@
 #include <stdio.h>
 #include <string.h>
 #include <stdlib.h>
+#include <limits.h>
 
 /* ==== Virtualization ==== */
 
@@ -16,46 +17,63 @@ void eos_vm_init(EosVirtualization *vm, uint32_t total_cores, uint32_t total_mem
     vm->isolation_enabled = 1;
 }
 
+/* instances[] is kept packed, so a VM's slot moves when an earlier VM is
+ * destroyed. Callers hold the id eos_vm_create() returned, so look it up. */
+static int vm_index(const EosVirtualization *vm, int id) {
+    if (id < 0) return -1;
+    for (int i = 0; i < vm->count; i++) {
+        if (vm->instances[i].id == id) return i;
+    }
+    return -1;
+}
+
 int eos_vm_create(EosVirtualization *vm, const char *name, uint32_t cores, uint32_t mem_mb) {
-    if (vm->count >= EOS_VM_MAX_INSTANCES) return -1;
+    if (vm->count >= EOS_VM_MAX_INSTANCES || vm->next_id == INT_MAX) return -1;
     EosVmInstance *inst = &vm->instances[vm->count];
+    memset(inst, 0, sizeof(*inst));
     strncpy(inst->name, name, EOS_VM_MAX_NAME - 1);
-    inst->id = vm->count;
+    inst->id = vm->next_id++;
     inst->state = EOS_VM_STOPPED;
     inst->cpu_cores = cores;
     inst->memory_mb = mem_mb;
-    return vm->count++;
+    vm->count++;
+    return inst->id;
 }
 
 int eos_vm_start(EosVirtualization *vm, int id) {
-    if (id < 0 || id >= vm->count) return -1;
-    vm->instances[id].state = EOS_VM_RUNNING;
+    int i = vm_index(vm, id);
+    if (i < 0) return -1;
+    vm->instances[i].state = EOS_VM_RUNNING;
     return 0;
 }
 
 int eos_vm_stop(EosVirtualization *vm, int id) {
-    if (id < 0 || id >= vm->count) return -1;
-    vm->instances[id].state = EOS_VM_STOPPED;
+    int i = vm_index(vm, id);
+    if (i < 0) return -1;
+    vm->instances[i].state = EOS_VM_STOPPED;
     return 0;
 }
 
 int eos_vm_pause(EosVirtualization *vm, int id) {
-    if (id < 0 || id >= vm->count) return -1;
-    vm->instances[id].state = EOS_VM_PAUSED;
+    int i = vm_index(vm, id);
+    if (i < 0) return -1;
+    vm->instances[i].state = EOS_VM_PAUSED;
     return 0;
 }
 
 int eos_vm_destroy(EosVirtualization *vm, int id) {
-    if (id < 0 || id >= vm->count) return -1;
-    memmove(&vm->instances[id], &vm->instances[id+1],
-            sizeof(EosVmInstance) * (size_t)(vm->count - id - 1));
+    int i = vm_index(vm, id);
+    if (i < 0) return -1;
+    memmove(&vm->instances[i], &vm->instances[i+1],
+            sizeof(EosVmInstance) * (size_t)(vm->count - i - 1));
     vm->count--;
     return 0;
 }
 
 const EosVmInstance *eos_vm_get(const EosVirtualization *vm, int id) {
-    if (id < 0 || id >= vm->count) return NULL;
-    return &vm->instances[id];
+    int i = vm_index(vm, id);
+    if (i < 0) return NULL;
+    return &vm->instances[i];
 }
 
 void eos_vm_dump(const EosVirtualization *vm) {
