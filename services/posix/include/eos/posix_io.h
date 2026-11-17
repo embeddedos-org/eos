@@ -17,13 +17,17 @@
 #include <stdint.h>
 #include <stddef.h>
 #include <stdbool.h>
+#include <sys/types.h>  /* ssize_t (read/write) */
+
+#if defined(_MSC_VER) && !defined(ssize_t)
+/* MSVC's <sys/types.h> has no ssize_t (tests/CMakeLists.txt, test_posix_io);
+ * same fallback as the sibling header, services/posix/include/eos/posix_ipc.h,
+ * so the two headers agree on what ssize_t is. */
+typedef int32_t ssize_t;
+#endif
 
 #ifdef __cplusplus
 extern "C" {
-#endif
-
-#ifndef ssize_t
-typedef int32_t ssize_t;
 #endif
 
 #define EOS_POSIX_FD_MAX      16

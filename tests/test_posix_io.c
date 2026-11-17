@@ -22,10 +22,6 @@
 #include <stdint.h>
 #include <sys/types.h>
 
-/* posix_io.h typedefs ssize_t as int32_t unless it is already a macro; the
- * host's ssize_t is already a typedef here, so keep that one. */
-#define ssize_t ssize_t
-
 #define open   eos_test_posix_open
 #define close  eos_test_posix_close
 #define read   eos_test_posix_read
