@@ -555,6 +555,22 @@ add_test(NAME eos_include_guards
         -DBINARY=${EoS_BINARY_DIR}
         -P ${CMAKE_CURRENT_SOURCE_DIR}/check_include_guards.cmake)
 
+# --- eos_headers_standalone: every public header compiles on its own ---
+# services/posix/include/eos/posix_ipc.h used ssize_t but included only
+# <stdint.h>, <stddef.h> and <stdbool.h> (#264), so a translation unit
+# including it first failed with "unknown type name 'ssize_t'". Pure CMake
+# script: it compiles each tracked public header alone (-fsyntax-only) and
+# runs on every host except MSVC -- cl spells the syntax-only check /Zs,
+# not -fsyntax-only (same reason eos_sim_banner_version is skipped there).
+if(NOT MSVC)
+    add_test(NAME eos_headers_standalone
+        COMMAND ${CMAKE_COMMAND}
+            -DROOT=${EoS_SOURCE_DIR}
+            -DBINARY=${EoS_BINARY_DIR}
+            -DCC=${CMAKE_C_COMPILER}
+            -P ${CMAKE_CURRENT_SOURCE_DIR}/check_headers_standalone.cmake)
+endif()
+
 # --- eos_sim_banner_version: the sim/ boot banners use the same version ---
 # They used to hard-code "EoS v0.6.0". Preprocess-only (-E), so no cross
 # toolchain is needed; MSVC's cl spells -E differently, so it is skipped there.
