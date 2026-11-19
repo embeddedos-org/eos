@@ -160,6 +160,10 @@ the packet-type nibble):
 | DISCONNECT | 14 | C → S | encode |
 | PUBREC / PUBREL / PUBCOMP | 5 / 6 / 7 | QoS 2 only | **out of scope** |
 
+TLS / MQTTS transport security is explicitly deferred to secure-socket
+adoption (ADR-014 / crypto and security services), and is out of scope for
+Issue #259 and Slice 3.
+
 QoS semantics: QoS 0 is fire-and-forget (no packet identifier,
 no retry). QoS 1 adds a packet identifier, a PUBACK, storage
 until acknowledged, and retransmission with DUP=1 — duplicates
@@ -220,6 +224,11 @@ absence; this track is designed around it):
    `eos_mqtt_subscribe` / `eos_mqtt_unsubscribe` /
    `eos_mqtt_loop`, keep-alive. The remaining stub assertions
    turn over.
+   *As landed (Issue #259):* slice 3 implements `eos_mqtt_publish`,
+   `eos_mqtt_subscribe`, `eos_mqtt_unsubscribe`, and
+   `eos_mqtt_loop`, along with keep-alive, callback dispatch,
+   QoS 0 and QoS 1 with DUP=1 retry, and fake-broker verification
+   in `tests/test_net.c`.
 4. **Freestanding-profile verification:** the same codec built
    and fixture-tested in a no-POSIX configuration (lwIP profile
    when it exists; until then, a build-level verification that

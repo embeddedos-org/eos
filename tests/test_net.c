@@ -358,10 +358,49 @@ static void test_net_recv_zero_timeout_polls(void) {
 static uint16_t g_broker_port = 45780;
 
 typedef struct {
+    pthread_mutex_t mutex;
+    pthread_cond_t  cond;
+    int             ready;
+} broker_sync_t;
+
+static void broker_sync_init(broker_sync_t *s) {
+    pthread_mutex_init(&s->mutex, NULL);
+    pthread_cond_init(&s->cond, NULL);
+    s->ready = 0;
+}
+
+static void broker_sync_destroy(broker_sync_t *s) {
+    pthread_mutex_destroy(&s->mutex);
+    pthread_cond_destroy(&s->cond);
+}
+
+static void broker_sync_set(broker_sync_t *s, int val) {
+    pthread_mutex_lock(&s->mutex);
+    s->ready = val;
+    pthread_cond_broadcast(&s->cond);
+    pthread_mutex_unlock(&s->mutex);
+}
+
+static int broker_sync_wait(broker_sync_t *s) {
+    struct timespec ts;
+    clock_gettime(CLOCK_REALTIME, &ts);
+    ts.tv_sec += 5;
+    pthread_mutex_lock(&s->mutex);
+    while (s->ready == 0) {
+        if (pthread_cond_timedwait(&s->cond, &s->mutex, &ts) != 0) {
+            break;
+        }
+    }
+    int val = s->ready;
+    pthread_mutex_unlock(&s->mutex);
+    return val;
+}
+
+typedef struct {
     uint16_t       port;
     const uint8_t *connack;         /* NULL: hang up after CONNECT */
     size_t         connack_len;
-    volatile int   ready;
+    broker_sync_t  sync;
     uint8_t        connect_pkt[256];
     size_t         connect_len;
     uint8_t        after[16];       /* bytes received after the CONNACK */
@@ -384,10 +423,10 @@ static void *fake_broker(void *arg) {
     eos_socket_t s = eos_net_socket(EOS_NET_TCP);
     if (s == EOS_SOCKET_INVALID || eos_net_bind(s, b->port) != 0 ||
         eos_net_listen(s, 1) != 0) {
-        b->ready = -1;
+        broker_sync_set(&b->sync, -1);
         return NULL;
     }
-    b->ready = 1;
+    broker_sync_set(&b->sync, 1);
     eos_socket_t c = eos_net_accept(s, NULL);
     eos_net_close(s);
     if (c == EOS_SOCKET_INVALID) return NULL;
@@ -422,17 +461,12 @@ static void *fake_broker(void *arg) {
 static void broker_start(fake_broker_t *b, pthread_t *t,
                          const uint8_t *connack, size_t connack_len) {
     memset(b, 0, sizeof(*b));
+    broker_sync_init(&b->sync);
     b->port = g_broker_port++;
     b->connack = connack;
     b->connack_len = connack_len;
     pthread_create(t, NULL, fake_broker, b);
-    for (int i = 0; i < 400 && b->ready == 0; i++) {
-        struct timespec ts;
-        ts.tv_sec = 0;
-        ts.tv_nsec = 5 * 1000 * 1000;
-        nanosleep(&ts, NULL);
-    }
-    CHECK(b->ready == 1);
+    CHECK(broker_sync_wait(&b->sync) == 1);
 }
 
 static void mqtt_test_config(eos_mqtt_config_t *cfg, uint16_t port) {
@@ -607,25 +641,19 @@ static void test_mqtt_disconnect_bad_handle(void) {
 
 /* ── MQTT Publish / Subscribe / Loop tests (#199 slice 3 / #259) ───────── */
 
-static eos_socket_t broker_listen_ready(uint16_t port, volatile int *ready) {
+static eos_socket_t broker_listen_ready(uint16_t port, broker_sync_t *sync) {
     eos_socket_t s = eos_net_socket(EOS_NET_TCP);
     if (s == EOS_SOCKET_INVALID || eos_net_bind(s, port) != 0 ||
         eos_net_listen(s, 1) != 0) {
-        *ready = -1;
+        broker_sync_set(sync, -1);
         return EOS_SOCKET_INVALID;
     }
-    *ready = 1;
+    broker_sync_set(sync, 1);
     return s;
 }
 
-static void wait_broker_ready(volatile int *ready) {
-    for (int i = 0; i < 400 && *ready == 0; i++) {
-        struct timespec ts;
-        ts.tv_sec = 0;
-        ts.tv_nsec = 5 * 1000 * 1000;
-        nanosleep(&ts, NULL);
-    }
-    CHECK(*ready == 1);
+static void wait_broker_ready(broker_sync_t *sync) {
+    CHECK(broker_sync_wait(sync) == 1);
 }
 
 static eos_socket_t broker_accept_and_connack(eos_socket_t listener) {
@@ -672,14 +700,14 @@ static void test_msg_cb(const char *topic, const uint8_t *payload, size_t len, v
 
 typedef struct {
     uint16_t port;
-    volatile int ready;
+    broker_sync_t sync;
     uint8_t pkt[128];
     size_t pkt_len;
 } pub_broker_ctx_t;
 
 static void *broker_pub_qos0(void *arg) {
     pub_broker_ctx_t *ctx = (pub_broker_ctx_t *)arg;
-    eos_socket_t s = broker_listen_ready(ctx->port, &ctx->ready);
+    eos_socket_t s = broker_listen_ready(ctx->port, &ctx->sync);
     if (s == EOS_SOCKET_INVALID) return NULL;
     eos_socket_t c = broker_accept_and_connack(s);
     if (c == EOS_SOCKET_INVALID) return NULL;
@@ -702,10 +730,11 @@ static void test_mqtt_publish_qos0(void) {
     eos_net_init();
     pub_broker_ctx_t ctx;
     memset(&ctx, 0, sizeof(ctx));
+    broker_sync_init(&ctx.sync);
     ctx.port = g_broker_port++;
     pthread_t t;
     pthread_create(&t, NULL, broker_pub_qos0, &ctx);
-    wait_broker_ready(&ctx.ready);
+    wait_broker_ready(&ctx.sync);
 
     eos_mqtt_config_t cfg;
     mqtt_test_config(&cfg, ctx.port);
@@ -717,6 +746,7 @@ static void test_mqtt_publish_qos0(void) {
     CHECK(eos_mqtt_publish(h, topic, payload, strlen(payload), 0) == 0);
     CHECK(eos_mqtt_disconnect(h) == 0);
     pthread_join(t, NULL);
+    broker_sync_destroy(&ctx.sync);
 
     CHECK(ctx.pkt_len > 0);
     CHECK((ctx.pkt[0] & 0xFE) == 0x30); /* PUBLISH QoS 0 */
@@ -730,7 +760,7 @@ static void test_mqtt_publish_qos0(void) {
 
 static void *broker_pub_qos1(void *arg) {
     pub_broker_ctx_t *ctx = (pub_broker_ctx_t *)arg;
-    eos_socket_t s = broker_listen_ready(ctx->port, &ctx->ready);
+    eos_socket_t s = broker_listen_ready(ctx->port, &ctx->sync);
     if (s == EOS_SOCKET_INVALID) return NULL;
     eos_socket_t c = broker_accept_and_connack(s);
     if (c == EOS_SOCKET_INVALID) return NULL;
@@ -758,10 +788,11 @@ static void test_mqtt_publish_qos1_puback(void) {
     eos_net_init();
     pub_broker_ctx_t ctx;
     memset(&ctx, 0, sizeof(ctx));
+    broker_sync_init(&ctx.sync);
     ctx.port = g_broker_port++;
     pthread_t t;
     pthread_create(&t, NULL, broker_pub_qos1, &ctx);
-    wait_broker_ready(&ctx.ready);
+    wait_broker_ready(&ctx.sync);
 
     eos_mqtt_config_t cfg;
     mqtt_test_config(&cfg, ctx.port);
@@ -773,6 +804,7 @@ static void test_mqtt_publish_qos1_puback(void) {
     CHECK(eos_mqtt_publish(h, topic, payload, strlen(payload), 1) == 0);
     CHECK(eos_mqtt_disconnect(h) == 0);
     pthread_join(t, NULL);
+    broker_sync_destroy(&ctx.sync);
 
     CHECK(ctx.pkt_len > 0);
     CHECK((ctx.pkt[0] & 0x06) == 0x02); /* QoS 1 */
@@ -782,14 +814,14 @@ static void test_mqtt_publish_qos1_puback(void) {
 
 typedef struct {
     uint16_t port;
-    volatile int ready;
+    broker_sync_t sync;
     uint8_t pkt[128];
     size_t pkt_len;
 } sub_broker_ctx_t;
 
 static void *broker_sub(void *arg) {
     sub_broker_ctx_t *ctx = (sub_broker_ctx_t *)arg;
-    eos_socket_t s = broker_listen_ready(ctx->port, &ctx->ready);
+    eos_socket_t s = broker_listen_ready(ctx->port, &ctx->sync);
     if (s == EOS_SOCKET_INVALID) return NULL;
     eos_socket_t c = broker_accept_and_connack(s);
     if (c == EOS_SOCKET_INVALID) return NULL;
@@ -815,10 +847,11 @@ static void test_mqtt_subscribe_suback(void) {
     eos_net_init();
     sub_broker_ctx_t ctx;
     memset(&ctx, 0, sizeof(ctx));
+    broker_sync_init(&ctx.sync);
     ctx.port = g_broker_port++;
     pthread_t t;
     pthread_create(&t, NULL, broker_sub, &ctx);
-    wait_broker_ready(&ctx.ready);
+    wait_broker_ready(&ctx.sync);
 
     eos_mqtt_config_t cfg;
     mqtt_test_config(&cfg, ctx.port);
@@ -828,6 +861,7 @@ static void test_mqtt_subscribe_suback(void) {
     CHECK(eos_mqtt_subscribe(h, "sensor/+", 0, dummy_cb, NULL) == 0);
     CHECK(eos_mqtt_disconnect(h) == 0);
     pthread_join(t, NULL);
+    broker_sync_destroy(&ctx.sync);
 
     CHECK(ctx.pkt_len > 0);
     CHECK(ctx.pkt[0] == 0x82); /* SUBSCRIBE */
@@ -837,7 +871,7 @@ static void test_mqtt_subscribe_suback(void) {
 
 static void *broker_incoming_pub(void *arg) {
     sub_broker_ctx_t *ctx = (sub_broker_ctx_t *)arg;
-    eos_socket_t s = broker_listen_ready(ctx->port, &ctx->ready);
+    eos_socket_t s = broker_listen_ready(ctx->port, &ctx->sync);
     if (s == EOS_SOCKET_INVALID) return NULL;
     eos_socket_t c = broker_accept_and_connack(s);
     if (c == EOS_SOCKET_INVALID) return NULL;
@@ -869,10 +903,11 @@ static void test_mqtt_incoming_publish(void) {
     eos_net_init();
     sub_broker_ctx_t ctx;
     memset(&ctx, 0, sizeof(ctx));
+    broker_sync_init(&ctx.sync);
     ctx.port = g_broker_port++;
     pthread_t t;
     pthread_create(&t, NULL, broker_incoming_pub, &ctx);
-    wait_broker_ready(&ctx.ready);
+    wait_broker_ready(&ctx.sync);
 
     eos_mqtt_config_t cfg;
     mqtt_test_config(&cfg, ctx.port);
@@ -890,20 +925,21 @@ static void test_mqtt_incoming_publish(void) {
 
     CHECK(eos_mqtt_disconnect(h) == 0);
     pthread_join(t, NULL);
+    broker_sync_destroy(&ctx.sync);
     eos_net_deinit();
     PASS("mqtt incoming PUBLISH callback delivery");
 }
 
 typedef struct {
     uint16_t port;
-    volatile int ready;
+    broker_sync_t sync;
     uint8_t puback[4];
     size_t puback_len;
 } puback_broker_ctx_t;
 
 static void *broker_incoming_qos1(void *arg) {
     puback_broker_ctx_t *ctx = (puback_broker_ctx_t *)arg;
-    eos_socket_t s = broker_listen_ready(ctx->port, &ctx->ready);
+    eos_socket_t s = broker_listen_ready(ctx->port, &ctx->sync);
     if (s == EOS_SOCKET_INVALID) return NULL;
     eos_socket_t c = broker_accept_and_connack(s);
     if (c == EOS_SOCKET_INVALID) return NULL;
@@ -944,10 +980,11 @@ static void test_mqtt_incoming_qos1_puback(void) {
     eos_net_init();
     puback_broker_ctx_t ctx;
     memset(&ctx, 0, sizeof(ctx));
+    broker_sync_init(&ctx.sync);
     ctx.port = g_broker_port++;
     pthread_t t;
     pthread_create(&t, NULL, broker_incoming_qos1, &ctx);
-    wait_broker_ready(&ctx.ready);
+    wait_broker_ready(&ctx.sync);
 
     eos_mqtt_config_t cfg;
     mqtt_test_config(&cfg, ctx.port);
@@ -964,6 +1001,7 @@ static void test_mqtt_incoming_qos1_puback(void) {
 
     CHECK(eos_mqtt_disconnect(h) == 0);
     pthread_join(t, NULL);
+    broker_sync_destroy(&ctx.sync);
 
     CHECK(ctx.puback_len == 4);
     CHECK(ctx.puback[0] == 0x40);
@@ -975,7 +1013,7 @@ static void test_mqtt_incoming_qos1_puback(void) {
 
 static void *broker_unsub(void *arg) {
     sub_broker_ctx_t *ctx = (sub_broker_ctx_t *)arg;
-    eos_socket_t s = broker_listen_ready(ctx->port, &ctx->ready);
+    eos_socket_t s = broker_listen_ready(ctx->port, &ctx->sync);
     if (s == EOS_SOCKET_INVALID) return NULL;
     eos_socket_t c = broker_accept_and_connack(s);
     if (c == EOS_SOCKET_INVALID) return NULL;
@@ -1014,10 +1052,11 @@ static void test_mqtt_unsubscribe_unsuback(void) {
     eos_net_init();
     sub_broker_ctx_t ctx;
     memset(&ctx, 0, sizeof(ctx));
+    broker_sync_init(&ctx.sync);
     ctx.port = g_broker_port++;
     pthread_t t;
     pthread_create(&t, NULL, broker_unsub, &ctx);
-    wait_broker_ready(&ctx.ready);
+    wait_broker_ready(&ctx.sync);
 
     eos_mqtt_config_t cfg;
     mqtt_test_config(&cfg, ctx.port);
@@ -1035,6 +1074,7 @@ static void test_mqtt_unsubscribe_unsuback(void) {
 
     CHECK(eos_mqtt_disconnect(h) == 0);
     pthread_join(t, NULL);
+    broker_sync_destroy(&ctx.sync);
     eos_net_deinit();
     PASS("mqtt unsubscribe and UNSUBACK");
 }
@@ -1073,6 +1113,7 @@ static void test_mqtt_invalid_handles_and_args(void) {
     CHECK(eos_mqtt_publish(h, "topic/+", "data", 4, 0) == -1);
     CHECK(eos_mqtt_publish(h, "topic/#", "data", 4, 0) == -1);
     CHECK(eos_mqtt_publish(h, "topic", NULL, 4, 0) == -1);
+    CHECK(eos_mqtt_publish(h, "sensor\x80temp", "data", 4, 0) == -1);
 
     /* Invalid subscribe arguments */
     CHECK(eos_mqtt_subscribe(h, NULL, 0, dummy_cb, NULL) == -1);
@@ -1081,14 +1122,17 @@ static void test_mqtt_invalid_handles_and_args(void) {
     CHECK(eos_mqtt_subscribe(h, "sport/tennis#", 0, dummy_cb, NULL) == -1);
     CHECK(eos_mqtt_subscribe(h, "sport/#/extra", 0, dummy_cb, NULL) == -1);
     CHECK(eos_mqtt_subscribe(h, "sport+", 0, dummy_cb, NULL) == -1);
+    CHECK(eos_mqtt_subscribe(h, "sensor\x80temp", 0, dummy_cb, NULL) == -1);
 
     /* Invalid unsubscribe arguments */
     CHECK(eos_mqtt_unsubscribe(h, NULL) == -1);
     CHECK(eos_mqtt_unsubscribe(h, "") == -1);
     CHECK(eos_mqtt_unsubscribe(h, "sport/tennis#") == -1);
+    CHECK(eos_mqtt_unsubscribe(h, "sensor\x80temp") == -1);
 
     CHECK(eos_mqtt_disconnect(h) == 0);
     pthread_join(t, NULL);
+    broker_sync_destroy(&b.sync);
 
     /* After disconnect, handle is invalid */
     CHECK(eos_mqtt_publish(h, "topic", "data", 4, 0) == -1);
@@ -1102,7 +1146,7 @@ static void test_mqtt_invalid_handles_and_args(void) {
 
 static void *broker_send_qos2_publish(void *arg) {
     sub_broker_ctx_t *ctx = (sub_broker_ctx_t *)arg;
-    eos_socket_t s = broker_listen_ready(ctx->port, &ctx->ready);
+    eos_socket_t s = broker_listen_ready(ctx->port, &ctx->sync);
     if (s == EOS_SOCKET_INVALID) return NULL;
     eos_socket_t c = broker_accept_and_connack(s);
     if (c == EOS_SOCKET_INVALID) return NULL;
@@ -1130,10 +1174,11 @@ static void test_mqtt_unsupported_qos(void) {
     eos_net_init();
     sub_broker_ctx_t ctx;
     memset(&ctx, 0, sizeof(ctx));
+    broker_sync_init(&ctx.sync);
     ctx.port = g_broker_port++;
     pthread_t t;
     pthread_create(&t, NULL, broker_send_qos2_publish, &ctx);
-    wait_broker_ready(&ctx.ready);
+    wait_broker_ready(&ctx.sync);
 
     eos_mqtt_config_t cfg;
     mqtt_test_config(&cfg, ctx.port);
@@ -1150,13 +1195,14 @@ static void test_mqtt_unsupported_qos(void) {
     CHECK(eos_mqtt_publish(h, "topic", "data", 4, 0) == -1);
 
     pthread_join(t, NULL);
+    broker_sync_destroy(&ctx.sync);
     eos_net_deinit();
     PASS("mqtt unsupported QoS rejected");
 }
 
 static void *broker_send_malformed(void *arg) {
     sub_broker_ctx_t *ctx = (sub_broker_ctx_t *)arg;
-    eos_socket_t s = broker_listen_ready(ctx->port, &ctx->ready);
+    eos_socket_t s = broker_listen_ready(ctx->port, &ctx->sync);
     if (s == EOS_SOCKET_INVALID) return NULL;
     eos_socket_t c = broker_accept_and_connack(s);
     if (c == EOS_SOCKET_INVALID) return NULL;
@@ -1173,10 +1219,11 @@ static void test_mqtt_malformed_packet(void) {
     eos_net_init();
     sub_broker_ctx_t ctx;
     memset(&ctx, 0, sizeof(ctx));
+    broker_sync_init(&ctx.sync);
     ctx.port = g_broker_port++;
     pthread_t t;
     pthread_create(&t, NULL, broker_send_malformed, &ctx);
-    wait_broker_ready(&ctx.ready);
+    wait_broker_ready(&ctx.sync);
 
     eos_mqtt_config_t cfg;
     mqtt_test_config(&cfg, ctx.port);
@@ -1186,13 +1233,14 @@ static void test_mqtt_malformed_packet(void) {
     CHECK(eos_mqtt_loop(h, 1000) == -1);
 
     pthread_join(t, NULL);
+    broker_sync_destroy(&ctx.sync);
     eos_net_deinit();
     PASS("mqtt malformed packets rejected");
 }
 
 static void *broker_silent(void *arg) {
     sub_broker_ctx_t *ctx = (sub_broker_ctx_t *)arg;
-    eos_socket_t s = broker_listen_ready(ctx->port, &ctx->ready);
+    eos_socket_t s = broker_listen_ready(ctx->port, &ctx->sync);
     if (s == EOS_SOCKET_INVALID) return NULL;
     eos_socket_t c = broker_accept_and_connack(s);
     if (c == EOS_SOCKET_INVALID) return NULL;
@@ -1206,10 +1254,11 @@ static void test_mqtt_loop_timeout(void) {
     eos_net_init();
     sub_broker_ctx_t ctx;
     memset(&ctx, 0, sizeof(ctx));
+    broker_sync_init(&ctx.sync);
     ctx.port = g_broker_port++;
     pthread_t t;
     pthread_create(&t, NULL, broker_silent, &ctx);
-    wait_broker_ready(&ctx.ready);
+    wait_broker_ready(&ctx.sync);
 
     eos_mqtt_config_t cfg;
     mqtt_test_config(&cfg, ctx.port);
@@ -1229,13 +1278,14 @@ static void test_mqtt_loop_timeout(void) {
 
     CHECK(eos_mqtt_disconnect(h) == 0);
     pthread_join(t, NULL);
+    broker_sync_destroy(&ctx.sync);
     eos_net_deinit();
     PASS("mqtt loop timeout behavior");
 }
 
 typedef struct {
     uint16_t port;
-    volatile int ready;
+    broker_sync_t sync;
     uint8_t pingreq[2];
     size_t pingreq_len;
     bool send_pingresp;
@@ -1243,7 +1293,7 @@ typedef struct {
 
 static void *broker_keepalive(void *arg) {
     keepalive_broker_ctx_t *ctx = (keepalive_broker_ctx_t *)arg;
-    eos_socket_t s = broker_listen_ready(ctx->port, &ctx->ready);
+    eos_socket_t s = broker_listen_ready(ctx->port, &ctx->sync);
     if (s == EOS_SOCKET_INVALID) return NULL;
     eos_socket_t c = broker_accept_and_connack(s);
     if (c == EOS_SOCKET_INVALID) return NULL;
@@ -1266,11 +1316,12 @@ static void test_mqtt_keepalive(void) {
     /* Part 1: client sends PINGREQ when idle past keepalive_sec, broker sends PINGRESP */
     keepalive_broker_ctx_t ctx1;
     memset(&ctx1, 0, sizeof(ctx1));
+    broker_sync_init(&ctx1.sync);
     ctx1.port = g_broker_port++;
     ctx1.send_pingresp = true;
     pthread_t t1;
     pthread_create(&t1, NULL, broker_keepalive, &ctx1);
-    wait_broker_ready(&ctx1.ready);
+    wait_broker_ready(&ctx1.sync);
 
     eos_mqtt_config_t cfg;
     mqtt_test_config(&cfg, ctx1.port);
@@ -1287,15 +1338,17 @@ static void test_mqtt_keepalive(void) {
 
     CHECK(eos_mqtt_disconnect(h1) == 0);
     pthread_join(t1, NULL);
+    broker_sync_destroy(&ctx1.sync);
 
     /* Part 2: broker does NOT send PINGRESP, client detects missed PINGRESP window */
     keepalive_broker_ctx_t ctx2;
     memset(&ctx2, 0, sizeof(ctx2));
+    broker_sync_init(&ctx2.sync);
     ctx2.port = g_broker_port++;
     ctx2.send_pingresp = false;
     pthread_t t2;
     pthread_create(&t2, NULL, broker_keepalive, &ctx2);
-    wait_broker_ready(&ctx2.ready);
+    wait_broker_ready(&ctx2.sync);
 
     mqtt_test_config(&cfg, ctx2.port);
     cfg.keepalive_sec = 1;
@@ -1310,8 +1363,373 @@ static void test_mqtt_keepalive(void) {
     CHECK(eos_mqtt_loop(h2, 50) == -1);
 
     pthread_join(t2, NULL);
+    broker_sync_destroy(&ctx2.sync);
     eos_net_deinit();
     PASS("mqtt keepalive behavior");
+}
+
+typedef struct {
+    uint16_t port;
+    broker_sync_t sync;
+    uint8_t pkt1[128];
+    size_t pkt1_len;
+    uint8_t pkt2[128];
+    size_t pkt2_len;
+} retry_broker_ctx_t;
+
+static void *broker_qos1_retry(void *arg) {
+    retry_broker_ctx_t *ctx = (retry_broker_ctx_t *)arg;
+    eos_socket_t s = broker_listen_ready(ctx->port, &ctx->sync);
+    if (s == EOS_SOCKET_INVALID) return NULL;
+    eos_socket_t c = broker_accept_and_connack(s);
+    if (c == EOS_SOCKET_INVALID) return NULL;
+
+    /* First publish packet: do not send PUBACK */
+    uint8_t hdr[2];
+    if (broker_recv_exact(c, hdr, 2) == 0 && broker_recv_exact(c, ctx->pkt1 + 2, hdr[1]) == 0) {
+        ctx->pkt1[0] = hdr[0];
+        ctx->pkt1[1] = hdr[1];
+        ctx->pkt1_len = 2 + hdr[1];
+
+        /* Second publish packet (retry with DUP=1) */
+        if (broker_recv_exact(c, hdr, 2) == 0 && broker_recv_exact(c, ctx->pkt2 + 2, hdr[1]) == 0) {
+            ctx->pkt2[0] = hdr[0];
+            ctx->pkt2[1] = hdr[1];
+            ctx->pkt2_len = 2 + hdr[1];
+
+            uint16_t tlen = (uint16_t)((ctx->pkt2[2] << 8) | ctx->pkt2[3]);
+            size_t pid_offset = 4 + tlen;
+            uint16_t pid = (uint16_t)((ctx->pkt2[pid_offset] << 8) | ctx->pkt2[pid_offset + 1]);
+            uint8_t puback[4] = { 0x40, 0x02, (uint8_t)(pid >> 8), (uint8_t)(pid & 0xFF) };
+            eos_net_send(c, puback, sizeof(puback));
+        }
+    }
+    uint8_t disc[2];
+    (void)broker_recv_exact(c, disc, 2);
+    eos_net_close(c);
+    return NULL;
+}
+
+static void test_mqtt_qos1_retry(void) {
+    eos_net_init();
+    retry_broker_ctx_t ctx;
+    memset(&ctx, 0, sizeof(ctx));
+    broker_sync_init(&ctx.sync);
+    ctx.port = g_broker_port++;
+    pthread_t t;
+    pthread_create(&t, NULL, broker_qos1_retry, &ctx);
+    wait_broker_ready(&ctx.sync);
+
+    eos_mqtt_config_t cfg;
+    mqtt_test_config(&cfg, ctx.port);
+    eos_mqtt_handle_t h = eos_mqtt_connect(&cfg);
+    CHECK(h != EOS_MQTT_INVALID);
+
+    const char *topic = "sensor/retry";
+    const char *payload = "val";
+    CHECK(eos_mqtt_publish(h, topic, payload, strlen(payload), 1) == 0);
+    CHECK(eos_mqtt_disconnect(h) == 0);
+    pthread_join(t, NULL);
+    broker_sync_destroy(&ctx.sync);
+
+    CHECK(ctx.pkt1_len > 0);
+    CHECK((ctx.pkt1[0] & 0x08) == 0); /* First transmission DUP = 0 */
+    CHECK(ctx.pkt2_len > 0);
+    CHECK((ctx.pkt2[0] & 0x08) == 0x08); /* Retransmission DUP = 1 */
+
+    eos_net_deinit();
+    PASS("mqtt QoS 1 retransmit with DUP=1");
+}
+
+static void *broker_bad_suback(void *arg) {
+    sub_broker_ctx_t *ctx = (sub_broker_ctx_t *)arg;
+    eos_socket_t s = broker_listen_ready(ctx->port, &ctx->sync);
+    if (s == EOS_SOCKET_INVALID) return NULL;
+    eos_socket_t c = broker_accept_and_connack(s);
+    if (c == EOS_SOCKET_INVALID) return NULL;
+
+    uint8_t hdr[2];
+    uint8_t body[64];
+    if (broker_recv_exact(c, hdr, 2) == 0 && broker_recv_exact(c, body, hdr[1]) == 0) {
+        uint16_t pid = (uint16_t)((body[0] << 8) | body[1]);
+        /* Return code 0x02 is higher than requested QoS 1; must be rejected */
+        uint8_t suback[5] = { 0x90, 0x03, (uint8_t)(pid >> 8), (uint8_t)(pid & 0xFF), 0x02 };
+        eos_net_send(c, suback, sizeof(suback));
+    }
+    uint8_t disc[2];
+    (void)broker_recv_exact(c, disc, 2);
+    eos_net_close(c);
+    return NULL;
+}
+
+static void test_mqtt_suback_grant_validation(void) {
+    eos_net_init();
+    sub_broker_ctx_t ctx;
+    memset(&ctx, 0, sizeof(ctx));
+    broker_sync_init(&ctx.sync);
+    ctx.port = g_broker_port++;
+    pthread_t t;
+    pthread_create(&t, NULL, broker_bad_suback, &ctx);
+    wait_broker_ready(&ctx.sync);
+
+    eos_mqtt_config_t cfg;
+    mqtt_test_config(&cfg, ctx.port);
+    eos_mqtt_handle_t h = eos_mqtt_connect(&cfg);
+    CHECK(h != EOS_MQTT_INVALID);
+
+    /* Requested QoS 1, but broker returns granted QoS 2 -> must reject and return -1 */
+    CHECK(eos_mqtt_subscribe(h, "sensor/grant", 1, dummy_cb, NULL) == -1);
+
+    CHECK(eos_mqtt_disconnect(h) == 0);
+    pthread_join(t, NULL);
+    broker_sync_destroy(&ctx.sync);
+    eos_net_deinit();
+    PASS("mqtt reject SUBACK granted QoS > requested");
+}
+
+typedef struct {
+    eos_mqtt_handle_t h;
+    int pub_res;
+    int sub_res;
+    int unsub_res;
+    int loop_res;
+    bool invoked;
+} nested_test_ctx_t;
+
+static void nested_reentrant_cb(const char *topic, const uint8_t *payload, size_t len, void *ctx) {
+    (void)topic; (void)payload; (void)len;
+    nested_test_ctx_t *tc = (nested_test_ctx_t *)ctx;
+    tc->invoked = true;
+    tc->pub_res = eos_mqtt_publish(tc->h, "nested/topic", "msg", 3, 0);
+    tc->sub_res = eos_mqtt_subscribe(tc->h, "nested/sub", 0, dummy_cb, NULL);
+    tc->unsub_res = eos_mqtt_unsubscribe(tc->h, "nested/sub");
+    tc->loop_res = eos_mqtt_loop(tc->h, 10);
+}
+
+static void *broker_send_nested_pub(void *arg) {
+    sub_broker_ctx_t *ctx = (sub_broker_ctx_t *)arg;
+    eos_socket_t s = broker_listen_ready(ctx->port, &ctx->sync);
+    if (s == EOS_SOCKET_INVALID) return NULL;
+    eos_socket_t c = broker_accept_and_connack(s);
+    if (c == EOS_SOCKET_INVALID) return NULL;
+
+    uint8_t hdr[2];
+    uint8_t body[64];
+    if (broker_recv_exact(c, hdr, 2) == 0 && broker_recv_exact(c, body, hdr[1]) == 0) {
+        uint16_t pid = (uint16_t)((body[0] << 8) | body[1]);
+        uint8_t suback[5] = { 0x90, 0x03, (uint8_t)(pid >> 8), (uint8_t)(pid & 0xFF), 0x00 };
+        eos_net_send(c, suback, sizeof(suback));
+
+        const char *t = "nested/inbound";
+        const char *p = "1";
+        uint8_t pub_pkt[64];
+        pub_pkt[0] = 0x30;
+        pub_pkt[1] = (uint8_t)(2 + strlen(t) + strlen(p));
+        pub_pkt[2] = 0;
+        pub_pkt[3] = (uint8_t)strlen(t);
+        memcpy(pub_pkt + 4, t, strlen(t));
+        memcpy(pub_pkt + 4 + strlen(t), p, strlen(p));
+        eos_net_send(c, pub_pkt, 2 + pub_pkt[1]);
+    }
+    uint8_t disc[2];
+    (void)broker_recv_exact(c, disc, 2);
+    eos_net_close(c);
+    return NULL;
+}
+
+static void test_mqtt_nested_callback_rejection(void) {
+    eos_net_init();
+    sub_broker_ctx_t ctx;
+    memset(&ctx, 0, sizeof(ctx));
+    broker_sync_init(&ctx.sync);
+    ctx.port = g_broker_port++;
+    pthread_t t;
+    pthread_create(&t, NULL, broker_send_nested_pub, &ctx);
+    wait_broker_ready(&ctx.sync);
+
+    eos_mqtt_config_t cfg;
+    mqtt_test_config(&cfg, ctx.port);
+    eos_mqtt_handle_t h = eos_mqtt_connect(&cfg);
+    CHECK(h != EOS_MQTT_INVALID);
+
+    nested_test_ctx_t nctx;
+    memset(&nctx, 0, sizeof(nctx));
+    nctx.h = h;
+
+    CHECK(eos_mqtt_subscribe(h, "nested/inbound", 0, nested_reentrant_cb, &nctx) == 0);
+    CHECK(eos_mqtt_loop(h, 1000) == 0);
+    CHECK(nctx.invoked == true);
+    CHECK(nctx.pub_res == -1);
+    CHECK(nctx.sub_res == -1);
+    CHECK(nctx.unsub_res == -1);
+    CHECK(nctx.loop_res == -1);
+
+    CHECK(eos_mqtt_disconnect(h) == 0);
+    pthread_join(t, NULL);
+    broker_sync_destroy(&ctx.sync);
+    eos_net_deinit();
+    PASS("mqtt reject nested synchronous calls from callback");
+}
+
+static void *broker_send_empty_level_wildcard(void *arg) {
+    sub_broker_ctx_t *ctx = (sub_broker_ctx_t *)arg;
+    eos_socket_t s = broker_listen_ready(ctx->port, &ctx->sync);
+    if (s == EOS_SOCKET_INVALID) return NULL;
+    eos_socket_t c = broker_accept_and_connack(s);
+    if (c == EOS_SOCKET_INVALID) return NULL;
+
+    uint8_t hdr[2];
+    uint8_t body[64];
+    if (broker_recv_exact(c, hdr, 2) == 0 && broker_recv_exact(c, body, hdr[1]) == 0) {
+        uint16_t pid = (uint16_t)((body[0] << 8) | body[1]);
+        uint8_t suback[5] = { 0x90, 0x03, (uint8_t)(pid >> 8), (uint8_t)(pid & 0xFF), 0x00 };
+        eos_net_send(c, suback, sizeof(suback));
+
+        /* Send publish to topic "sensor/" */
+        const char *t = "sensor/";
+        const char *p = "empty";
+        uint8_t pub_pkt[64];
+        pub_pkt[0] = 0x30;
+        pub_pkt[1] = (uint8_t)(2 + strlen(t) + strlen(p));
+        pub_pkt[2] = 0;
+        pub_pkt[3] = (uint8_t)strlen(t);
+        memcpy(pub_pkt + 4, t, strlen(t));
+        memcpy(pub_pkt + 4 + strlen(t), p, strlen(p));
+        eos_net_send(c, pub_pkt, 2 + pub_pkt[1]);
+    }
+    uint8_t disc[2];
+    (void)broker_recv_exact(c, disc, 2);
+    eos_net_close(c);
+    return NULL;
+}
+
+static void test_mqtt_wildcard_empty_level(void) {
+    eos_net_init();
+    sub_broker_ctx_t ctx;
+    memset(&ctx, 0, sizeof(ctx));
+    broker_sync_init(&ctx.sync);
+    ctx.port = g_broker_port++;
+    pthread_t t;
+    pthread_create(&t, NULL, broker_send_empty_level_wildcard, &ctx);
+    wait_broker_ready(&ctx.sync);
+
+    eos_mqtt_config_t cfg;
+    mqtt_test_config(&cfg, ctx.port);
+    eos_mqtt_handle_t h = eos_mqtt_connect(&cfg);
+    CHECK(h != EOS_MQTT_INVALID);
+
+    cb_record_t rec;
+    memset(&rec, 0, sizeof(rec));
+    /* "sensor/+" MUST match "sensor/" (matching trailing empty level) */
+    CHECK(eos_mqtt_subscribe(h, "sensor/+", 0, test_msg_cb, &rec) == 0);
+    CHECK(eos_mqtt_loop(h, 1000) == 0);
+    CHECK(rec.call_count == 1);
+    CHECK(strcmp(rec.topic, "sensor/") == 0);
+
+    CHECK(eos_mqtt_disconnect(h) == 0);
+    pthread_join(t, NULL);
+    broker_sync_destroy(&ctx.sync);
+    eos_net_deinit();
+    PASS("mqtt wildcard '+' matches empty topic level");
+}
+
+static void *broker_send_inbound_oversized(void *arg) {
+    sub_broker_ctx_t *ctx = (sub_broker_ctx_t *)arg;
+    eos_socket_t s = broker_listen_ready(ctx->port, &ctx->sync);
+    if (s == EOS_SOCKET_INVALID) return NULL;
+    eos_socket_t c = broker_accept_and_connack(s);
+    if (c == EOS_SOCKET_INVALID) return NULL;
+
+    /* Send inbound QoS 1 PUBLISH with topic length 150 (> EOS_MQTT_MAX_TOPIC_LEN 128) */
+    uint8_t pub_pkt[256];
+    pub_pkt[0] = 0x32; /* QoS 1 */
+    size_t tlen = 150;
+    pub_pkt[1] = (uint8_t)(2 + tlen + 2 + 4);
+    pub_pkt[2] = 0;
+    pub_pkt[3] = (uint8_t)tlen;
+    memset(pub_pkt + 4, 'a', tlen);
+    size_t off = 4 + tlen;
+    pub_pkt[off++] = 0x00;
+    pub_pkt[off++] = 0x05;
+    memcpy(pub_pkt + off, "data", 4);
+    off += 4;
+    eos_net_send(c, pub_pkt, off);
+
+    /* Broker checks if client incorrectly sends PUBACK */
+    struct timeval tv = { .tv_sec = 0, .tv_usec = 200 * 1000 };
+    setsockopt(c, SOL_SOCKET, SO_RCVTIMEO, &tv, sizeof(tv));
+    uint8_t resp[4];
+    int n = eos_net_recv(c, resp, sizeof(resp), 200);
+    ctx->pkt_len = (n > 0) ? (size_t)n : 0; /* Should be 0 (no PUBACK sent) */
+
+    eos_net_close(c);
+    return NULL;
+}
+
+static void test_mqtt_inbound_oversized_topic_no_puback(void) {
+    eos_net_init();
+    sub_broker_ctx_t ctx;
+    memset(&ctx, 0, sizeof(ctx));
+    broker_sync_init(&ctx.sync);
+    ctx.port = g_broker_port++;
+    pthread_t t;
+    pthread_create(&t, NULL, broker_send_inbound_oversized, &ctx);
+    wait_broker_ready(&ctx.sync);
+
+    eos_mqtt_config_t cfg;
+    mqtt_test_config(&cfg, ctx.port);
+    eos_mqtt_handle_t h = eos_mqtt_connect(&cfg);
+    CHECK(h != EOS_MQTT_INVALID);
+
+    /* Loop must reject the packet and close connection without sending PUBACK */
+    CHECK(eos_mqtt_loop(h, 1000) == -1);
+
+    pthread_join(t, NULL);
+    broker_sync_destroy(&ctx.sync);
+    CHECK(ctx.pkt_len == 0); /* Verified: no PUBACK was transmitted */
+    eos_net_deinit();
+    PASS("mqtt reject inbound oversized topic without sending PUBACK");
+}
+
+static void *broker_send_bad_flags(void *arg) {
+    sub_broker_ctx_t *ctx = (sub_broker_ctx_t *)arg;
+    eos_socket_t s = broker_listen_ready(ctx->port, &ctx->sync);
+    if (s == EOS_SOCKET_INVALID) return NULL;
+    eos_socket_t c = broker_accept_and_connack(s);
+    if (c == EOS_SOCKET_INVALID) return NULL;
+
+    /* Send PINGRESP with invalid flags (0xD1 instead of 0xD0) */
+    uint8_t bad_pingresp[2] = { 0xD1, 0x00 };
+    eos_net_send(c, bad_pingresp, sizeof(bad_pingresp));
+
+    uint8_t buf[8];
+    (void)broker_recv_exact(c, buf, sizeof(buf));
+    eos_net_close(c);
+    return NULL;
+}
+
+static void test_mqtt_control_packet_flags(void) {
+    eos_net_init();
+    sub_broker_ctx_t ctx;
+    memset(&ctx, 0, sizeof(ctx));
+    broker_sync_init(&ctx.sync);
+    ctx.port = g_broker_port++;
+    pthread_t t;
+    pthread_create(&t, NULL, broker_send_bad_flags, &ctx);
+    wait_broker_ready(&ctx.sync);
+
+    eos_mqtt_config_t cfg;
+    mqtt_test_config(&cfg, ctx.port);
+    eos_mqtt_handle_t h = eos_mqtt_connect(&cfg);
+    CHECK(h != EOS_MQTT_INVALID);
+
+    /* Loop receives bad PINGRESP with invalid fixed-header flags -> fail connection */
+    CHECK(eos_mqtt_loop(h, 1000) == -1);
+
+    pthread_join(t, NULL);
+    broker_sync_destroy(&ctx.sync);
+    eos_net_deinit();
+    PASS("mqtt validate fixed-header flags");
 }
 #endif /* EOS_NET_POSIX */
 
@@ -1361,6 +1779,12 @@ int main(void) {
     test_mqtt_malformed_packet();
     test_mqtt_loop_timeout();
     test_mqtt_keepalive();
+    test_mqtt_qos1_retry();
+    test_mqtt_suback_grant_validation();
+    test_mqtt_nested_callback_rejection();
+    test_mqtt_wildcard_empty_level();
+    test_mqtt_inbound_oversized_topic_no_puback();
+    test_mqtt_control_packet_flags();
 #endif
     printf("\n=== ALL %d NET TESTS PASSED ===\n", passed);
     return 0;

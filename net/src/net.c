@@ -206,10 +206,13 @@ typedef struct {
     bool ping_pending;
     uint32_t ping_sent_sec;
     uint16_t next_packet_id;
+    bool in_callback;
     mqtt_sub_t subscriptions[EOS_MQTT_MAX_SUBSCRIPTIONS];
     struct {
         bool in_flight;
         uint16_t packet_id;
+        uint8_t pkt[EOS_MQTT_BUFFER_SIZE];
+        size_t pkt_len;
     } pending_pub;
     uint8_t rx_buf[EOS_MQTT_BUFFER_SIZE];
     uint8_t tx_buf[EOS_MQTT_BUFFER_SIZE];
@@ -239,6 +242,14 @@ static uint32_t mqtt_now_ms(void)
     return (uint32_t)(time(NULL) * 1000);
 }
 
+static uint32_t mqtt_time_rem_ms(uint32_t start_ms, uint32_t timeout_ms)
+{
+    uint32_t now = mqtt_now_ms();
+    uint32_t elapsed = (now >= start_ms) ? (now - start_ms) : (0xFFFFFFFFu - start_ms + now);
+    if (elapsed >= timeout_ms) return 0;
+    return timeout_ms - elapsed;
+}
+
 /* The config strings are fixed arrays the caller fills; one without a
  * terminator would send strlen() past the end of the struct. */
 static bool mqtt_field_ok(const char *field, size_t size)
@@ -246,6 +257,11 @@ static bool mqtt_field_ok(const char *field, size_t size)
     return memchr(field, '\0', size) != NULL;
 }
 
+/* Note: The eos_net socket abstraction (eos_net_send in net/include/eos/net.h)
+ * does not support a send timeout parameter. A blocking socket send will block
+ * until data is accepted by the underlying network stack. To avoid unbounded
+ * hangs, higher-level timeouts or non-blocking socket extensions would require
+ * modifying net.h, which is outside the scope of Issue #259. */
 static int mqtt_send_all(eos_socket_t sock, const uint8_t *buf, size_t len)
 {
     while (len > 0) {
@@ -257,15 +273,21 @@ static int mqtt_send_all(eos_socket_t sock, const uint8_t *buf, size_t len)
     return 0;
 }
 
-/* eos_net_recv returns 0 for both a timeout and an orderly close. Either one
- * means the bytes are not coming, so both fail the read. Each call waits up
- * to timeout_ms, so a peer that trickles one byte at a time can stretch the
- * total wait to len * timeout_ms. That is still bounded. */
-static int mqtt_recv_exact(eos_socket_t sock, uint8_t *buf, size_t len,
-                           uint32_t timeout_ms)
+/* Note: eos_net_recv() returns 0 for both a timeout and an orderly close (EOF).
+ * The current eos_net API does not distinguish EOF from timeout without errno
+ * or out-of-band signals. In either case, expected packet bytes will not arrive,
+ * so any n <= 0 aborts the read and fails the packet.
+ *
+ * All packet reads are bounded by a single overall deadline calculated from
+ * start_ms and timeout_ms, ensuring slow or partial reads cannot exceed the
+ * caller's specified timeout budget. */
+static int mqtt_recv_exact_deadline(eos_socket_t sock, uint8_t *buf, size_t len,
+                                    uint32_t start_ms, uint32_t timeout_ms)
 {
     while (len > 0) {
-        int n = eos_net_recv(sock, buf, len, timeout_ms);
+        uint32_t rem = mqtt_time_rem_ms(start_ms, timeout_ms);
+        if (rem == 0) return -1;
+        int n = eos_net_recv(sock, buf, len, rem);
         if (n <= 0) return -1;
         buf += n;
         len -= (size_t)n;
@@ -284,14 +306,86 @@ static void mqtt_release(mqtt_client_t *c)
     c->ping_pending = false;
     c->ping_sent_sec = 0;
     c->next_packet_id = 0;
+    c->in_callback = false;
     memset(c->subscriptions, 0, sizeof(c->subscriptions));
     memset(&c->pending_pub, 0, sizeof(c->pending_pub));
+}
+
+/* RFC 3629 UTF-8 validator enforcing MQTT 3.1.1 section 1.5.3:
+ * well-formed UTF-8 and MUST NOT include null character U+0000 (MQTT-1.5.3-2). */
+static bool mqtt_utf8_valid(const char *data, size_t len)
+{
+    if (!data) return false;
+    const uint8_t *p = (const uint8_t *)data;
+    size_t i = 0;
+    while (i < len) {
+        uint8_t c = p[i++];
+        if (c == 0x00) {
+            /* MQTT-1.5.3-2: MUST NOT include null character U+0000 */
+            return false;
+        }
+        if (c <= 0x7F) {
+            continue;
+        } else if (c >= 0xC2 && c <= 0xDF) {
+            if (i >= len) return false;
+            uint8_t c2 = p[i++];
+            if ((c2 & 0xC0) != 0x80) return false;
+        } else if (c == 0xE0) {
+            if (i + 1 >= len) return false;
+            uint8_t c2 = p[i++];
+            uint8_t c3 = p[i++];
+            if (c2 < 0xA0 || c2 > 0xBF) return false;
+            if ((c3 & 0xC0) != 0x80) return false;
+        } else if ((c >= 0xE1 && c <= 0xEC) || c == 0xEE || c == 0xEF) {
+            if (i + 1 >= len) return false;
+            uint8_t c2 = p[i++];
+            uint8_t c3 = p[i++];
+            if ((c2 & 0xC0) != 0x80) return false;
+            if ((c3 & 0xC0) != 0x80) return false;
+        } else if (c == 0xED) {
+            /* Reject UTF-16 surrogates U+D800..U+DFFF */
+            if (i + 1 >= len) return false;
+            uint8_t c2 = p[i++];
+            uint8_t c3 = p[i++];
+            if (c2 < 0x80 || c2 > 0x9F) return false;
+            if ((c3 & 0xC0) != 0x80) return false;
+        } else if (c == 0xF0) {
+            if (i + 2 >= len) return false;
+            uint8_t c2 = p[i++];
+            uint8_t c3 = p[i++];
+            uint8_t c4 = p[i++];
+            if (c2 < 0x90 || c2 > 0xBF) return false;
+            if ((c3 & 0xC0) != 0x80) return false;
+            if ((c4 & 0xC0) != 0x80) return false;
+        } else if (c >= 0xF1 && c <= 0xF3) {
+            if (i + 2 >= len) return false;
+            uint8_t c2 = p[i++];
+            uint8_t c3 = p[i++];
+            uint8_t c4 = p[i++];
+            if ((c2 & 0xC0) != 0x80) return false;
+            if ((c3 & 0xC0) != 0x80) return false;
+            if ((c4 & 0xC0) != 0x80) return false;
+        } else if (c == 0xF4) {
+            if (i + 2 >= len) return false;
+            uint8_t c2 = p[i++];
+            uint8_t c3 = p[i++];
+            uint8_t c4 = p[i++];
+            if (c2 < 0x80 || c2 > 0x8F) return false;
+            if ((c3 & 0xC0) != 0x80) return false;
+            if ((c4 & 0xC0) != 0x80) return false;
+        } else {
+            return false;
+        }
+    }
+    return true;
 }
 
 static bool mqtt_topic_name_valid(const char *topic)
 {
     if (topic == NULL || topic[0] == '\0') return false;
-    if (strlen(topic) > EOS_MQTT_MAX_TOPIC_LEN - 1) return false;
+    size_t len = strlen(topic);
+    if (len > EOS_MQTT_MAX_TOPIC_LEN - 1) return false;
+    if (!mqtt_utf8_valid(topic, len)) return false;
     return strchr(topic, '+') == NULL && strchr(topic, '#') == NULL;
 }
 
@@ -300,6 +394,7 @@ static bool mqtt_topic_filter_valid(const char *filter)
     if (filter == NULL || filter[0] == '\0') return false;
     size_t len = strlen(filter);
     if (len > EOS_MQTT_MAX_TOPIC_LEN - 1) return false;
+    if (!mqtt_utf8_valid(filter, len)) return false;
 
     for (size_t i = 0; i < len; i++) {
         if (filter[i] == '#') {
@@ -353,6 +448,11 @@ static bool mqtt_topic_matches(const char *filter, const char *topic)
     if (*filter == '/' && *(filter + 1) == '#' && *(filter + 2) == '\0' && *topic == '\0') {
         return true;
     }
+    /* If filter has a trailing '+' after a slash and topic ended with a slash,
+     * the '+' matches the trailing empty level. (e.g. "sport/+" matches "sport/") */
+    if (*filter == '+' && *(filter + 1) == '\0' && *topic == '\0') {
+        return true;
+    }
 
     return *filter == '\0' && *topic == '\0';
 }
@@ -364,6 +464,48 @@ static uint16_t mqtt_next_packet_id(mqtt_client_t *c)
         c->next_packet_id = 1;
     }
     return c->next_packet_id;
+}
+
+static int mqtt_check_keepalive(mqtt_client_t *c, uint32_t *max_wait_ms)
+{
+    if (c->keepalive_sec == 0) return 0;
+    uint32_t now = mqtt_now_sec();
+    if (c->ping_pending) {
+        if (now - c->ping_sent_sec >= c->keepalive_sec) {
+            /* Missed PINGRESP within keepalive window */
+            mqtt_release(c);
+            return -1;
+        }
+        if (max_wait_ms) {
+            uint32_t elapsed = now - c->ping_sent_sec;
+            uint32_t rem_sec = (elapsed < c->keepalive_sec) ? (c->keepalive_sec - elapsed) : 0;
+            uint32_t rem_ms = rem_sec * 1000;
+            if (rem_ms < *max_wait_ms) {
+                *max_wait_ms = (rem_ms > 0) ? rem_ms : 1;
+            }
+        }
+    } else {
+        if (now - c->last_send_sec >= c->keepalive_sec) {
+            uint8_t ping[2];
+            int n = eos_mqtt_encode_pingreq(ping, sizeof(ping));
+            if (n <= 0 || mqtt_send_all(c->sock, ping, (size_t)n) != 0) {
+                mqtt_release(c);
+                return -1;
+            }
+            c->last_send_sec = now;
+            c->ping_pending = true;
+            c->ping_sent_sec = now;
+        }
+        if (max_wait_ms) {
+            uint32_t elapsed = now - c->last_send_sec;
+            uint32_t rem_sec = (elapsed < c->keepalive_sec) ? (c->keepalive_sec - elapsed) : 0;
+            uint32_t rem_ms = rem_sec * 1000;
+            if (rem_ms < *max_wait_ms) {
+                *max_wait_ms = (rem_ms > 0) ? rem_ms : 1;
+            }
+        }
+    }
+    return 0;
 }
 
 static int mqtt_process_one_packet(mqtt_client_t *c, uint32_t timeout_ms,
@@ -385,11 +527,17 @@ static int mqtt_process_one_packet(mqtt_client_t *c, uint32_t timeout_ms,
     }
 
     if (got_packet) *got_packet = true;
+    uint32_t pkt_start_ms = mqtt_now_ms();
+    uint32_t pkt_budget_ms = (timeout_ms > 0) ? timeout_ms : EOS_MQTT_CONNACK_TIMEOUT_MS;
 
     size_t rl_count = 0;
     while (rl_count < 4) {
-        n = eos_net_recv(c->sock, &c->rx_buf[1 + rl_count], 1,
-                         EOS_MQTT_CONNACK_TIMEOUT_MS);
+        uint32_t rem = mqtt_time_rem_ms(pkt_start_ms, pkt_budget_ms);
+        if (rem == 0) {
+            mqtt_release(c);
+            return -1;
+        }
+        n = eos_net_recv(c->sock, &c->rx_buf[1 + rl_count], 1, rem);
         if (n <= 0) {
             mqtt_release(c);
             return -1;
@@ -416,8 +564,8 @@ static int mqtt_process_one_packet(mqtt_client_t *c, uint32_t timeout_ms,
     }
 
     if (remaining_len > 0) {
-        if (mqtt_recv_exact(c->sock, &c->rx_buf[header_len], remaining_len,
-                            EOS_MQTT_CONNACK_TIMEOUT_MS) != 0) {
+        if (mqtt_recv_exact_deadline(c->sock, &c->rx_buf[header_len], remaining_len,
+                                     pkt_start_ms, pkt_budget_ms) != 0) {
             mqtt_release(c);
             return -1;
         }
@@ -426,9 +574,59 @@ static int mqtt_process_one_packet(mqtt_client_t *c, uint32_t timeout_ms,
     size_t total_len = header_len + remaining_len;
     c->last_recv_sec = mqtt_now_sec();
 
+    uint8_t flags = c->rx_buf[0] & 0x0Fu;
     eos_mqtt_header_t hdr;
     st = eos_mqtt_parse_header(c->rx_buf, total_len, &hdr);
     if (st != EOS_MQTT_OK) {
+        mqtt_release(c);
+        return -1;
+    }
+
+    /* MQTT 3.1.1 Table 2.2 flag bits and packet length validation */
+    switch (hdr.type) {
+    case EOS_MQTT_PKT_PUBLISH:
+        if (((flags >> 1) & 0x03u) == 3) {
+            /* Reserved QoS value 3 */
+            mqtt_release(c);
+            return -1;
+        }
+        if (((flags >> 1) & 0x03u) == 0 && (flags & 0x08u) != 0) {
+            /* DUP flag MUST be 0 for QoS 0 (MQTT-3.3.1-2) */
+            mqtt_release(c);
+            return -1;
+        }
+        break;
+    case EOS_MQTT_PKT_PUBACK:
+        if (flags != 0x00 || remaining_len != 2) {
+            mqtt_release(c);
+            return -1;
+        }
+        break;
+    case EOS_MQTT_PKT_SUBACK:
+        if (flags != 0x00 || remaining_len < 3) {
+            mqtt_release(c);
+            return -1;
+        }
+        break;
+    case EOS_MQTT_PKT_UNSUBACK:
+        if (flags != 0x00 || remaining_len != 2) {
+            mqtt_release(c);
+            return -1;
+        }
+        break;
+    case EOS_MQTT_PKT_PINGRESP:
+        if (flags != 0x00 || remaining_len != 0) {
+            mqtt_release(c);
+            return -1;
+        }
+        break;
+    case EOS_MQTT_PKT_PINGREQ:
+        if (flags != 0x00 || remaining_len != 0) {
+            mqtt_release(c);
+            return -1;
+        }
+        break;
+    default:
         mqtt_release(c);
         return -1;
     }
@@ -449,6 +647,26 @@ static int mqtt_process_one_packet(mqtt_client_t *c, uint32_t timeout_ms,
             return -1;
         }
         if (out_pid) *out_pid = pub.packet_id;
+
+        char topic_str[EOS_MQTT_MAX_TOPIC_LEN];
+        if (pub.topic_len == 0 || pub.topic_len >= sizeof(topic_str)) {
+            mqtt_release(c);
+            return -1;
+        }
+        if (!mqtt_utf8_valid(pub.topic, pub.topic_len)) {
+            mqtt_release(c);
+            return -1;
+        }
+        if (memchr(pub.topic, '+', pub.topic_len) != NULL ||
+            memchr(pub.topic, '#', pub.topic_len) != NULL) {
+            /* Topic Name in PUBLISH packet MUST NOT contain wildcard characters (MQTT-3.3.2-2) */
+            mqtt_release(c);
+            return -1;
+        }
+        memcpy(topic_str, pub.topic, pub.topic_len);
+        topic_str[pub.topic_len] = '\0';
+
+        /* Acknowledge QoS 1 only AFTER validating topic safely fits */
         if (pub.qos == 1) {
             uint8_t puback[4];
             int ack_len = eos_mqtt_encode_puback(puback, sizeof(puback), pub.packet_id);
@@ -459,14 +677,7 @@ static int mqtt_process_one_packet(mqtt_client_t *c, uint32_t timeout_ms,
             c->last_send_sec = mqtt_now_sec();
         }
 
-        char topic_str[EOS_MQTT_MAX_TOPIC_LEN];
-        if (pub.topic_len >= sizeof(topic_str)) {
-            mqtt_release(c);
-            return -1;
-        }
-        memcpy(topic_str, pub.topic, pub.topic_len);
-        topic_str[pub.topic_len] = '\0';
-
+        c->in_callback = true;
         for (int i = 0; i < EOS_MQTT_MAX_SUBSCRIPTIONS; i++) {
             if (c->subscriptions[i].in_use &&
                 mqtt_topic_matches(c->subscriptions[i].topic, topic_str)) {
@@ -476,6 +687,7 @@ static int mqtt_process_one_packet(mqtt_client_t *c, uint32_t timeout_ms,
                 }
             }
         }
+        c->in_callback = false;
         return 0;
     }
     case EOS_MQTT_PKT_PUBACK: {
@@ -513,10 +725,6 @@ static int mqtt_process_one_packet(mqtt_client_t *c, uint32_t timeout_ms,
         return 0;
     }
     case EOS_MQTT_PKT_PINGRESP: {
-        if (hdr.remaining_length != 0) {
-            mqtt_release(c);
-            return -1;
-        }
         c->ping_pending = false;
         return 0;
     }
@@ -540,13 +748,41 @@ static int mqtt_wait_for_ack(mqtt_client_t *c, uint8_t expected_type,
                              uint8_t *out_code)
 {
     uint32_t start_ms = mqtt_now_ms();
+    bool retried = false;
+    uint32_t retry_threshold_ms = timeout_ms / 2;
+
     for (;;) {
-        uint32_t now_ms = mqtt_now_ms();
-        uint32_t elapsed = (now_ms >= start_ms) ? (now_ms - start_ms) : (0xFFFFFFFFu - start_ms + now_ms);
-        if (elapsed >= timeout_ms) {
+        uint32_t rem_ms = mqtt_time_rem_ms(start_ms, timeout_ms);
+        if (rem_ms == 0) {
+            /* Timeout waiting for ack: invalidate session fail-closed */
+            mqtt_release(c);
             return -1;
         }
-        uint32_t rem_ms = timeout_ms - elapsed;
+
+        if (mqtt_check_keepalive(c, &rem_ms) != 0) {
+            return -1;
+        }
+
+        /* QoS 1 retry with DUP=1 if initial wait exceeded retry threshold */
+        if (!retried && expected_type == EOS_MQTT_PKT_PUBACK && c->pending_pub.in_flight) {
+            uint32_t now = mqtt_now_ms();
+            uint32_t elapsed = (now >= start_ms) ? (now - start_ms) : (0xFFFFFFFFu - start_ms + now);
+            if (elapsed >= retry_threshold_ms) {
+                retried = true;
+                c->pending_pub.pkt[0] |= 0x08u; /* DUP = 1 */
+                if (mqtt_send_all(c->sock, c->pending_pub.pkt, c->pending_pub.pkt_len) != 0) {
+                    mqtt_release(c);
+                    return -1;
+                }
+                c->last_send_sec = mqtt_now_sec();
+            } else {
+                uint32_t time_to_retry = retry_threshold_ms - elapsed;
+                if (time_to_retry < rem_ms) {
+                    rem_ms = time_to_retry;
+                }
+            }
+        }
+
         bool got_pkt = false;
         uint8_t pkt_type = 0;
         uint16_t pkt_pid = 0;
@@ -556,10 +792,7 @@ static int mqtt_wait_for_ack(mqtt_client_t *c, uint8_t expected_type,
         if (rc < 0) {
             return -1;
         }
-        if (!got_pkt) {
-            return -1;
-        }
-        if (pkt_type == expected_type && pkt_pid == expected_pid) {
+        if (got_pkt && pkt_type == expected_type && pkt_pid == expected_pid) {
             if (out_code) *out_code = code;
             return 0;
         }
@@ -586,8 +819,9 @@ static int mqtt_handshake(mqtt_client_t *c, const eos_mqtt_config_t *cfg,
     /* The first packet from the server MUST be CONNACK (MQTT-3.2.0-1), and a
      * CONNACK is always exactly 4 bytes. Read exactly that and let the codec
      * reject anything else. */
-    if (mqtt_recv_exact(c->sock, ack_buf, sizeof(ack_buf),
-                        EOS_MQTT_CONNACK_TIMEOUT_MS) != 0) {
+    uint32_t hs_start = mqtt_now_ms();
+    if (mqtt_recv_exact_deadline(c->sock, ack_buf, sizeof(ack_buf),
+                                 hs_start, EOS_MQTT_CONNACK_TIMEOUT_MS) != 0) {
         return -1;
     }
     if (eos_mqtt_decode_connack(ack_buf, sizeof(ack_buf), &ack) != EOS_MQTT_OK) {
@@ -651,6 +885,7 @@ eos_mqtt_handle_t eos_mqtt_connect(const eos_mqtt_config_t *cfg)
     c->ping_pending = false;
     c->ping_sent_sec = 0;
     c->next_packet_id = 0;
+    c->in_callback = false;
     memset(c->subscriptions, 0, sizeof(c->subscriptions));
     memset(&c->pending_pub, 0, sizeof(c->pending_pub));
     return (eos_mqtt_handle_t)idx;
@@ -681,7 +916,7 @@ int eos_mqtt_publish(eos_mqtt_handle_t handle, const char *topic,
 {
     if (handle < 0 || handle >= EOS_MQTT_MAX_CLIENTS) return -1;
     mqtt_client_t *c = &mqtt_clients[handle];
-    if (c->state != MQTT_CONNECTED) return -1;
+    if (c->state != MQTT_CONNECTED || c->in_callback) return -1;
 
     if (!mqtt_topic_name_valid(topic)) return -1;
     if (qos > 1) return -1;
@@ -707,9 +942,11 @@ int eos_mqtt_publish(eos_mqtt_handle_t handle, const char *topic,
         return 0;
     }
 
-    /* QoS 1: wait for PUBACK */
+    /* QoS 1: store packet for potential DUP=1 retry, wait for PUBACK */
     c->pending_pub.in_flight = true;
     c->pending_pub.packet_id = pid;
+    c->pending_pub.pkt_len = (size_t)pkt_len;
+    memcpy(c->pending_pub.pkt, c->tx_buf, (size_t)pkt_len);
 
     if (mqtt_wait_for_ack(c, EOS_MQTT_PKT_PUBACK, pid,
                           EOS_MQTT_CONNACK_TIMEOUT_MS, NULL) != 0) {
@@ -723,7 +960,7 @@ int eos_mqtt_subscribe(eos_mqtt_handle_t handle, const char *topic,
 {
     if (handle < 0 || handle >= EOS_MQTT_MAX_CLIENTS) return -1;
     mqtt_client_t *c = &mqtt_clients[handle];
-    if (c->state != MQTT_CONNECTED) return -1;
+    if (c->state != MQTT_CONNECTED || c->in_callback) return -1;
 
     if (!mqtt_topic_filter_valid(topic)) return -1;
     if (qos > 1) return -1;
@@ -764,7 +1001,7 @@ int eos_mqtt_subscribe(eos_mqtt_handle_t handle, const char *topic,
                           EOS_MQTT_CONNACK_TIMEOUT_MS, &suback_code) != 0) {
         return -1;
     }
-    if (suback_code == 0x80u) {
+    if (suback_code > qos || suback_code > 1) {
         return -1;
     }
 
@@ -781,7 +1018,7 @@ int eos_mqtt_unsubscribe(eos_mqtt_handle_t handle, const char *topic)
 {
     if (handle < 0 || handle >= EOS_MQTT_MAX_CLIENTS) return -1;
     mqtt_client_t *c = &mqtt_clients[handle];
-    if (c->state != MQTT_CONNECTED) return -1;
+    if (c->state != MQTT_CONNECTED || c->in_callback) return -1;
 
     if (!mqtt_topic_filter_valid(topic)) return -1;
 
@@ -817,38 +1054,23 @@ int eos_mqtt_loop(eos_mqtt_handle_t handle, uint32_t timeout_ms)
 {
     if (handle < 0 || handle >= EOS_MQTT_MAX_CLIENTS) return -1;
     mqtt_client_t *c = &mqtt_clients[handle];
-    if (c->state != MQTT_CONNECTED) return -1;
+    if (c->state != MQTT_CONNECTED || c->in_callback) return -1;
 
-    uint32_t now = mqtt_now_sec();
-    if (c->keepalive_sec > 0) {
-        if (c->ping_pending) {
-            uint32_t ping_timeout = (c->keepalive_sec < 5) ? c->keepalive_sec : 5;
-            if (ping_timeout == 0) ping_timeout = 1;
-            if (now - c->ping_sent_sec >= ping_timeout) {
-                /* Missed PINGRESP window: fail connection */
-                mqtt_release(c);
-                return -1;
-            }
-        } else {
-            if (now - c->last_send_sec >= c->keepalive_sec) {
-                uint8_t ping[2];
-                int n = eos_mqtt_encode_pingreq(ping, sizeof(ping));
-                if (n <= 0 || mqtt_send_all(c->sock, ping, (size_t)n) != 0) {
-                    mqtt_release(c);
-                    return -1;
-                }
-                c->last_send_sec = now;
-                c->ping_pending = true;
-                c->ping_sent_sec = now;
-            }
-        }
+    uint32_t wait_ms = timeout_ms;
+    if (mqtt_check_keepalive(c, &wait_ms) != 0) {
+        return -1;
     }
 
     bool got_pkt = false;
-    int rc = mqtt_process_one_packet(c, timeout_ms, &got_pkt, NULL, NULL, NULL);
+    int rc = mqtt_process_one_packet(c, wait_ms, &got_pkt, NULL, NULL, NULL);
     if (rc < 0) {
         return -1;
     }
+
+    if (mqtt_check_keepalive(c, NULL) != 0) {
+        return -1;
+    }
+
     return 0;
 }
 
