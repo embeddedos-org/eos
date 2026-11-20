@@ -517,6 +517,21 @@ if(UNIX)
     add_test(NAME test_posix_io COMMAND test_posix_io)
 endif()
 
+# --- test_posix_time: 64-bit time (T64 slice 1, #269) — RTC conversion past
+# the 2038 and 2106 boundaries and the widened EoS timespec, with the tick
+# stubbed. #includes services/posix/src/posix_time.c with its POSIX names
+# renamed (it defines clock_gettime/sleep/nanosleep/..., which would
+# otherwise replace the host libc's), the way test_posix_io.c does; the
+# kernel/HAL calls it needs are stubbed in the suite, so eos_posix -- off by
+# default, and not buildable on every host -- is not needed. Portable: no
+# UNIX-only header is used, so it is registered on every host including MSVC.
+add_executable(test_posix_time test_posix_time.c)
+target_include_directories(test_posix_time PRIVATE
+    ${EoS_SOURCE_DIR}/services/posix/include
+    ${EoS_SOURCE_DIR}/kernel/include
+    ${EoS_SOURCE_DIR}/hal/include)
+add_test(NAME test_posix_time COMMAND test_posix_time)
+
 # --- example_secure_ota: examples/secure-ota must keep compiling ---
 # It includes eos/ota.h and eos/os_services.h together, which failed while
 # both declared eos_ota_init/verify/rollback with different signatures. It
