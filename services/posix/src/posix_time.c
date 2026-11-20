@@ -30,8 +30,12 @@ static void ms_to_timespec(uint32_t ms, struct timespec *ts) {
     ts->tv_nsec = (ms % 1000) * 1000000U;
 }
 
+/* Converts a timespec to the millisecond count the software timers take.
+ * The result is uint32_t: the timers run on the 32-bit tick, so a timespec
+ * past ~49.7 days wraps here. That wrap belongs to the tick slice of T64,
+ * not to this one; in-range values are exact. */
 static uint32_t timespec_to_ms(const struct timespec *ts) {
-    return ts->tv_sec * 1000 + ts->tv_nsec / 1000000U;
+    return (uint32_t)(ts->tv_sec * 1000 + ts->tv_nsec / 1000000);
 }
 
 /* ============================================================

@@ -25,9 +25,13 @@ extern "C" {
 #define CLOCK_MONOTONIC  1
 #define CLOCK_REALTIME   0
 
+/* POSIX shape: time_t tv_sec (signed) + long tv_nsec. Both 64-bit (T64
+ * slice 1): tv_sec held only 32 bits, so no EoS time past 2106 was
+ * representable and the type did not match the host time_t. The 32-bit
+ * millisecond tick (g_tick) is unchanged — see clock_gettime(). */
 struct timespec {
-    uint32_t tv_sec;
-    uint32_t tv_nsec;
+    int64_t tv_sec;
+    int64_t tv_nsec;
 };
 
 /* Timer ID — maps to eos_swtimer_handle_t */
@@ -42,20 +46,22 @@ struct itimerspec {
 #define SIGEV_NONE    0
 #define SIGEV_SIGNAL  1
 
+union sigval {
+    int   sival_int;
+    void *sival_ptr;
+};
+
 struct sigevent {
     int    sigev_notify;
     int    sigev_signo;
     void (*sigev_notify_function)(union sigval);
 };
 
-union sigval {
-    int   sival_int;
-    void *sival_ptr;
-};
-
 /**
  * Get the current time for the specified clock.
  * Only CLOCK_MONOTONIC is supported (from eos_get_tick_ms).
+ * tv_sec is 64-bit, but the value still comes from the 32-bit millisecond
+ * tick, so it wraps every ~49.7 days until the tick slice of T64 lands.
  */
 int clock_gettime(int clk_id, struct timespec *tp);
 

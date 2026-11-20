@@ -461,6 +461,26 @@ typedef struct {
 
 typedef void (*eos_rtc_alarm_callback_t)(void *ctx);
 
+/**
+ * Convert a broken-down RTC time to seconds since the Unix epoch.
+ *
+ * Pure arithmetic, kept here (rather than in hal_extended.c) so the 2038
+ * boundary is testable on the host without hardware: the STM32F4
+ * implementation calls it, and tests/test_posix_time.c calls it directly.
+ * The formula is unchanged (simplified — no leap-year handling, every
+ * month 30 days); only the width changed (T64 slice 1). The result is
+ * uint64_t: it passes 2^31-1 (2038) and 2^32-1 (2106) without wrapping.
+ * Years before 1970 are not representable: the RTC reads back 2000+.
+ */
+static inline uint64_t eos_rtc_time_to_unix(const eos_rtc_time_t *time) {
+    return (uint64_t)(time->year - 1970) * 31536000ULL +
+           (uint64_t)time->month * 2592000ULL +
+           (uint64_t)time->day * 86400ULL +
+           (uint64_t)time->hour * 3600ULL +
+           (uint64_t)time->minute * 60ULL +
+           (uint64_t)time->second;
+}
+
 int  eos_rtc_init(void);
 void eos_rtc_deinit(void);
 int  eos_rtc_set_time(const eos_rtc_time_t *time);
@@ -468,7 +488,7 @@ int  eos_rtc_get_time(eos_rtc_time_t *time);
 int  eos_rtc_set_alarm(const eos_rtc_time_t *alarm,
                         eos_rtc_alarm_callback_t cb, void *ctx);
 int  eos_rtc_cancel_alarm(void);
-uint32_t eos_rtc_get_unix_timestamp(void);
+uint64_t eos_rtc_get_unix_timestamp(void);
 
 #endif /* EOS_ENABLE_RTC */
 

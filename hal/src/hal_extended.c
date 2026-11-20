@@ -257,12 +257,11 @@ int eos_rtc_set_alarm(const eos_rtc_time_t *a, eos_rtc_alarm_callback_t cb, void
     (void)a; (void)cb; (void)ctx; return 0;
 }
 int eos_rtc_cancel_alarm(void) { return 0; }
-uint32_t eos_rtc_get_unix_timestamp(void) {
+uint64_t eos_rtc_get_unix_timestamp(void) {
     eos_rtc_time_t t;
     eos_rtc_get_time(&t);
-    /* Simplified — no leap year handling */
-    return (uint32_t)((t.year - 1970) * 31536000UL + t.month * 2592000UL +
-           t.day * 86400UL + t.hour * 3600UL + t.minute * 60UL + t.second);
+    /* Simplified — no leap year handling; see eos_rtc_time_to_unix(). */
+    return eos_rtc_time_to_unix(&t);
 }
 #endif /* EOS_ENABLE_RTC */
 
