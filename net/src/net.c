@@ -204,7 +204,7 @@ typedef struct {
     uint32_t last_send_sec;
     uint32_t last_recv_sec;
     bool ping_pending;
-    uint32_t ping_sent_sec;
+    uint32_t ping_sent_ms;
     uint16_t next_packet_id;
     bool in_callback;
     mqtt_sub_t subscriptions[EOS_MQTT_MAX_SUBSCRIPTIONS];
@@ -273,10 +273,10 @@ static int mqtt_send_all(eos_socket_t sock, const uint8_t *buf, size_t len)
     return 0;
 }
 
-/* Note: eos_net_recv() returns 0 for both a timeout and an orderly close (EOF).
- * The current eos_net API does not distinguish EOF from timeout without errno
- * or out-of-band signals. In either case, expected packet bytes will not arrive,
- * so any n <= 0 aborts the read and fails the packet.
+/* Note: eos_net_recv() returns >0 on byte count, 0 on timeout,
+ * EOS_NET_EOF (-2) on orderly TCP close by peer, and -1 on error.
+ * In any non-positive case (<=0), expected packet bytes did not arrive,
+ * so the read aborts and fails the packet.
  *
  * All packet reads are bounded by a single overall deadline calculated from
  * start_ms and timeout_ms, ensuring slow or partial reads cannot exceed the
@@ -304,7 +304,7 @@ static void mqtt_release(mqtt_client_t *c)
     c->last_send_sec = 0;
     c->last_recv_sec = 0;
     c->ping_pending = false;
-    c->ping_sent_sec = 0;
+    c->ping_sent_ms = 0;
     c->next_packet_id = 0;
     c->in_callback = false;
     memset(c->subscriptions, 0, sizeof(c->subscriptions));
@@ -466,43 +466,68 @@ static uint16_t mqtt_next_packet_id(mqtt_client_t *c)
     return c->next_packet_id;
 }
 
-static int mqtt_check_keepalive(mqtt_client_t *c, uint32_t *max_wait_ms)
+static int mqtt_process_one_packet(mqtt_client_t *c, uint32_t timeout_ms,
+                                   bool *got_packet, uint8_t *out_type,
+                                   uint16_t *out_pid, uint8_t *out_code);
+
+static int mqtt_keepalive_prepare(mqtt_client_t *c, uint32_t *wait_ms)
 {
     if (c->keepalive_sec == 0) return 0;
-    uint32_t now = mqtt_now_sec();
-    if (c->ping_pending) {
-        if (now - c->ping_sent_sec >= c->keepalive_sec) {
-            /* Missed PINGRESP within keepalive window */
-            mqtt_release(c);
-            return -1;
-        }
-        if (max_wait_ms) {
-            uint32_t elapsed = now - c->ping_sent_sec;
-            uint32_t rem_sec = (elapsed < c->keepalive_sec) ? (c->keepalive_sec - elapsed) : 0;
-            uint32_t rem_ms = rem_sec * 1000;
-            if (rem_ms < *max_wait_ms) {
-                *max_wait_ms = (rem_ms > 0) ? rem_ms : 1;
-            }
-        }
-    } else {
-        if (now - c->last_send_sec >= c->keepalive_sec) {
+    uint32_t now_sec = mqtt_now_sec();
+    uint32_t keepalive_ms = (uint32_t)c->keepalive_sec * 1000u;
+
+    if (!c->ping_pending) {
+        if (now_sec - c->last_send_sec >= c->keepalive_sec) {
             uint8_t ping[2];
             int n = eos_mqtt_encode_pingreq(ping, sizeof(ping));
             if (n <= 0 || mqtt_send_all(c->sock, ping, (size_t)n) != 0) {
                 mqtt_release(c);
                 return -1;
             }
-            c->last_send_sec = now;
+            c->last_send_sec = now_sec;
             c->ping_pending = true;
-            c->ping_sent_sec = now;
+            c->ping_sent_ms = mqtt_now_ms();
         }
-        if (max_wait_ms) {
-            uint32_t elapsed = now - c->last_send_sec;
-            uint32_t rem_sec = (elapsed < c->keepalive_sec) ? (c->keepalive_sec - elapsed) : 0;
-            uint32_t rem_ms = rem_sec * 1000;
-            if (rem_ms < *max_wait_ms) {
-                *max_wait_ms = (rem_ms > 0) ? rem_ms : 1;
+    }
+
+    if (wait_ms) {
+        if (c->ping_pending) {
+            uint32_t now_ms = mqtt_now_ms();
+            uint32_t elapsed_ms = (now_ms >= c->ping_sent_ms) ? (now_ms - c->ping_sent_ms)
+                                                              : (0xFFFFFFFFu - c->ping_sent_ms + now_ms);
+            uint32_t rem_ms = (elapsed_ms < keepalive_ms) ? (keepalive_ms - elapsed_ms) : 0;
+            if (rem_ms < *wait_ms) {
+                *wait_ms = (rem_ms > 0) ? rem_ms : 1;
             }
+        } else {
+            uint32_t elapsed_sec = now_sec - c->last_send_sec;
+            uint32_t rem_sec = (elapsed_sec < c->keepalive_sec) ? (c->keepalive_sec - elapsed_sec) : 0;
+            uint32_t rem_ms = rem_sec * 1000u;
+            if (rem_ms < *wait_ms) {
+                *wait_ms = (rem_ms > 0) ? rem_ms : 1;
+            }
+        }
+    }
+    return 0;
+}
+
+static int mqtt_keepalive_check_deadline(mqtt_client_t *c)
+{
+    if (c->keepalive_sec == 0 || !c->ping_pending) return 0;
+    uint32_t now_ms = mqtt_now_ms();
+    uint32_t keepalive_ms = (uint32_t)c->keepalive_sec * 1000u;
+    uint32_t elapsed_ms = (now_ms >= c->ping_sent_ms) ? (now_ms - c->ping_sent_ms)
+                                                      : (0xFFFFFFFFu - c->ping_sent_ms + now_ms);
+
+    if (elapsed_ms >= keepalive_ms) {
+        /* Drain any queued input before declaring PINGRESP missed */
+        bool got_pkt = false;
+        while (mqtt_process_one_packet(c, 0, &got_pkt, NULL, NULL, NULL) == 0 && got_pkt && c->ping_pending) {
+        }
+        if (c->ping_pending) {
+            /* Missed PINGRESP within keepalive window */
+            mqtt_release(c);
+            return -1;
         }
     }
     return 0;
@@ -759,7 +784,7 @@ static int mqtt_wait_for_ack(mqtt_client_t *c, uint8_t expected_type,
             return -1;
         }
 
-        if (mqtt_check_keepalive(c, &rem_ms) != 0) {
+        if (mqtt_keepalive_prepare(c, &rem_ms) != 0) {
             return -1;
         }
 
@@ -790,6 +815,9 @@ static int mqtt_wait_for_ack(mqtt_client_t *c, uint8_t expected_type,
 
         int rc = mqtt_process_one_packet(c, rem_ms, &got_pkt, &pkt_type, &pkt_pid, &code);
         if (rc < 0) {
+            return -1;
+        }
+        if (mqtt_keepalive_check_deadline(c) != 0) {
             return -1;
         }
         if (got_pkt && pkt_type == expected_type && pkt_pid == expected_pid) {
@@ -835,6 +863,11 @@ static int mqtt_handshake(mqtt_client_t *c, const eos_mqtt_config_t *cfg,
 eos_mqtt_handle_t eos_mqtt_connect(const eos_mqtt_config_t *cfg)
 {
     if (!cfg || cfg->broker_port == 0) return EOS_MQTT_INVALID;
+    for (int i = 0; i < EOS_MQTT_MAX_CLIENTS; i++) {
+        if (mqtt_clients[i].in_callback) {
+            return EOS_MQTT_INVALID;
+        }
+    }
     if (!mqtt_field_ok(cfg->broker_host, sizeof(cfg->broker_host)) ||
         !mqtt_field_ok(cfg->client_id, sizeof(cfg->client_id)) ||
         !mqtt_field_ok(cfg->username, sizeof(cfg->username)) ||
@@ -883,7 +916,7 @@ eos_mqtt_handle_t eos_mqtt_connect(const eos_mqtt_config_t *cfg)
     c->last_send_sec = now;
     c->last_recv_sec = now;
     c->ping_pending = false;
-    c->ping_sent_sec = 0;
+    c->ping_sent_ms = 0;
     c->next_packet_id = 0;
     c->in_callback = false;
     memset(c->subscriptions, 0, sizeof(c->subscriptions));
@@ -895,7 +928,12 @@ int eos_mqtt_disconnect(eos_mqtt_handle_t handle)
 {
     if (handle < 0 || handle >= EOS_MQTT_MAX_CLIENTS) return -1;
     mqtt_client_t *c = &mqtt_clients[handle];
-    if (c->state != MQTT_CONNECTED) return -1;
+    if (c->state != MQTT_CONNECTED || c->in_callback) return -1;
+    for (int i = 0; i < EOS_MQTT_MAX_CLIENTS; i++) {
+        if (mqtt_clients[i].in_callback) {
+            return -1;
+        }
+    }
 
     c->state = MQTT_DISCONNECTING;
     uint8_t pkt[2];
@@ -985,10 +1023,23 @@ int eos_mqtt_subscribe(eos_mqtt_handle_t handle, const char *topic,
         return -1;
     }
 
+    /* B2: Stage subscription before waiting for SUBACK so that retained PUBLISH
+     * messages arriving prior to SUBACK are delivered rather than dropped. */
+    mqtt_sub_t old_sub = c->subscriptions[slot];
+    strncpy(c->subscriptions[slot].topic, topic, sizeof(c->subscriptions[slot].topic) - 1);
+    c->subscriptions[slot].topic[sizeof(c->subscriptions[slot].topic) - 1] = '\0';
+    c->subscriptions[slot].qos = qos;
+    c->subscriptions[slot].cb = cb;
+    c->subscriptions[slot].ctx = ctx;
+    c->subscriptions[slot].in_use = true;
+
     uint16_t pid = mqtt_next_packet_id(c);
     int pkt_len = eos_mqtt_encode_subscribe(c->tx_buf, sizeof(c->tx_buf),
                                             pid, topic, qos);
-    if (pkt_len < 0) return -1;
+    if (pkt_len < 0) {
+        c->subscriptions[slot] = old_sub;
+        return -1;
+    }
 
     if (mqtt_send_all(c->sock, c->tx_buf, (size_t)pkt_len) != 0) {
         mqtt_release(c);
@@ -1002,15 +1053,12 @@ int eos_mqtt_subscribe(eos_mqtt_handle_t handle, const char *topic,
         return -1;
     }
     if (suback_code > qos || suback_code > 1) {
+        /* B4: Invalid SUBACK grant is a protocol violation; close and release session */
+        mqtt_release(c);
         return -1;
     }
 
-    strncpy(c->subscriptions[slot].topic, topic, sizeof(c->subscriptions[slot].topic) - 1);
-    c->subscriptions[slot].topic[sizeof(c->subscriptions[slot].topic) - 1] = '\0';
     c->subscriptions[slot].qos = suback_code;
-    c->subscriptions[slot].cb = cb;
-    c->subscriptions[slot].ctx = ctx;
-    c->subscriptions[slot].in_use = true;
     return 0;
 }
 
@@ -1057,7 +1105,7 @@ int eos_mqtt_loop(eos_mqtt_handle_t handle, uint32_t timeout_ms)
     if (c->state != MQTT_CONNECTED || c->in_callback) return -1;
 
     uint32_t wait_ms = timeout_ms;
-    if (mqtt_check_keepalive(c, &wait_ms) != 0) {
+    if (mqtt_keepalive_prepare(c, &wait_ms) != 0) {
         return -1;
     }
 
@@ -1067,7 +1115,7 @@ int eos_mqtt_loop(eos_mqtt_handle_t handle, uint32_t timeout_ms)
         return -1;
     }
 
-    if (mqtt_check_keepalive(c, NULL) != 0) {
+    if (mqtt_keepalive_check_deadline(c) != 0) {
         return -1;
     }
 

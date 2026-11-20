@@ -144,6 +144,7 @@ int eos_net_send(eos_socket_t sock, const void *data, size_t len)
 int eos_net_recv(eos_socket_t sock, void *buf, size_t len, uint32_t timeout_ms)
 {
     if (sock < 0 || (!buf && len > 0)) return -1;
+    if (len == 0) return 0;
 
     struct timeval tv;
     tv.tv_sec = (time_t)(timeout_ms / 1000u);
@@ -161,6 +162,7 @@ int eos_net_recv(eos_socket_t sock, void *buf, size_t len, uint32_t timeout_ms)
 
     ssize_t n = recv(sock, buf, len, flags);
     if (n < 0 && (errno == EAGAIN || errno == EWOULDBLOCK)) return 0;  /* timed out */
+    if (n == 0) return EOS_NET_EOF;  /* orderly close by peer */
     return n < 0 ? -1 : (int)n;
 }
 
@@ -178,6 +180,7 @@ int eos_net_recvfrom(eos_socket_t sock, void *buf, size_t len,
                      eos_net_addr_t *addr, uint32_t timeout_ms)
 {
     if (sock < 0 || (!buf && len > 0)) return -1;
+    if (len == 0) return 0;
 
     /* 0 is a poll; see eos_net_recv(). */
     int flags = 0;
@@ -194,6 +197,7 @@ int eos_net_recvfrom(eos_socket_t sock, void *buf, size_t len,
     socklen_t sl = sizeof(sa);
     ssize_t n = recvfrom(sock, buf, len, flags, (struct sockaddr *)&sa, &sl);
     if (n < 0 && (errno == EAGAIN || errno == EWOULDBLOCK)) return 0;
+    if (n == 0) return EOS_NET_EOF;
     if (n < 0) return -1;
     if (addr) from_sockaddr(&sa, addr);
     return (int)n;
