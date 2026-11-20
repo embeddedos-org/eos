@@ -7,9 +7,11 @@
  * timespec are 64-bit.
  *
  * Two boundaries are pinned here:
- *   - 2038: the RTC conversion for 2038-01-19 03:14:07/08 passes INT32_MAX,
- *     and 2107-01-01 passes the old UINT32_MAX return, so the old 32-bit
- *     eos_rtc_get_unix_timestamp() would have wrapped both.
+ *   - 2038: the RTC conversion for 2038-01-19 03:14:07/08 passes INT32_MAX
+ *     (2148693247 under the formula), which still fits the old uint32_t
+ *     return, so the old 32-bit eos_rtc_get_unix_timestamp() would NOT
+ *     have wrapped there; it would have wrapped only at 2107-01-01,
+ *     which passes the old UINT32_MAX return.
  *   - 49.7 days: the full 32-bit millisecond tick range (0xFFFFFFFF ms)
  *     round-trips through clock_gettime()/timespec exactly, and a timespec
  *     past 49.7 days is representable — the tick counter itself stays
@@ -160,6 +162,8 @@ static void test_timespec_beyond_tick_range(void) {
     struct timespec ts = { .tv_sec = 5000000, .tv_nsec = 0 };
     assert(ts.tv_sec == 5000000);
     assert(ts.tv_nsec == 0);
+    /* The ms conversion wraps, definedly: 5,000,000,000 ms mod 2^32. */
+    assert(timespec_to_ms(&ts) == 705032704U);
     printf("[PASS] timespec holds values past the 49.7-day tick\n");
 }
 
@@ -178,6 +182,13 @@ static void test_sleep_and_timer_take_64bit_timespec(void) {
     assert(stub_last_delay_ms == 1);
     assert(usleep(500) == 0);
     assert(stub_last_delay_ms == 1); /* minimum 1 ms granularity */
+
+    /* A negative timespec is not a delay: it clamps to 0 ms, never a
+     * huge wrapped delay. */
+    struct timespec neg = { .tv_sec = -1, .tv_nsec = 0 };
+    assert(timespec_to_ms(&neg) == 0);
+    assert(nanosleep(&neg, &rem) == 0);
+    assert(stub_last_delay_ms == 0);
 
     timer_t id;
     assert(timer_create(CLOCK_MONOTONIC, NULL, &id) == 0);
