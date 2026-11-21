@@ -343,6 +343,42 @@ static void test_net_recv_zero_timeout_polls(void) {
     PASS("net recv with zero timeout polls");
 }
 
+static uint16_t g_broker_port = 45780;
+
+static void test_net_udp_zero_length_datagram(void) {
+    eos_net_init();
+    eos_socket_t rx = eos_net_socket(EOS_NET_UDP);
+    CHECK(rx != EOS_SOCKET_INVALID);
+    uint16_t port = g_broker_port++;
+    CHECK(eos_net_bind(rx, port) == 0);
+
+    eos_socket_t tx = eos_net_socket(EOS_NET_UDP);
+    CHECK(tx != EOS_SOCKET_INVALID);
+
+    eos_net_addr_t dest;
+    memset(&dest, 0, sizeof(dest));
+    eos_net_resolve("127.0.0.1", &dest.ip);
+    dest.port = port;
+
+    /* Send 0-length datagram */
+    char dummy = 0;
+    CHECK(eos_net_sendto(tx, &dummy, 0, &dest) == 0);
+
+    /* Receive 0-length datagram */
+    char buf[16];
+    eos_net_addr_t sender;
+    memset(&sender, 0, sizeof(sender));
+    int rc = eos_net_recvfrom(rx, buf, sizeof(buf), &sender, 500);
+    CHECK(rc == 0); /* 0-length datagram, NOT EOS_NET_EOF */
+    CHECK(sender.port != 0);
+    CHECK(sender.ip == dest.ip);
+
+    eos_net_close(rx);
+    eos_net_close(tx);
+    eos_net_deinit();
+    PASS("net UDP zero length datagram preserves sender address");
+}
+
 /* ── MQTT client over a fake broker (#199 slice 2) ────────────────────────
  *
  * No broker exists in CI (design doc section 6), so a thread plays one: it
@@ -355,8 +391,6 @@ static void test_net_recv_zero_timeout_polls(void) {
 #include <errno.h>
 #include <sys/socket.h>
 #include <sys/time.h>
-
-static uint16_t g_broker_port = 45780;
 
 typedef struct {
     pthread_mutex_t mutex;
@@ -1926,6 +1960,128 @@ static void test_mqtt_pingresp_edge_window(void) {
     eos_net_deinit();
     PASS("mqtt timely PINGRESP at window edge accepted");
 }
+
+typedef struct {
+    uint16_t port;
+    broker_sync_t sync;
+    uint8_t pingreq[2];
+} drain_test_ctx_t;
+
+static void *broker_drain_queued_puback(void *arg) {
+    drain_test_ctx_t *ctx = (drain_test_ctx_t *)arg;
+    eos_socket_t s = broker_listen_ready(ctx->port, &ctx->sync);
+    if (s == EOS_SOCKET_INVALID) return NULL;
+    eos_socket_t c = broker_accept_and_connack(s);
+    if (c == EOS_SOCKET_INVALID) return NULL;
+
+    /* Receive QoS 1 PUBLISH */
+    uint8_t hdr[2];
+    if (broker_recv_exact(c, hdr, 2) == 0) {
+        uint8_t buf[64];
+        if (broker_recv_exact(c, buf, hdr[1]) == 0) {
+            /* Now wait for PINGREQ from keep-alive before sending PUBACK */
+            if (broker_recv_exact(c, ctx->pingreq, 2) == 0) {
+                /* Delay near window edge (~750ms) */
+                struct timespec ts = { .tv_sec = 0, .tv_nsec = 750 * 1000 * 1000 };
+                nanosleep(&ts, NULL);
+                /* Send queued PUBACK for PID 1, followed immediately by PINGRESP */
+                uint8_t pkts[6] = {
+                    0x40, 0x02, 0x00, 0x01, /* PUBACK PID 1 */
+                    0xD0, 0x00              /* PINGRESP */
+                };
+                eos_net_send(c, pkts, sizeof(pkts));
+            }
+        }
+    }
+    uint8_t disc[2];
+    (void)broker_recv_exact(c, disc, 2);
+    eos_net_close(c);
+    return NULL;
+}
+
+static void test_mqtt_drain_queued_puback(void) {
+    eos_net_init();
+    drain_test_ctx_t ctx;
+    memset(&ctx, 0, sizeof(ctx));
+    broker_sync_init(&ctx.sync);
+    ctx.port = g_broker_port++;
+    pthread_t t;
+    pthread_create(&t, NULL, broker_drain_queued_puback, &ctx);
+    wait_broker_ready(&ctx.sync);
+
+    eos_mqtt_config_t cfg;
+    mqtt_test_config(&cfg, ctx.port);
+    cfg.keepalive_sec = 1;
+    eos_mqtt_handle_t h = eos_mqtt_connect(&cfg);
+    CHECK(h != EOS_MQTT_INVALID);
+
+    /* Publish with 2500ms timeout so keepalive prepare triggers PINGREQ,
+     * and when PUBACK+PINGRESP arrive during drain, PUBACK is routed to the waiter */
+    CHECK(eos_mqtt_publish(h, "sensor/data", "val", 3, 1) == 0);
+    CHECK(eos_mqtt_disconnect(h) == 0);
+
+    pthread_join(t, NULL);
+    broker_sync_destroy(&ctx.sync);
+    eos_net_deinit();
+    PASS("mqtt queued PUBACK routed correctly during keepalive drain");
+}
+
+static void *broker_drain_eof(void *arg) {
+    keepalive_broker_ctx_t *ctx = (keepalive_broker_ctx_t *)arg;
+    eos_socket_t s = broker_listen_ready(ctx->port, &ctx->sync);
+    if (s == EOS_SOCKET_INVALID) return NULL;
+    eos_socket_t c = broker_accept_and_connack(s);
+    if (c == EOS_SOCKET_INVALID) return NULL;
+
+    if (broker_recv_exact(c, ctx->pingreq, 2) == 0) {
+        ctx->pingreq_len = 2;
+        /* Wait near edge (~750ms), then close connection (EOF) instead of sending PINGRESP */
+        struct timespec ts = { .tv_sec = 0, .tv_nsec = 750 * 1000 * 1000 };
+        nanosleep(&ts, NULL);
+        eos_net_close(c);
+        return NULL;
+    }
+    eos_net_close(c);
+    return NULL;
+}
+
+static void test_mqtt_drain_eof_returns_error(void) {
+    eos_net_init();
+    keepalive_broker_ctx_t ctx;
+    memset(&ctx, 0, sizeof(ctx));
+    broker_sync_init(&ctx.sync);
+    ctx.port = g_broker_port++;
+    pthread_t t;
+    pthread_create(&t, NULL, broker_drain_eof, &ctx);
+    wait_broker_ready(&ctx.sync);
+
+    eos_mqtt_config_t cfg;
+    mqtt_test_config(&cfg, ctx.port);
+    cfg.keepalive_sec = 1;
+    eos_mqtt_handle_t h = eos_mqtt_connect(&cfg);
+    CHECK(h != EOS_MQTT_INVALID);
+
+    /* Idle past 1 second so loop will send PINGREQ */
+    struct timespec sleep_ts = { .tv_sec = 1, .tv_nsec = 100 * 1000 * 1000 };
+    nanosleep(&sleep_ts, NULL);
+
+    /* First loop sends PINGREQ */
+    CHECK(eos_mqtt_loop(h, 50) == 0);
+
+    /* Wait for broker to close */
+    struct timespec wait_edge = { .tv_sec = 0, .tv_nsec = 800 * 1000 * 1000 };
+    nanosleep(&wait_edge, NULL);
+
+    /* Loop at window edge must drain EOF and return -1 (not 0!) */
+    CHECK(eos_mqtt_loop(h, 100) == -1);
+    /* Client must be released */
+    CHECK(eos_mqtt_loop(h, 100) == -1);
+
+    pthread_join(t, NULL);
+    broker_sync_destroy(&ctx.sync);
+    eos_net_deinit();
+    PASS("mqtt EOF during keepalive drain returns error and releases client");
+}
 #endif /* EOS_NET_POSIX */
 
 int main(void) {
@@ -1954,6 +2110,7 @@ int main(void) {
     test_net_resolve_localhost();
     test_net_connect_refused();
     test_net_recv_zero_timeout_polls();
+    test_net_udp_zero_length_datagram();
     test_mqtt_connect_disconnect_lifecycle();
     test_mqtt_connect_credentials();
     test_mqtt_reconnect_after_disconnect();
@@ -1983,6 +2140,8 @@ int main(void) {
     test_mqtt_loop_eof_disconnect();
     test_mqtt_retained_publish_before_suback();
     test_mqtt_pingresp_edge_window();
+    test_mqtt_drain_queued_puback();
+    test_mqtt_drain_eof_returns_error();
 #endif
     printf("\n=== ALL %d NET TESTS PASSED ===\n", passed);
     return 0;

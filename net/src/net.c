@@ -214,6 +214,13 @@ typedef struct {
         uint8_t pkt[EOS_MQTT_BUFFER_SIZE];
         size_t pkt_len;
     } pending_pub;
+    struct {
+        bool active;
+        uint8_t expected_type;
+        uint16_t expected_pid;
+        bool completed;
+        uint8_t code;
+    } pending_ack;
     uint8_t rx_buf[EOS_MQTT_BUFFER_SIZE];
     uint8_t tx_buf[EOS_MQTT_BUFFER_SIZE];
 } mqtt_client_t;
@@ -309,6 +316,7 @@ static void mqtt_release(mqtt_client_t *c)
     c->in_callback = false;
     memset(c->subscriptions, 0, sizeof(c->subscriptions));
     memset(&c->pending_pub, 0, sizeof(c->pending_pub));
+    memset(&c->pending_ack, 0, sizeof(c->pending_ack));
 }
 
 /* RFC 3629 UTF-8 validator enforcing MQTT 3.1.1 section 1.5.3:
@@ -521,8 +529,24 @@ static int mqtt_keepalive_check_deadline(mqtt_client_t *c)
 
     if (elapsed_ms >= keepalive_ms) {
         /* Drain any queued input before declaring PINGRESP missed */
-        bool got_pkt = false;
-        while (mqtt_process_one_packet(c, 0, &got_pkt, NULL, NULL, NULL) == 0 && got_pkt && c->ping_pending) {
+        while (c->ping_pending) {
+            bool got_pkt = false;
+            uint8_t pkt_type = 0;
+            uint16_t pkt_pid = 0;
+            uint8_t code = 0;
+            int rc = mqtt_process_one_packet(c, 0, &got_pkt, &pkt_type, &pkt_pid, &code);
+            if (rc < 0) {
+                /* Error or EOF during drain: socket is closed and session released */
+                return -1;
+            }
+            if (!got_pkt) {
+                break;
+            }
+            if (c->pending_ack.active && pkt_type == c->pending_ack.expected_type &&
+                pkt_pid == c->pending_ack.expected_pid) {
+                c->pending_ack.completed = true;
+                c->pending_ack.code = code;
+            }
         }
         if (c->ping_pending) {
             /* Missed PINGRESP within keepalive window */
@@ -776,15 +800,29 @@ static int mqtt_wait_for_ack(mqtt_client_t *c, uint8_t expected_type,
     bool retried = false;
     uint32_t retry_threshold_ms = timeout_ms / 2;
 
+    c->pending_ack.active = true;
+    c->pending_ack.expected_type = expected_type;
+    c->pending_ack.expected_pid = expected_pid;
+    c->pending_ack.completed = false;
+    c->pending_ack.code = 0;
+
     for (;;) {
+        if (c->pending_ack.completed) {
+            if (out_code) *out_code = c->pending_ack.code;
+            c->pending_ack.active = false;
+            return 0;
+        }
+
         uint32_t rem_ms = mqtt_time_rem_ms(start_ms, timeout_ms);
         if (rem_ms == 0) {
             /* Timeout waiting for ack: invalidate session fail-closed */
+            c->pending_ack.active = false;
             mqtt_release(c);
             return -1;
         }
 
         if (mqtt_keepalive_prepare(c, &rem_ms) != 0) {
+            c->pending_ack.active = false;
             return -1;
         }
 
@@ -796,6 +834,7 @@ static int mqtt_wait_for_ack(mqtt_client_t *c, uint8_t expected_type,
                 retried = true;
                 c->pending_pub.pkt[0] |= 0x08u; /* DUP = 1 */
                 if (mqtt_send_all(c->sock, c->pending_pub.pkt, c->pending_pub.pkt_len) != 0) {
+                    c->pending_ack.active = false;
                     mqtt_release(c);
                     return -1;
                 }
@@ -815,13 +854,20 @@ static int mqtt_wait_for_ack(mqtt_client_t *c, uint8_t expected_type,
 
         int rc = mqtt_process_one_packet(c, rem_ms, &got_pkt, &pkt_type, &pkt_pid, &code);
         if (rc < 0) {
-            return -1;
-        }
-        if (mqtt_keepalive_check_deadline(c) != 0) {
+            c->pending_ack.active = false;
             return -1;
         }
         if (got_pkt && pkt_type == expected_type && pkt_pid == expected_pid) {
-            if (out_code) *out_code = code;
+            c->pending_ack.completed = true;
+            c->pending_ack.code = code;
+        }
+        if (mqtt_keepalive_check_deadline(c) != 0) {
+            c->pending_ack.active = false;
+            return -1;
+        }
+        if (c->pending_ack.completed) {
+            if (out_code) *out_code = c->pending_ack.code;
+            c->pending_ack.active = false;
             return 0;
         }
     }
@@ -921,6 +967,7 @@ eos_mqtt_handle_t eos_mqtt_connect(const eos_mqtt_config_t *cfg)
     c->in_callback = false;
     memset(c->subscriptions, 0, sizeof(c->subscriptions));
     memset(&c->pending_pub, 0, sizeof(c->pending_pub));
+    memset(&c->pending_ack, 0, sizeof(c->pending_ack));
     return (eos_mqtt_handle_t)idx;
 }
 
@@ -929,11 +976,6 @@ int eos_mqtt_disconnect(eos_mqtt_handle_t handle)
     if (handle < 0 || handle >= EOS_MQTT_MAX_CLIENTS) return -1;
     mqtt_client_t *c = &mqtt_clients[handle];
     if (c->state != MQTT_CONNECTED || c->in_callback) return -1;
-    for (int i = 0; i < EOS_MQTT_MAX_CLIENTS; i++) {
-        if (mqtt_clients[i].in_callback) {
-            return -1;
-        }
-    }
 
     c->state = MQTT_DISCONNECTING;
     uint8_t pkt[2];

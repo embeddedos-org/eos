@@ -292,32 +292,37 @@ With the completion of Slice 3 (Issue #259), the following protocol behaviors an
 
 6. **Maximum Inbound Limits:**
    - Inbound control packets larger than the 1024-byte static buffer are rejected and trigger connection teardown.
-   - Inbound PUBLISH topics must not exceed 128 bytes (`EOS_MQTT_MAX_TOPIC_LEN`). If an inbound topic exceeds this limit, the packet is rejected and no PUBACK is returned.
+   - Inbound PUBLISH topics must not exceed 127 bytes (`EOS_MQTT_MAX_TOPIC_LEN - 1` with null terminator; buffer size is 128 bytes). If an inbound topic exceeds 127 bytes, the packet is rejected and no PUBACK is returned.
 
-7. **Callback Lifetime and Immutability Contract:**
+7. **Callback Lifetime, Immutability, and Reentrancy Contract:**
    - `eos_mqtt_msg_callback_t` receives pointers to `topic` (null-terminated string) and `payload` (byte buffer of length `payload_len`).
-   - The memory backed by these pointers is valid **only** during the synchronous execution of the callback.
-   - Callbacks must not store these pointers or attempt to free them; any asynchronous handling requires the application to copy topic and payload.
-   - Re-entrant invocation of `eos_mqtt_*` API calls from inside the callback is prohibited (`in_callback` guard) and returns an error immediately.
+   - The memory backed by these pointers is valid **only** during the synchronous execution of the callback. Callbacks needing data asynchronously must copy topic and payload.
+   - **Reentrancy and Call Restrictions:**
+     - *Same-Client Reentrancy:* While an application callback is executing (`c->in_callback == true`), all synchronous operations on that *same* client instance (`eos_mqtt_publish`, `eos_mqtt_subscribe`, `eos_mqtt_unsubscribe`, `eos_mqtt_disconnect`, `eos_mqtt_loop`) are strictly prohibited and return -1 immediately.
+     - *Cross-Client Invocations:* Operations on an independent client handle (e.g. bridging/gatewaying between client A and client B) while client A is executing a callback are permitted.
+     - *Connect Restrictions:* `eos_mqtt_connect()` mutates the global client handle pool and is rejected with `EOS_MQTT_INVALID` if any client is currently dispatching a callback.
 
 8. **QoS 1 Retransmission and Acknowledgement Policy:**
    - Outgoing QoS 1 PUBLISH packets wait for PUBACK up to the specified timeout.
    - If PUBACK is delayed beyond `timeout_ms / 2`, a single retry is attempted with `DUP = 1` using the identical packet identifier.
    - If PUBACK does not arrive before the total timeout expires, the session is invalidated fail-closed and released.
+   - If a queued PUBACK, SUBACK, or UNSUBACK arrives while keep-alive input is draining before a PINGRESP, it is matched and routed directly to the active waiter rather than being lost.
 
 9. **Inbound Retained Messages Arriving Before SUBACK:**
    - When `eos_mqtt_subscribe()` is called, the subscription entry and its callback are staged in the client subscription table *before* transmitting SUBSCRIBE.
    - Inbound PUBLISH packets (e.g. broker-retained messages) received while awaiting SUBACK are dispatched immediately to matching callbacks.
    - If the SUBACK returns an error code (0x80) or an invalid granted QoS, or if the wait times out, the staged subscription is rolled back and the session is invalidated.
 
-10. **Session State Transitions and Error Handling:**
+10. **Session State Transitions, Reconnect, and Last Will Contract:**
     - Any unrecoverable network error, peer disconnect (`EOS_NET_EOF`), acknowledgement timeout, or malformed packet causes an immediate transition to `MQTT_DISCONNECTED`.
     - Sockets are closed via `eos_net_close()`, in-flight state and subscriptions are cleared, and the client handle slot is released back to the pool.
-    - `CleanSession = 1` is enforced on all connections; persistent sessions across disconnects are out of scope.
+    - **Reconnect Policy:** Automatic reconnect is not provided. When an error or disconnect occurs, the application must explicitly call `eos_mqtt_connect()` to establish a fresh session.
+    - **Clean Session:** `CleanSession = 1` is enforced on all connections; persistent sessions across disconnects are out of scope.
+    - **Last Will and Testament (LWT):** LWT is unsupported in Slice 3; Will flags in CONNECT fixed/variable headers are set to 0.
 
 11. **Static Resource Constraints:**
     - Concurrency and resource allocations are strictly bounded at compile-time:
       - `EOS_MQTT_MAX_CLIENTS`: 2 simultaneous client handles.
-      - `EOS_MQTT_MAX_SUBS`: 8 active subscriptions per client.
+      - `EOS_MQTT_MAX_SUBSCRIPTIONS`: 8 active subscriptions per client.
       - Static buffers for RX (1024 B), TX (1024 B), and topic matching.
       - Zero dynamic memory allocation (`malloc`/`free`) throughout the entire MQTT implementation.

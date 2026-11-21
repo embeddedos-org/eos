@@ -54,8 +54,10 @@ eos_socket_t eos_net_accept(eos_socket_t sock, eos_net_addr_t *client_addr);
 int  eos_net_send(eos_socket_t sock, const void *data, size_t len);
 /* eos_net_recv / eos_net_recvfrom: wait up to timeout_ms for data; a
  * timeout_ms of 0 polls and returns at once. Returns the byte count (>0),
- * 0 on timeout (no data arrived within timeout_ms), EOS_NET_EOF (-2) on
- * orderly TCP close by the peer, or -1 on error. */
+ * 0 on timeout (no data arrived within timeout_ms) or on receiving a valid
+ * zero-length datagram (UDP), EOS_NET_EOF (-2) on orderly TCP close by the
+ * peer (stream sockets only), or -1 on error. On UDP, eos_net_recvfrom
+ * populates src even for zero-length datagrams. */
 int  eos_net_recv(eos_socket_t sock, void *buf, size_t len, uint32_t timeout_ms);
 int  eos_net_sendto(eos_socket_t sock, const void *data, size_t len,
                      const eos_net_addr_t *dest);
