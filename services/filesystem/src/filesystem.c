@@ -125,7 +125,9 @@ int eos_fs_read(eos_file_t fd, void *buf, size_t len) {
 
 int eos_fs_write(eos_file_t fd, const void *data, size_t len) {
     if (fd < 0 || fd >= EOS_FILE_MAX || !g_fds[fd].in_use || !data) return -1;
-    inode_t *n = &g_inodes[g_fds[fd].inode]; uint32_t p = g_fds[fd].pos;
+    inode_t *n = &g_inodes[g_fds[fd].inode];
+    if (g_fds[fd].flags & EOS_O_APPEND) g_fds[fd].pos = n->size;
+    uint32_t p = g_fds[fd].pos;
     /* Clamp to the remaining capacity, then bail if nothing is left. These are
      * two independent statements; sharing a line made GCC warn that the second
      * looked guarded by the first `if`, and a maintainer could easily misread
@@ -143,11 +145,16 @@ int eos_fs_write(eos_file_t fd, const void *data, size_t len) {
 
 int eos_fs_seek(eos_file_t fd, int32_t off, eos_seek_whence_t w) {
     if (fd < 0 || fd >= EOS_FILE_MAX || !g_fds[fd].in_use) return -1;
-    inode_t *n = &g_inodes[g_fds[fd].inode]; int32_t np;
-    switch (w) { case EOS_SEEK_SET: np = off; break; case EOS_SEEK_CUR: np = (int32_t)g_fds[fd].pos + off; break; case EOS_SEEK_END: np = (int32_t)n->size + off; break; default: return -1; }
+    inode_t *n = &g_inodes[g_fds[fd].inode]; int64_t np;
+    switch (w) {
+        case EOS_SEEK_SET: np = off; break;
+        case EOS_SEEK_CUR: np = (int64_t)g_fds[fd].pos + off; break;
+        case EOS_SEEK_END: np = (int64_t)n->size + off; break;
+        default: return -1;
+    }
     /* Clamp into [0, cap]; two independent statements, one per line. */
     if (np < 0) np = 0;
-    if ((uint32_t)np > n->cap) np = (int32_t)n->cap;
+    if (np > n->cap) np = n->cap;
     g_fds[fd].pos = (uint32_t)np; return 0;
 }
 
