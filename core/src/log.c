@@ -180,7 +180,12 @@ static void emit(EosLogLevel level, const char *module, const char *formatted) {
                      timebuf, level_str(level), formatted);
     }
     if (n < 0) n = 0;
-    if (n >= (int)sizeof(line)) n = (int)sizeof(line) - 1;
+    if (n >= (int)sizeof(line)) {
+        /* snprintf cut the line short and dropped its '\n'. Put it back,
+         * or the next record joins this one in the file or on the UART. */
+        n = (int)sizeof(line) - 1;
+        line[n - 1] = '\n';
+    }
 
     /* Ring buffer — always store */
     if (g_outputs & EOS_LOG_OUTPUT_RING)
