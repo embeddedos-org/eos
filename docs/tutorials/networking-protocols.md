@@ -111,17 +111,16 @@ int mqtt_publish_sensor(float temp, float humidity) {
 |-----|--------------------|----------|
 | **0** | At most once (fire-and-forget) | Telemetry where occasional loss is OK |
 | **1** | At least once (may duplicate) | Sensor data, status updates |
-| **2** | Exactly once (4-step handshake) | Commands, billing events, firmware OTA triggers |
+| **2** | *Unsupported in EoS* | Inbound QoS 2 triggers a protocol error and closes connection |
 
 ```c
 // QoS 0 — no ACK, lowest overhead
 eos_mqtt_publish(mqtt, "telemetry/heartbeat", "ok", 2, 0);
 
-// QoS 1 — broker ACKs with PUBACK
+// QoS 1 — broker ACKs with PUBACK (with automatic retry on timeout)
 eos_mqtt_publish(mqtt, "sensor/temperature", payload, len, 1);
 
-// QoS 2 — full handshake (PUBREC → PUBREL → PUBCOMP)
-eos_mqtt_publish(mqtt, "command/firmware_update", cmd, cmd_len, 2);
+// Note: QoS 2 is unsupported in EoS (design doc §5); only QoS 0 and QoS 1 are supported.
 ```
 
 ### Last Will and Testament (LWT)

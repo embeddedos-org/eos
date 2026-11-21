@@ -41,6 +41,7 @@ typedef struct {
 typedef int eos_socket_t;
 
 #define EOS_SOCKET_INVALID (-1)
+#define EOS_NET_EOF        (-2)
 
 int  eos_net_init(void);
 void eos_net_deinit(void);
@@ -52,8 +53,11 @@ int  eos_net_listen(eos_socket_t sock, int backlog);
 eos_socket_t eos_net_accept(eos_socket_t sock, eos_net_addr_t *client_addr);
 int  eos_net_send(eos_socket_t sock, const void *data, size_t len);
 /* eos_net_recv / eos_net_recvfrom: wait up to timeout_ms for data; a
- * timeout_ms of 0 polls and returns at once. Returns the byte count, 0 on
- * timeout (or an orderly close by the peer), or -1 on error. */
+ * timeout_ms of 0 polls and returns at once. Returns the byte count (>0),
+ * 0 on timeout (no data arrived within timeout_ms) or on receiving a valid
+ * zero-length datagram (UDP), EOS_NET_EOF (-2) on orderly TCP close by the
+ * peer (stream sockets only), or -1 on error. On UDP, eos_net_recvfrom
+ * populates src even for zero-length datagrams. */
 int  eos_net_recv(eos_socket_t sock, void *buf, size_t len, uint32_t timeout_ms);
 int  eos_net_sendto(eos_socket_t sock, const void *data, size_t len,
                      const eos_net_addr_t *dest);
@@ -93,6 +97,15 @@ typedef struct {
     uint16_t keepalive_sec;
 } eos_mqtt_config_t;
 
+/* Callback invoked when a matching PUBLISH packet arrives.
+ *
+ * Contract:
+ * - 'topic' and 'payload' buffers are valid only for the duration of this
+ *   synchronous callback. Callbacks needing data asynchronously must copy them.
+ * - Callbacks must not invoke synchronous eos_mqtt_* operations (connect,
+ *   disconnect, publish, subscribe, unsubscribe, loop); reentrant calls on
+ *   active clients are rejected.
+ */
 typedef void (*eos_mqtt_msg_callback_t)(const char *topic,
                                          const uint8_t *payload,
                                          size_t payload_len, void *ctx);
