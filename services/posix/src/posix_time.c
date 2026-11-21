@@ -30,8 +30,21 @@ static void ms_to_timespec(uint32_t ms, struct timespec *ts) {
     ts->tv_nsec = (ms % 1000) * 1000000U;
 }
 
+/* Converts a timespec to the millisecond count the software timers take.
+ * The result is uint32_t: the timers run on the 32-bit tick, so a timespec
+ * past ~49.7 days wraps here. That wrap belongs to the tick slice of T64,
+ * not to this one; in-range values are exact.
+ *
+ * The arithmetic is unsigned throughout (uint64_t intermediates, narrowed
+ * to uint32_t only at the end), so the wrap is defined modulo 2^32 — the
+ * old all-uint32_t code wrapped the same way, while a signed int64_t
+ * multiply here could overflow (undefined) for large tv_sec. A negative
+ * timespec is not a delay: it clamps to 0 ms (no delay; a timer it_value
+ * of 0 disarms) instead of wrapping to a huge delay. */
 static uint32_t timespec_to_ms(const struct timespec *ts) {
-    return ts->tv_sec * 1000 + ts->tv_nsec / 1000000U;
+    if (ts->tv_sec < 0 || ts->tv_nsec < 0) return 0;
+    return (uint32_t)((uint64_t)ts->tv_sec * 1000u +
+                      (uint64_t)(ts->tv_nsec / 1000000));
 }
 
 /* ============================================================

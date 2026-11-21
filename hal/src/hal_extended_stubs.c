@@ -487,7 +487,7 @@ int eos_rtc_set_alarm(const eos_rtc_time_t *alarm,
 }
 
 int eos_rtc_cancel_alarm(void) { return -1; }
-uint32_t eos_rtc_get_unix_timestamp(void) { return 0; }
+uint64_t eos_rtc_get_unix_timestamp(void) { return 0; }
 
 #endif /* EOS_ENABLE_RTC */
 
