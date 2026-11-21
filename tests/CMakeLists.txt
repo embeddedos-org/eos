@@ -103,6 +103,11 @@ add_executable(test_scheduler_cache_key test_scheduler_cache_key.c)
 target_link_libraries(test_scheduler_cache_key PRIVATE eos_backends eos_core)
 add_test(NAME test_scheduler_cache_key COMMAND test_scheduler_cache_key)
 
+# --- test_log: a truncated log line keeps its newline ---
+add_executable(test_log test_log.c)
+target_link_libraries(test_log PRIVATE eos_core)
+add_test(NAME test_log COMMAND test_log)
+
 # --- test_graph: Dependency graph ---
 add_executable(test_graph test_graph.c)
 target_link_libraries(test_graph PRIVATE eos_core)
