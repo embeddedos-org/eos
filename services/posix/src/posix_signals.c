@@ -168,7 +168,6 @@ void eos_posix_signals_check(void) {
  * ============================================================ */
 
 static void alarm_callback(eos_swtimer_handle_t handle, void *ctx) {
-    (void)handle;
     uint8_t tid = (uint8_t)(uintptr_t)ctx;
 
     /* Set SIGALRM pending for the target task */
@@ -176,6 +175,10 @@ static void alarm_callback(eos_swtimer_handle_t handle, void *ctx) {
     sig_state[tid].pending |= (1U << SIGALRM);
     eos_irq_enable();
 
+    /* The one-shot has fired and nothing will cancel it now, so free it.
+     * Left allocated, every fired alarm leaked a timer until create failed
+     * and alarm() silently stopped working. */
+    eos_swtimer_delete(handle);
     alarm_active[tid] = false;
 }
 
@@ -187,12 +190,16 @@ unsigned int alarm(unsigned int seconds) {
 
     unsigned int remaining = 0;
 
-    /* Cancel any existing alarm */
+    /* Cancel any existing alarm. Masked, because alarm_callback() deletes
+     * the timer when it fires: between reading alarm_active and the delete
+     * here, the handle could otherwise be freed and reused by someone else. */
+    eos_irq_disable();
     if (alarm_active[tid]) {
         eos_swtimer_stop(alarm_timers[tid]);
         eos_swtimer_delete(alarm_timers[tid]);
         alarm_active[tid] = false;
     }
+    eos_irq_enable();
 
     if (seconds == 0) return remaining;
 

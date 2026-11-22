@@ -380,13 +380,24 @@ int eos_lb_select(EosLoadBalancer *lb, const char *client_ip) {
     case EOS_LB_IP_HASH: {
         uint32_t hash = 5381;
         if (client_ip) for (const char *p = client_ip; *p; p++) hash = ((hash << 5) + hash) ^ (unsigned char)*p;
-        selected = (int)(hash % (uint32_t)lb->count);
-        if (!lb->backends[selected].healthy) selected = 0;
+        /* An unhealthy home backend moves to the next healthy one. It
+         * used to fall back to backend 0 whether or not 0 was healthy. */
+        int home = (int)(hash % (uint32_t)lb->count);
+        for (int k = 0; k < lb->count; k++) {
+            int idx = (home + k) % lb->count;
+            if (lb->backends[idx].healthy) { selected = idx; break; }
+        }
         break;
     }
-    case EOS_LB_RANDOM:
-        selected = (int)((uint32_t)rand() % (uint32_t)lb->count);
+    case EOS_LB_RANDOM: {
+        /* Same probe from a random start; health used to be ignored. */
+        int start = (int)((uint32_t)rand() % (uint32_t)lb->count);
+        for (int k = 0; k < lb->count; k++) {
+            int idx = (start + k) % lb->count;
+            if (lb->backends[idx].healthy) { selected = idx; break; }
+        }
         break;
+    }
     }
 
     if (selected >= 0) {
@@ -581,7 +592,14 @@ int eos_failover_failback(EosFailoverCluster *fc, int recovered_idx) {
     fc->nodes[recovered_idx].state = EOS_NODE_ACTIVE;
 
     if (fc->nodes[recovered_idx].is_primary) {
-        fc->nodes[fc->primary_idx].state = EOS_NODE_STANDBY;
+        /* Hand back only from a node that is active and is not the one
+         * recovering. Unconditionally, a FAILED stand-in was marked
+         * STANDBY (a dead failover target), and with no stand-in the
+         * recovered primary demoted itself, leaving nothing active. */
+        int prev = fc->primary_idx;
+        if (prev != recovered_idx && prev >= 0 && prev < fc->count &&
+            fc->nodes[prev].state == EOS_NODE_ACTIVE)
+            fc->nodes[prev].state = EOS_NODE_STANDBY;
         fc->primary_idx = recovered_idx;
     }
     return 0;

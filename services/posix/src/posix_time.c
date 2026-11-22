@@ -72,6 +72,7 @@ typedef struct {
     eos_swtimer_handle_t  eos_handle;
     struct sigevent       sevp;
     struct itimerspec     spec;
+    uint32_t              rearm_interval_ms; /* periodic phase after it_value */
 } posix_timer_entry_t;
 
 static posix_timer_entry_t posix_timers[POSIX_TIMER_MAX];
@@ -87,8 +88,25 @@ static void posix_timers_init_once(void) {
 }
 
 static void posix_timer_callback(eos_swtimer_handle_t handle, void *ctx) {
-    (void)handle;
     posix_timer_entry_t *te = (posix_timer_entry_t *)ctx;
+
+    /* First expiry of a timer whose it_value and it_interval differ: swap
+     * the one-shot for a periodic timer of it_interval. The tick has
+     * already retired this one-shot, so deleting it here stands, and the
+     * slot it frees is the one the create takes. */
+    if (te->rearm_interval_ms != 0) {
+        uint32_t interval_ms = te->rearm_interval_ms;
+        te->rearm_interval_ms = 0;
+        eos_swtimer_delete(handle);
+        eos_swtimer_handle_t sh;
+        if (eos_swtimer_create(&sh, "posix_tmr", interval_ms, true,
+                               posix_timer_callback, te) == EOS_KERN_OK) {
+            te->eos_handle = sh;
+            eos_swtimer_start(sh);
+        } else {
+            te->active = false;
+        }
+    }
 
     if (te->sevp.sigev_notify == SIGEV_SIGNAL) {
         /* Raise signal in current context — limited, best-effort */
@@ -133,6 +151,7 @@ int timer_create(int clockid, struct sigevent *sevp, timer_t *timerid) {
 
     te->eos_handle = sh;
     te->active     = true;
+    te->rearm_interval_ms = 0;
     *timerid       = (timer_t)slot;
     return 0;
 }
@@ -150,8 +169,13 @@ int timer_settime(timer_t timerid, int flags,
         *old_value = te->spec;
     }
 
-    /* Stop current timer */
+    /* Stop current timer. With interrupts masked: the tick callback may be
+     * swapping te->eos_handle for the periodic timer, and once stopped and
+     * disarmed here the callback cannot run again. */
+    eos_irq_disable();
     eos_swtimer_stop(te->eos_handle);
+    te->rearm_interval_ms = 0;
+    eos_irq_enable();
 
     if (!new_value) return 0;
 
@@ -168,8 +192,13 @@ int timer_settime(timer_t timerid, int flags,
     /* Delete old timer and create new one with correct period */
     eos_swtimer_delete(te->eos_handle);
 
-    bool auto_reload = (interval_ms > 0);
-    uint32_t period  = auto_reload ? interval_ms : initial_ms;
+    /* The first expiry is at it_value. A periodic timer of it_interval
+     * fired first at it_interval instead; when the two differ, a one-shot
+     * of it_value runs first and its callback starts the periodic one. */
+    bool auto_reload = (interval_ms > 0 && interval_ms == initial_ms);
+    uint32_t period  = initial_ms;
+    if (interval_ms > 0 && interval_ms != initial_ms)
+        te->rearm_interval_ms = interval_ms;
 
     eos_swtimer_handle_t sh;
     if (eos_swtimer_create(&sh, "posix_tmr", period, auto_reload,
@@ -189,7 +218,10 @@ int timer_delete(timer_t timerid) {
     posix_timer_entry_t *te = &posix_timers[timerid];
     if (!te->active) return -1;
 
+    eos_irq_disable();   /* see timer_settime() */
     eos_swtimer_stop(te->eos_handle);
+    te->rearm_interval_ms = 0;
+    eos_irq_enable();
     eos_swtimer_delete(te->eos_handle);
     te->active = false;
     return 0;

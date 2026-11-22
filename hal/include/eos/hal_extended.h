@@ -553,6 +553,21 @@ int  eos_flash_init(const eos_flash_config_t *cfg);
 void eos_flash_deinit(uint8_t id);
 int  eos_flash_read(uint8_t id, uint32_t addr, void *buf, size_t len);
 int  eos_flash_write(uint8_t id, uint32_t addr, const void *data, size_t len);
+/**
+ * STM32F4 (1 MB) flash sector holding @p addr, or -1 outside the array.
+ * Sectors 0-3 are 16 KB from 0x08000000, sector 4 is 64 KB, sectors 5-11
+ * are 128 KB. Pure arithmetic, kept here so it is testable on the host;
+ * eos_flash_erase_sector() uses it.
+ */
+static inline int eos_flash_stm32f4_sector(uint32_t addr) {
+    if (addr < 0x08000000U || addr >= 0x08100000U) return -1;
+    if (addr >= 0x08020000U) return 5 + (int)((addr - 0x08020000U) / 0x20000U);
+    if (addr >= 0x08010000U) return 4;
+    return (int)((addr - 0x08000000U) / 0x4000U);
+}
+
+/** Erase the sector holding @p sector_addr. Returns -1 for an address
+ *  outside the flash array (nothing is erased). */
 int  eos_flash_erase_sector(uint8_t id, uint32_t sector_addr);
 int  eos_flash_erase_chip(uint8_t id);
 int  eos_flash_get_info(uint8_t id, eos_flash_info_t *info);

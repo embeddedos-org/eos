@@ -251,7 +251,7 @@ int sem_init(sem_t *sem, int pshared, unsigned int value) {
     if (!sem) return -1;
 
     eos_sem_handle_t h;
-    if (eos_sem_create(&h, value, 0xFFFFFFFF) != EOS_KERN_OK) return -1;
+    if (eos_sem_create(&h, value, (uint32_t)INT32_MAX) != EOS_KERN_OK) return -1;
 
     sem->handle      = h;
     sem->initialized = true;

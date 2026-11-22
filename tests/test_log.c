@@ -84,6 +84,36 @@ int main(void)
     remove(path);
     assert(lines == 2);
 
+    /* A module filter set on a name longer than the 31 characters stored
+     * still applies to that module, and setting it again updates the one
+     * entry rather than adding another. */
+    {
+        const char *longmod = "a_module_name_longer_than_31_chars_x";
+        assert(strlen(longmod) > 31);
+        eos_log_set_output(EOS_LOG_OUTPUT_RING);
+        eos_log_ring_clear();
+        eos_log_set_module_level(longmod, EOS_LOG_ERROR);
+        eos_log_module(EOS_LOG_INFO, longmod, "filtered");
+        assert(eos_log_ring_count() == 0);
+        eos_log_module(EOS_LOG_ERROR, longmod, "kept");
+        assert(eos_log_ring_count() == 1);
+
+        /* Re-setting must not consume a table slot each time: with 16
+         * slots, 20 re-sets plus a fresh module would leave no room for
+         * the fresh module's filter. */
+        for (int i = 0; i < 20; i++)
+            eos_log_set_module_level(longmod, EOS_LOG_ERROR);
+        eos_log_set_module_level("fresh", EOS_LOG_ERROR);
+        eos_log_ring_clear();
+        eos_log_module(EOS_LOG_INFO, "fresh", "filtered");
+        assert(eos_log_ring_count() == 0);
+
+        /* A short name is not matched by a longer one sharing its prefix. */
+        eos_log_set_module_level("net", EOS_LOG_ERROR);
+        eos_log_module(EOS_LOG_INFO, "network", "kept");
+        assert(eos_log_ring_count() == 1);
+    }
+
     printf("test_log: all checks passed\n");
     return 0;
 }

@@ -45,6 +45,10 @@ typedef struct {
 static mtx_t g_mtx[EOS_MAX_MUTEXES];
 static sem_t g_sem[EOS_MAX_SEMAPHORES];
 
+/* Bumped by eos_sem_delete(); see g_q_gen in ipc.c. A waiter woken by a
+ * delete used to take a token from a semaphore created in the same slot. */
+static uint32_t g_sem_gen[EOS_MAX_SEMAPHORES];
+
 /* ============================================================
  * Priority inheritance
  *
@@ -359,11 +363,13 @@ int eos_sem_wait(eos_sem_handle_t h, uint32_t timeout_ms)
     uint8_t caller = (uint8_t)eos_task_get_current();
     uint32_t deadline = eos_tick_get() + timeout_ms;   /* ticks are ms */
     uint32_t remaining = timeout_ms;
+    uint32_t gen = g_sem_gen[h];
 
     /* A post dequeues and readies one waiter but does not reserve the count
      * for it, so another task can take it first. That waiter used to return
      * EOS_KERN_TIMEOUT even under EOS_WAIT_FOREVER. Being off the wait list
-     * means a post woke us; still on it means the timeout (or a delete) did. */
+     * means a post woke us; still on it means the timeout did. A delete bumps
+     * g_sem_gen and the waiter returns EOS_KERN_INVALID. */
     for (;;) {
         g_sem[h].waiters[g_sem[h].waiter_count++] = caller;
         eos_task_block_with_timeout(caller, remaining);
@@ -371,6 +377,10 @@ int eos_sem_wait(eos_sem_handle_t h, uint32_t timeout_ms)
         eos_port_yield();
 
         crit = eos_port_enter_critical();
+        if (g_sem_gen[h] != gen) {
+            eos_port_exit_critical(crit);
+            return EOS_KERN_INVALID;
+        }
         int still_queued = sem_remove_waiter(&g_sem[h], caller);
         if (g_sem[h].count > 0) {
             g_sem[h].count--;
@@ -423,7 +433,9 @@ int eos_sem_delete(eos_sem_handle_t h)
     uint32_t crit = eos_port_enter_critical();
     for (int i = 0; i < g_sem[h].waiter_count; i++)
         eos_task_unblock(g_sem[h].waiters[i]);
+    g_sem[h].waiter_count = 0;
     g_sem[h].in_use = 0;
+    g_sem_gen[h]++;
     eos_port_exit_critical(crit);
     return EOS_KERN_OK;
 }

@@ -127,7 +127,7 @@ SEM_ID semCCreate(int options, int initialCount)
     if (initialCount < 0) initialCount = 0;
 
     /* Use a large maximum for counting semaphores */
-    uint32_t max_count = 0xFFFFFFFFU;
+    uint32_t max_count = (uint32_t)INT32_MAX;  /* eos_sem_create() caps max at INT32_MAX */
 
     eos_sem_handle_t sh;
     if (eos_sem_create(&sh, (uint32_t)initialCount, max_count) != EOS_KERN_OK) {

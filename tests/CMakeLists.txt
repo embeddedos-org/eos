@@ -254,6 +254,16 @@ target_include_directories(test_hal_stm32f4 PRIVATE
 target_link_libraries(test_hal_stm32f4 PRIVATE eos_hal)
 add_test(NAME test_hal_stm32f4 COMMAND test_hal_stm32f4)
 
+# --- test_stm32f4_conv: flash sector map and temperature-sensor conversion ---
+# Pure arithmetic, run on the host. hal_stm32f4_adc.c is compiled in for its
+# conversion function; its register accessors are never called here.
+add_executable(test_stm32f4_conv test_stm32f4_conv.c
+    ${EoS_SOURCE_DIR}/hal/src/hal_stm32f4/hal_stm32f4_adc.c)
+target_include_directories(test_stm32f4_conv PRIVATE
+    ${EoS_SOURCE_DIR}/hal/include
+    ${EoS_SOURCE_DIR}/include)
+add_test(NAME test_stm32f4_conv COMMAND test_stm32f4_conv)
+
 # --- test_shell_cmd: the checked command builder, and every backend through it ---
 add_executable(test_shell_cmd test_shell_cmd.c)
 target_link_libraries(test_shell_cmd PRIVATE eos_backends eos_core)
@@ -536,6 +546,28 @@ target_include_directories(test_posix_time PRIVATE
     ${EoS_SOURCE_DIR}/kernel/include
     ${EoS_SOURCE_DIR}/hal/include)
 add_test(NAME test_posix_time COMMAND test_posix_time)
+
+# --- test_compat_regressions: POSIX / VxWorks / Linux IPC wrappers against
+# the real kernel. The layers are opt-in, so their sources are compiled here
+# directly; the POSIX ones are #included by the suite with their libc names
+# renamed (see test_posix_time above). UNIX only, like test_posix_io.
+if(UNIX)
+    add_executable(test_compat_regressions test_compat_regressions.c
+        test_compat_posix_sync.c
+        ${EoS_SOURCE_DIR}/services/vxworks/src/vxworks_sem.c
+        ${EoS_SOURCE_DIR}/services/vxworks/src/vxworks_task.c
+        ${EoS_SOURCE_DIR}/services/linux_ipc/src/linux_ipc.c
+        ${EoS_SOURCE_DIR}/services/linux_ipc/src/linux_sysv_ipc.c)
+    target_include_directories(test_compat_regressions PRIVATE
+        ${EoS_SOURCE_DIR}/services/posix/include
+        ${EoS_SOURCE_DIR}/services/vxworks/include
+        ${EoS_SOURCE_DIR}/services/linux_ipc/include
+        ${EoS_SOURCE_DIR}/kernel/include
+        ${EoS_SOURCE_DIR}/hal/include
+        ${EoS_SOURCE_DIR}/include)
+    target_link_libraries(test_compat_regressions PRIVATE eos_kernel eos_hal)
+    add_test(NAME test_compat_regressions COMMAND test_compat_regressions)
+endif()
 
 # --- example_secure_ota: examples/secure-ota must keep compiling ---
 # It includes eos/ota.h and eos/os_services.h together, which failed while

@@ -51,6 +51,7 @@ struct mq_attr {
 #define EOS_O_RDWR     0x0002
 #define EOS_O_NONBLOCK 0x0800
 
+/* name must be shorter than EOS_POSIX_MQ_NAME_MAX characters. */
 mqd_t mq_open(const char *name, int oflag, ...);
 int   mq_close(mqd_t mqdes);
 int   mq_send(mqd_t mqdes, const char *msg_ptr, size_t msg_len,

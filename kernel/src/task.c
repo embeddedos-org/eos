@@ -411,7 +411,18 @@ int eos_task_suspend(eos_task_handle_t h)
 {
     if (h == 0 || h >= EOS_MAX_TASKS || g_tasks[h].entry == NULL)
         return EOS_KERN_INVALID;
+    uint32_t crit = eos_port_enter_critical();
+    /* A task suspended mid-wait is still on its wait list (or its delay is
+     * still pending). Remember that, so resume puts it back to BLOCKED
+     * instead of READY: made READY, it ran while still queued and its wait
+     * loop read that as a timeout, even under EOS_WAIT_FOREVER. A second
+     * suspend leaves the flag as the first one set it. */
+    if (g_tasks[h].state == EOS_TASK_BLOCKED)
+        g_tasks[h].suspended_blocked = 1;
+    else if (g_tasks[h].state != EOS_TASK_SUSPENDED)
+        g_tasks[h].suspended_blocked = 0;
     g_tasks[h].state = EOS_TASK_SUSPENDED;
+    eos_port_exit_critical(crit);
     if (h == (eos_task_handle_t)g_current) {
         eos_port_yield();
     }
@@ -421,9 +432,20 @@ int eos_task_suspend(eos_task_handle_t h)
 int eos_task_resume(eos_task_handle_t h)
 {
     if (h >= EOS_MAX_TASKS || g_tasks[h].entry == NULL) return EOS_KERN_INVALID;
+    uint32_t crit = eos_port_enter_critical();
     if (g_tasks[h].state == EOS_TASK_SUSPENDED) {
-        g_tasks[h].state = EOS_TASK_READY;
+        /* Still waiting: back to BLOCKED with its deadline intact. A
+         * deadline that passed while suspended has timed out: READY, and
+         * the wait loop, finding itself still queued, returns
+         * EOS_KERN_TIMEOUT. */
+        bool reblock = g_tasks[h].suspended_blocked &&
+                       !(g_tasks[h].wake_armed &&
+                         tick_expired(g_tick, g_tasks[h].wake_tick));
+        g_tasks[h].state = reblock ? EOS_TASK_BLOCKED : EOS_TASK_READY;
+        if (!reblock) g_tasks[h].wake_armed = 0;
+        g_tasks[h].suspended_blocked = 0;
     }
+    eos_port_exit_critical(crit);
     return EOS_KERN_OK;
 }
 
@@ -486,6 +508,11 @@ int eos_swtimer_create(eos_swtimer_handle_t *out, const char *name,
 {
     if (!out || !callback || period_ms == 0) return EOS_KERN_INVALID;
 
+    /* Timer callbacks run from the tick interrupt and may create or delete
+     * timers (posix_time.c does), so finding and claiming a free slot must
+     * not be interleaved with one: a task and the callback could both take
+     * the same slot. */
+    uint32_t crit = eos_port_enter_critical();
     for (int i = 0; i < EOS_MAX_TIMERS; i++) {
         if (!g_timers[i].in_use) {
             g_timers[i].in_use = 1;
@@ -497,9 +524,11 @@ int eos_swtimer_create(eos_swtimer_handle_t *out, const char *name,
             g_timers[i].callback = callback;
             g_timers[i].ctx = ctx;
             *out = (uint8_t)i;
+            eos_port_exit_critical(crit);
             return EOS_KERN_OK;
         }
     }
+    eos_port_exit_critical(crit);
     return EOS_KERN_NO_MEMORY;
 }
 
@@ -527,9 +556,14 @@ int eos_swtimer_reset(eos_swtimer_handle_t h)
 
 int eos_swtimer_delete(eos_swtimer_handle_t h)
 {
-    if (h >= EOS_MAX_TIMERS || !g_timers[h].in_use) return EOS_KERN_INVALID;
+    uint32_t crit = eos_port_enter_critical();
+    if (h >= EOS_MAX_TIMERS || !g_timers[h].in_use) {
+        eos_port_exit_critical(crit);
+        return EOS_KERN_INVALID;
+    }
     g_timers[h].in_use = 0;
     g_timers[h].active = 0;
+    eos_port_exit_critical(crit);
     return EOS_KERN_OK;
 }
 
@@ -593,7 +627,12 @@ void eos_task_block_with_timeout(eos_task_handle_t h, uint32_t timeout_ms)
 void eos_task_unblock(eos_task_handle_t h)
 {
     if (h >= EOS_MAX_TASKS) return;
-    g_tasks[h].state = EOS_TASK_READY;
+    /* The wait is over, but a suspended task stays suspended until
+     * eos_task_resume(); it then resumes READY, not BLOCKED. */
+    if (g_tasks[h].state == EOS_TASK_SUSPENDED)
+        g_tasks[h].suspended_blocked = 0;
+    else
+        g_tasks[h].state = EOS_TASK_READY;
     g_tasks[h].wake_tick = 0;
     g_tasks[h].wake_armed = 0;
 }

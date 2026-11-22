@@ -96,6 +96,7 @@ typedef struct {
     uint32_t *stack_ptr;
     uint32_t wake_tick;
     uint8_t  wake_armed;   /* 1 when wake_tick holds a real deadline */
+    uint8_t  suspended_blocked; /* suspended while BLOCKED: resume re-blocks */
     uint32_t run_count;
 } eos_task_t;
 
@@ -130,6 +131,12 @@ int  eos_task_delete(eos_task_handle_t handle);
  *         created, or deleted through eos_task_delete()).
  *
  * Handle 0 is the idle task and is permanent; see eos_task_delete().
+ *
+ * A task suspended while blocked (waiting on a mutex, semaphore or queue,
+ * or in eos_task_delay_ms()) stays on its wait. If the wait ends while it
+ * is suspended, it stays suspended; eos_task_resume() then makes it READY.
+ * If the wait has not ended, eos_task_resume() returns it to BLOCKED with
+ * its original deadline.
  */
 int  eos_task_suspend(eos_task_handle_t handle);
 int  eos_task_resume(eos_task_handle_t handle);
@@ -197,6 +204,8 @@ typedef uint8_t eos_sem_handle_t;
 int eos_sem_create(eos_sem_handle_t *out, uint32_t initial, uint32_t max);
 int eos_sem_wait(eos_sem_handle_t handle, uint32_t timeout_ms);
 int eos_sem_post(eos_sem_handle_t handle);
+/** Delete a semaphore. Tasks blocked in eos_sem_wait() on it are woken
+ *  and return EOS_KERN_INVALID. */
 int eos_sem_delete(eos_sem_handle_t handle);
 uint32_t eos_sem_get_count(eos_sem_handle_t handle);
 
@@ -210,6 +219,8 @@ int eos_queue_create(eos_queue_handle_t *out, size_t item_size, uint32_t capacit
 int eos_queue_send(eos_queue_handle_t handle, const void *item, uint32_t timeout_ms);
 int eos_queue_receive(eos_queue_handle_t handle, void *item, uint32_t timeout_ms);
 int eos_queue_peek(eos_queue_handle_t handle, void *item);
+/** Delete a queue. Tasks blocked in eos_queue_send() or
+ *  eos_queue_receive() on it are woken and return EOS_KERN_INVALID. */
 int eos_queue_delete(eos_queue_handle_t handle);
 uint32_t eos_queue_count(eos_queue_handle_t handle);
 bool eos_queue_is_full(eos_queue_handle_t handle);
