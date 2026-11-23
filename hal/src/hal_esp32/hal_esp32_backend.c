@@ -369,6 +369,16 @@ static int esp32_uart_read(uint8_t port, uint8_t *data, size_t len, uint32_t tim
     return (int)got;
 }
 
+int esp32_gpio_configure(const eos_gpio_config_t *cfg)
+{
+    return esp32_gpio_init(cfg);
+}
+
+void esp32_gpio_set(uint16_t pin, bool value)
+{
+    esp32_gpio_write(pin, value);
+}
+
 static int esp32_hal_backend_init(void)
 {
     return 0;
@@ -384,6 +394,9 @@ static const eos_hal_backend_t s_esp32_backend = {
     .uart_init   = esp32_uart_init,
     .uart_write  = esp32_uart_write,
     .uart_read   = esp32_uart_read,
+    .spi_init    = esp32_spi_init,
+    .spi_deinit  = esp32_spi_deinit,
+    .spi_transfer = esp32_spi_transfer,
 };
 
 /* Selected by eos_hal_init() when built with -DEOS_HAL_BACKEND_ESP32. */

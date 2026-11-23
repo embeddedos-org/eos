@@ -13,6 +13,8 @@
 
 #include <stdbool.h>
 #include <stdint.h>
+#include <stddef.h>
+#include "eos/hal.h"
 #include "board_esp32.h"
 
 /* A host unit test defines ESP32_REG32 to point at fake registers. */
@@ -56,6 +58,18 @@ int  esp32_pin_route_input(uint16_t pin, uint32_t signal);
  *  pins). An ADC or DAC leaves the pad on the RTC mux, which disconnects the
  *  digital GPIO and matrix paths until this clears it. */
 void esp32_rtc_pad_release(uint16_t gpio);
+
+/** GPIO through the backend (pin checks, RTC pad release) for the other
+ *  ESP32 sources. */
+int  esp32_gpio_configure(const eos_gpio_config_t *cfg);
+void esp32_gpio_set(uint16_t pin, bool value);
+
+/* SPI master (hal_esp32_spi.c). Through the GPIO matrix the master samples
+ * MISO too early above APB/3 (26.67 MHz); the driver refuses faster clocks. */
+#define ESP32_SPI_MAX_HZ (ESP32_APB_HZ / 3U + 1U)
+int  esp32_spi_init(const eos_spi_config_t *cfg);
+void esp32_spi_deinit(uint8_t port);
+int  esp32_spi_transfer(uint8_t port, const uint8_t *tx, uint8_t *rx, size_t len);
 
 /** Convert a @p bits-wide raw reading of ADC @p unit (1 or 2) at 12 dB
  *  attenuation to millivolts with the chip's eFuse calibration

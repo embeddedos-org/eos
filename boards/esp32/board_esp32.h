@@ -80,6 +80,40 @@ void eos_esp32_console_put_u32(uint32_t v);
 #define EOS_BOARD_PWM_GPIOS { 2U, 4U, 5U, 13U, 14U, 15U, 21U, 22U }
 #endif
 
+/*
+ * SPI ports 2 (SPI2, "HSPI") and 3 (SPI3, "VSPI"): the IO_MUX pins of each,
+ * routed here through the GPIO matrix. SPI3's defaults share GPIO18/19 with
+ * UART1's; use one or the other, or move either with -D. Chip select is any
+ * GPIO (eos_spi_config_t.cs_pin), or EOS_ESP32_SPI_NO_CS.
+ */
+#ifndef EOS_BOARD_SPI2_SCLK_GPIO
+#define EOS_BOARD_SPI2_SCLK_GPIO 14U
+#endif
+#ifndef EOS_BOARD_SPI2_MOSI_GPIO
+#define EOS_BOARD_SPI2_MOSI_GPIO 13U
+#endif
+#ifndef EOS_BOARD_SPI2_MISO_GPIO
+#define EOS_BOARD_SPI2_MISO_GPIO 12U
+#endif
+#ifndef EOS_BOARD_SPI3_SCLK_GPIO
+#define EOS_BOARD_SPI3_SCLK_GPIO 18U
+#endif
+#ifndef EOS_BOARD_SPI3_MOSI_GPIO
+#define EOS_BOARD_SPI3_MOSI_GPIO 23U
+#endif
+#ifndef EOS_BOARD_SPI3_MISO_GPIO
+#define EOS_BOARD_SPI3_MISO_GPIO 19U
+#endif
+#define EOS_ESP32_SPI_NO_CS 0xFFFFU
+
+/** Feed SPI @p port's MISO from its own MOSI pad (ports 2 and 3, after
+ *  eos_spi_init()). For self-tests; -1 for any other port. */
+int  eos_esp32_spi_set_loopback(uint8_t port, bool enable);
+
+/** SPI @p port's actual clock in Hz (the divider's nearest), 0 if the port
+ *  is not initialised. */
+uint32_t eos_esp32_spi_get_hz(uint8_t port);
+
 /** Connect UART @p port's TX to its own RX inside the peripheral (ports 1
  *  and 2, after eos_uart_init()). For self-tests; -1 for any other port. */
 int  eos_esp32_uart_set_loopback(uint8_t port, bool enable);

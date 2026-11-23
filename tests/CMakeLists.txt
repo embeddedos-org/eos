@@ -57,7 +57,8 @@ add_test(NAME test_toolchain_path_overflow COMMAND test_toolchain_path_overflow)
 # --- test_esp32_adc_cal: ESP32 ADC eFuse calibration against ESP-IDF's values ---
 add_executable(test_esp32_adc_cal test_esp32_adc_cal.c)
 target_include_directories(test_esp32_adc_cal PRIVATE
-    ${CMAKE_SOURCE_DIR}/boards/esp32 ${CMAKE_SOURCE_DIR}/hal/src/hal_esp32)
+    ${CMAKE_SOURCE_DIR}/boards/esp32 ${CMAKE_SOURCE_DIR}/hal/src/hal_esp32
+    ${CMAKE_SOURCE_DIR}/hal/include)
 add_test(NAME test_esp32_adc_cal COMMAND test_esp32_adc_cal)
 
 # --- test_board_configs: Board YAML schema shape ---
