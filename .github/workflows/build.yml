@@ -256,6 +256,14 @@ jobs:
             sim/qemu_esp32/context_test.c sim/qemu_esp32/context_regcheck.S
           sim/qemu_esp32/run.sh _build_esp32/context.flash.bin 60 "CONTEXT TEST PASSED"
 
+      # periph_test.c checks the ADC, DAC, PWM and UART1/2 drivers through
+      # loopbacks QEMU does not model, so it runs on a board (results in
+      # sim/qemu_esp32/README.md). CI builds it, so it cannot rot.
+      - name: Build the on-board peripheral test (sim/qemu_esp32)
+        run: |
+          sim/qemu_esp32/build.sh _build_esp32/periph.elf sim/qemu_esp32/periph_test.c
+          xtensa-esp32-elf-size _build_esp32/periph.elf
+
       # A fault must stop the system, not be returned from: a task that
       # returns has to produce its own fatal report (code 7), and nothing may
       # run after it.

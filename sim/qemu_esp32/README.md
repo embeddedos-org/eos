@@ -44,6 +44,7 @@ to restore the board.
 | `capture_serial.py` | Resets a board, records its UART0 output with host timestamps, checks the verdict and heartbeat spacing |
 | `scheduler_test.c` | Starts the kernel; workers progress only through the tick and the context switch; blinks the LED through the HAL and reads the pad back. Its tasks block almost at once, so it does not show that a preempted task keeps its registers |
 | `context_test.c`, `context_regcheck.S` | Three tasks that never block check a0..a15, SAR and a zero-overhead loop while the tick preempts them; any register the frame loses, or one restored from another task, fails |
+| `periph_test.c` | ADC, DAC, PWM and UART1/2 through loopbacks inside the chip (board only; see below) |
 | `fault_test.c` | A task returns; the port must report `EOS FATAL code=7` (`task_returned`, not any other fault) and run nothing after it |
 
 Mutation check: with the SAR restore in `vectors.S` replaced by `nop`, or
@@ -114,6 +115,66 @@ context: task2 rounds=251 error=0
 CONTEXT TEST PASSED
 ```
 
+## Peripheral drivers
+
+`hal/src/hal_esp32/` implements the extended HAL's ADC, DAC and PWM
+(`-DEOS_ENABLE_ADC/DAC/PWM=1`) and UART1/2 in the backend. The portable API
+has no pin or unit arguments, so the ESP32 numbering is:
+
+| API | ESP32 |
+|---|---|
+| ADC channel 0-7 | ADC1 channel 0-7: GPIO36, 37, 38, 39, 32, 33, 34, 35 |
+| ADC channel 10-19 | ADC2 channel 0-9: GPIO4, 0, 2, 15, 13, 12, 14, 27, 25, 26 |
+| DAC channel 0, 1 | GPIO25, GPIO26, 8-bit |
+| PWM channel 0-3 | LEDC high-speed channel n on its own timer n, on `EOS_BOARD_PWM_GPIOS[n]` (default GPIO2, 4, 5, 13) |
+| UART 1 / 2 | GPIO19 TX, 18 RX / GPIO17 TX, 16 RX (`EOS_BOARD_UART*_GPIO`) |
+
+- ADC: 9-12 bits, 12 dB attenuation, one software-started conversion per
+  read. `eos_adc_read_mv()` is a straight line to 3600 mV with no per-chip
+  calibration (measured on this board against the DAC; expect several percent
+  elsewhere). A conversion that does not finish in 1 ms returns `0xFFFFFFFF`.
+- PWM: 1 Hz to 8.388 MHz (2^23 Hz: at least 1 bit of duty resolution, with
+  the divider computed in 32 bits); the finest resolution up to 20 bits that fits.
+  Channels 4-7 are refused: they would have to share a timer, and changing
+  one channel's frequency would change another's.
+- UART1/2: 300 baud to 5 Mbaud, 5-8 data bits, none/even/odd parity, 1 or 2
+  stop bits; RX has a pull-up.
+- Using a pin for ADC or DAC moves it to the RTC mux; GPIO and the
+  peripheral routes take it back.
+
+`periph_test.c` on the board (QEMU does not model these peripherals; CI only
+builds the test):
+
+```
+CHECK dac0->adc18 raw 0/913/1885/2847/4095 1650mV->1656mV  PASS
+CHECK dac1->adc19 raw 0/911/1891/2840/4095 1650mV->1661mV  PASS
+CHECK adc1 ch4 (GPIO32) pull-up/pull-down up 4095 down 0  PASS
+CHECK pwm ch0 init 1 kHz 25% -> 200 edges/200ms duty x10 248  PASS
+CHECK pwm set_duty 75% -> duty x10 750  PASS
+CHECK pwm set_freq 5 kHz -> 1001 edges/200ms duty x10 750  PASS
+CHECK pwm stop -> 0 edges  PASS
+CHECK pwm rejects channel 4, 0 Hz and duty > 100%  PASS
+CHECK pwm frequency range: 1 Hz and 8388608 Hz accepted, 8388609 Hz refused  PASS
+CHECK uart1+2 loopback, 5-8 data bits x none/even/odd x 1/2 stop at 115200 -> 48/48  PASS
+CHECK uart1+2 loopback, 5-8 data bits x none/even/odd x 1/2 stop at 921600 -> 48/48  PASS
+CHECK uart rejects port 3, 4 data bits and 10 Mbaud  PASS
+CHECK GPIO25 digital again after the DAC -> 0 wrong of 20  PASS
+PERIPH TEST PASSED
+```
+
+ESP32 UART behaviours the driver works around, each found on the board and
+matched against ESP-IDF's `uart_ll.h`:
+
+- RX FIFO is read through the peripheral-bus address, never the AHB alias
+  (ESP-IDF: "Read fifo, we use APB address"); through the alias, received
+  bytes came back wrong.
+- Neither FIFO reset bit is used: `RXFIFO_RST` does not empty the RX FIFO,
+  and ESP-IDF toggles `TXFIFO_RST` only on UART0. With both toggled, every
+  second reconfiguration of UART2 received garbage. The RX FIFO is drained
+  by reading until its count and pointers agree.
+- After a reconfiguration or a loopback switch the driver waits two frame
+  times for the receiver to go idle before draining it.
+
 ## Limits
 
 - One core. The APP CPU stays in reset.
@@ -130,9 +191,10 @@ CONTEXT TEST PASSED
   (`eos_arch_irq_register()`); routing a peripheral to one through the
   interrupt matrix is not implemented. `eos_arch_irq_set_priority()` does
   nothing, because Xtensa fixes each line's level in hardware.
-- The HAL backend implements GPIO and UART0 only; UART0 stays at the 115200
-  8N1 the ROM set. Other HAL calls return -1. It refuses GPIO1/3 (the
-  console), GPIO6-11 (the module's flash), outputs on the input-only GPIO34-39,
-  and pulls on GPIO34-39, which have none.
+- The HAL implements GPIO, UART0-2, ADC, DAC and PWM (below). UART0 stays at
+  the 115200 8N1 the ROM set. SPI, I2C, timers, Wi-Fi and Bluetooth calls
+  return -1. GPIO refuses GPIO1/3 (the console), GPIO6-11 (the module's
+  flash), outputs on the input-only GPIO34-39, and pulls on GPIO34-39, which
+  have none.
 - QEMU's GPIO model does not reflect outputs in `GPIO_IN`, hence
   `-DEOS_TEST_PAD_READBACK=0` there.

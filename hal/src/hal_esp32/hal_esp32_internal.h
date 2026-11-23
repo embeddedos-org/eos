@@ -42,4 +42,9 @@ int  esp32_pin_route_output(uint16_t pin, uint32_t signal);
 /** Feed @p pin into peripheral input signal @p signal through the matrix. */
 int  esp32_pin_route_input(uint16_t pin, uint32_t signal);
 
+/** Hand an RTC-capable pad back to the digital IO_MUX (no-op for other
+ *  pins). An ADC or DAC leaves the pad on the RTC mux, which disconnects the
+ *  digital GPIO and matrix paths until this clears it. */
+void esp32_rtc_pad_release(uint16_t gpio);
+
 #endif /* EOS_HAL_ESP32_INTERNAL_H */
