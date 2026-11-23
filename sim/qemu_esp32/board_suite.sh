@@ -34,7 +34,7 @@ board() {  # name expected-text seconds sources...
     if ! EOS_EXTRA_CFLAGS="$EXTRA" "$here/build.sh" "$out/b_$n.elf" "$@" >"$out/b_$n.build" 2>&1; then
         echo "BOARD $n: FAIL (build)"; fail=1; return
     fi
-    if ! $esptool --chip esp32 --port "$port" write-flash 0x1000 "$out/b_$n.bin" >"$out/b_$n.flash" 2>&1; then
+    if ! $esptool --chip esp32 --port "$port" write_flash 0x1000 "$out/b_$n.bin" >"$out/b_$n.flash" 2>&1; then
         echo "BOARD $n: FAIL (flash)"; fail=1; return
     fi
     "$py" "$here/capture_serial.py" "$port" "$t" >"$out/b_$n.log" 2>&1

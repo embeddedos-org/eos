@@ -28,12 +28,12 @@ On a board (the default build enforces the LED readback):
 
 ```sh
 sim/qemu_esp32/build.sh /tmp/sched.elf sim/qemu_esp32/scheduler_test.c
-esptool --chip esp32 --port /dev/ttyUSB0 write-flash 0x1000 /tmp/sched.bin
+esptool --chip esp32 --port /dev/ttyUSB0 write_flash 0x1000 /tmp/sched.bin
 sim/qemu_esp32/capture_serial.py /dev/ttyUSB0 12
 ```
 
 Writing at 0x1000 replaces the board's second-stage bootloader. Read the whole
-flash first (`esptool read-flash 0 0x400000 backup.bin`) and write it back at 0
+flash first (`esptool read_flash 0 0x400000 backup.bin`) and write it back at 0
 to restore the board.
 
 | File | Purpose |
