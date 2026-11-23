@@ -88,8 +88,9 @@ static void test_dac_adc(uint8_t dac, uint8_t adc)
         put(i ? "/" : " raw ");
         put_u(raw[i]);
     }
-    /* write_mv / read_mv: 1650 mV in, read back through the uncalibrated
-     * conversion. Allow 10%: the ESP32 ADC is not calibrated here. */
+    /* write_mv / read_mv: 1650 mV in, read back through the eFuse-calibrated
+     * conversion. Allow 5%: the DAC itself is uncalibrated (VDD x code/256,
+     * with VDD taken as 3300 mV). */
     eos_dac_write_mv(dac, 1650);
     delay_ms(2);
     uint32_t mv = 0;
@@ -102,10 +103,25 @@ static void test_dac_adc(uint8_t dac, uint8_t adc)
     put(" 1650mV->");
     put_u(mv);
     put("mV");
-    bool mv_ok = mv > 1650U * 90U / 100U && mv < 1650U * 110U / 100U;
+    bool mv_ok = mv > 1650U * 95U / 100U && mv < 1650U * 105U / 100U;
     eos_adc_deinit(adc);
     eos_dac_deinit(dac);
     check("dac_adc", monotonic && raw[0] < 300U && raw[4] > 3000U && mv_ok);
+}
+
+/* The calibration is read from eFuse on the chip itself; a Vref outside
+ * 1000-1200 mV (ESP-IDF's table range) means the field was misread. */
+static void test_adc_cal_source(void)
+{
+    static const char *const names[] = { "two-point", "efuse-vref", "default-vref" };
+    uint32_t vref = 0;
+    eos_esp32_adc_cal_t src = eos_esp32_adc_cal_source(&vref);
+    put("CHECK adc calibration source ");
+    put(src <= EOS_ESP32_ADC_CAL_DEFAULT_VREF ? names[src] : "?");
+    put(" vref ");
+    put_u(vref);
+    put("mV");
+    check("adc_cal", src <= EOS_ESP32_ADC_CAL_DEFAULT_VREF && vref >= 1000U && vref <= 1200U);
 }
 
 static void test_adc1_pulls(void)
@@ -291,6 +307,7 @@ int main(void)
 {
     put("\nEoS ESP32 peripheral test\n");
     if (eos_hal_init() != 0) { put("hal init failed\n"); return 1; }
+    test_adc_cal_source();
     test_dac_adc(0, 18);
     test_dac_adc(1, 19);
     test_adc1_pulls();

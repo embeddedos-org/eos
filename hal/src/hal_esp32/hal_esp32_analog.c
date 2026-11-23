@@ -115,15 +115,11 @@ void esp32_rtc_pad_release(uint16_t gpio)
 #define EN_PAD_FORCE    (1U << 31)
 
 /*
- * 12 dB attenuation: the widest input range. eos_adc_read_mv() is a straight
- * line from 0 to ADC_FULL_SCALE_MV with no per-chip calibration (ESP-IDF's
- * eFuse calibration is not ported). 3600 mV is a measurement, not a
- * datasheet figure: on the HiLetGo ESP-WROOM-32 this port was brought up on,
- * DAC codes 64/128/192 (VDD x code/256) read 912/1882/2847, a line through
- * 4095 at about 3590 mV. Expect several percent of error on other chips.
+ * 12 dB attenuation: the widest input range (about 150-2450 mV is linear;
+ * readings above that follow ESP-IDF's lookup table). eos_adc_read_mv()
+ * applies the chip's eFuse calibration (hal_esp32_adc_cal.c).
  */
 #define ADC_ATTEN_12DB  3U
-#define ADC_FULL_SCALE_MV 3600U
 
 static const uint8_t s_adc1_gpio[8]  = { 36, 37, 38, 39, 32, 33, 34, 35 };
 static const uint8_t s_adc2_gpio[10] = { 4, 0, 2, 15, 13, 12, 14, 27, 25, 26 };
@@ -240,10 +236,9 @@ uint32_t eos_adc_read(uint8_t channel)
 uint32_t eos_adc_read_mv(uint8_t channel)
 {
     if (channel >= sizeof(s_adc_bits) || s_adc_bits[channel] == 0U) return 0;
-    uint32_t max = (1U << s_adc_bits[channel]) - 1U;
     uint32_t raw = eos_adc_read(channel);
     if (raw == EOS_ADC_ESP32_ERROR) return EOS_ADC_ESP32_ERROR;
-    return raw * ADC_FULL_SCALE_MV / max;
+    return esp32_adc_raw_to_mv(channel < 8U ? 1 : 2, raw, s_adc_bits[channel]);
 }
 
 #endif /* EOS_ENABLE_ADC */

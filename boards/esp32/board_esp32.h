@@ -73,6 +73,17 @@ void eos_esp32_console_put_u32(uint32_t v);
  *  and 2, after eos_uart_init()). For self-tests; -1 for any other port. */
 int  eos_esp32_uart_set_loopback(uint8_t port, bool enable);
 
+/** Where eos_adc_read_mv()'s calibration comes from (hal_esp32_adc_cal.c). */
+typedef enum {
+    EOS_ESP32_ADC_CAL_TWO_POINT    = 0,  /* BLOCK3 readings at 150/850 mV */
+    EOS_ESP32_ADC_CAL_EFUSE_VREF   = 1,  /* the chip's measured Vref */
+    EOS_ESP32_ADC_CAL_DEFAULT_VREF = 2,  /* nothing burned: nominal 1100 mV */
+} eos_esp32_adc_cal_t;
+
+/** Report the ADC calibration source and, through @p vref_mv (may be NULL),
+ *  the Vref in use. */
+eos_esp32_adc_cal_t eos_esp32_adc_cal_source(uint32_t *vref_mv);
+
 /** Read the raw CPU cycle counter (CCOUNT). */
 uint32_t eos_esp32_ccount(void);
 

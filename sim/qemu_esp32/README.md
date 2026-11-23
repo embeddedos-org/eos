@@ -44,7 +44,7 @@ to restore the board.
 | `capture_serial.py` | Resets a board, records its UART0 output with host timestamps, checks the verdict and heartbeat spacing |
 | `scheduler_test.c` | Starts the kernel; workers progress only through the tick and the context switch; blinks the LED through the HAL and reads the pad back. Its tasks block almost at once, so it does not show that a preempted task keeps its registers |
 | `context_test.c`, `context_regcheck.S` | Three tasks that never block check a0..a15, SAR and a zero-overhead loop while the tick preempts them; any register the frame loses, or one restored from another task, fails |
-| `periph_test.c` | ADC, DAC, PWM and UART1/2 through loopbacks inside the chip (board only; see below) |
+| `periph_test.c` | ADC (with its eFuse calibration), DAC, PWM and UART1/2 through loopbacks inside the chip (board only; see below) |
 | `fault_test.c` | A task returns; the port must report `EOS FATAL code=7` (`task_returned`, not any other fault) and run nothing after it |
 
 Mutation check: with the SAR restore in `vectors.S` replaced by `nop`, or
@@ -130,9 +130,14 @@ has no pin or unit arguments, so the ESP32 numbering is:
 | UART 1 / 2 | GPIO19 TX, 18 RX / GPIO17 TX, 16 RX (`EOS_BOARD_UART*_GPIO`) |
 
 - ADC: 9-12 bits, 12 dB attenuation, one software-started conversion per
-  read. `eos_adc_read_mv()` is a straight line to 3600 mV with no per-chip
-  calibration (measured on this board against the DAC; expect several percent
-  elsewhere). A conversion that does not finish in 1 ms returns `0xFFFFFFFF`.
+  read. `eos_adc_read_mv()` uses the chip's eFuse calibration
+  (`hal_esp32_adc_cal.c`, ported from ESP-IDF's line fitting, Apache-2.0):
+  two-point values if burned, else the measured Vref, else 1100 mV;
+  `eos_esp32_adc_cal_source()` says which. `tests/test_esp32_adc_cal.c`
+  checks it against ESP-IDF's own output. One deliberate difference: ESP-IDF
+  v5.4 uses Vref 0 in its 12 dB table on two-point chips (readings above
+  2880 then fall as the input rises); the port uses the chip's Vref. A
+  conversion that does not finish in 1 ms returns `0xFFFFFFFF`.
 - PWM: 1 Hz to 8.388 MHz (2^23 Hz: at least 1 bit of duty resolution, with
   the divider computed in 32 bits); the finest resolution up to 20 bits that fits.
   Channels 4-7 are refused: they would have to share a timer, and changing
@@ -146,8 +151,9 @@ has no pin or unit arguments, so the ESP32 numbering is:
 builds the test):
 
 ```
-CHECK dac0->adc18 raw 0/913/1885/2847/4095 1650mV->1656mV  PASS
-CHECK dac1->adc19 raw 0/911/1891/2840/4095 1650mV->1661mV  PASS
+CHECK adc calibration source efuse-vref vref 1107mV  PASS
+CHECK dac0->adc18 raw 0/912/1882/2847/4095 1650mV->1658mV  PASS
+CHECK dac1->adc19 raw 0/910/1891/2837/4095 1650mV->1666mV  PASS
 CHECK adc1 ch4 (GPIO32) pull-up/pull-down up 4095 down 0  PASS
 CHECK pwm ch0 init 1 kHz 25% -> 200 edges/200ms duty x10 248  PASS
 CHECK pwm set_duty 75% -> duty x10 750  PASS
