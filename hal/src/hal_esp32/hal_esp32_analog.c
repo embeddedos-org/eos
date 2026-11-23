@@ -164,7 +164,7 @@ void eos_adc_deinit(uint8_t channel)
  * reading can equal UINT32_MAX.
  */
 #define EOS_ADC_ESP32_ERROR 0xFFFFFFFFU
-#define ADC_TIMEOUT_CYCLES  (ESP32_APB_HZ / 1000U)
+#define ADC_TIMEOUT_CYCLES  (ESP32_CPU_HZ / 1000U)   /* CCOUNT cycles */
 
 static bool wait_set(uint32_t reg, uint32_t mask)
 {

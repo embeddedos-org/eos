@@ -28,7 +28,9 @@ def main() -> int:
     port = sys.argv[1]
     seconds = float(sys.argv[2]) if len(sys.argv) > 2 else 12.0
 
-    ser = serial.Serial(port, 115200, timeout=0.05)
+    # A short read timeout: each line is stamped when a read returns, so the
+    # timeout bounds the timestamp error (50 ms skewed one gap to 0.954 s).
+    ser = serial.Serial(port, 115200, timeout=0.002)
     # Hold EN low with GPIO0 high (normal boot, not download mode), release.
     ser.dtr = False
     ser.rts = True

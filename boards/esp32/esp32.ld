@@ -80,4 +80,8 @@ SECTIONS
     /DISCARD/ : { *(.comment) *(.note.*) *(.xtensa.info) *(.xt.prop*) *(.xt.lit*) }
 }
 
+/* Boot ROM functions (ESP-IDF v5.4, components/esp_rom/esp32/ld/esp32.rom.ld).
+ * The ROM is built for the windowed ABI, as EoS now is. */
+PROVIDE(rom_i2c_writeReg = 0x400041a4);
+
 ASSERT((_eos_vector_table_start & 0x3FF) == 0, "VECBASE must be 1 KB aligned")

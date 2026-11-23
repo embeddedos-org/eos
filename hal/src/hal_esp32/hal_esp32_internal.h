@@ -20,9 +20,15 @@
 #define ESP32_REG32(addr) (*(volatile uint32_t *)(uintptr_t)(addr))
 #endif
 
-/* APB clock. The port leaves the CPU on the 40 MHz crystal the boot ROM
- * selects, and with the CPU on the crystal APB runs at the same 40 MHz. */
+/* CPU clock (CCOUNT rate) and APB clock. On the PLL, APB is 80 MHz whatever
+ * the CPU runs at; on the 40 MHz crystal both run at 40 MHz (ESP32 TRM,
+ * "Reset and Clock"). board_esp32.c sets the clock. */
+#define ESP32_CPU_HZ (EOS_ESP32_CPU_MHZ * 1000000U)
+#if EOS_ESP32_CPU_MHZ == 40U
 #define ESP32_APB_HZ 40000000U
+#else
+#define ESP32_APB_HZ 80000000U
+#endif
 
 /* DPORT peripheral clock gates and resets (dport_reg.h) */
 #define ESP32_DPORT_PERIP_CLK_EN  0x3FF000C0U

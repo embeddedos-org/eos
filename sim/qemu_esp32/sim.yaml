@@ -14,9 +14,10 @@ qemu:
   # The machine boots the ROM, which loads the image from this flash file.
   flash_arg: "-drive file={flash},if=mtd,format=raw"
 cpu: esp32
-# The boot ROM leaves the CPU on the 40 MHz crystal and the port does not
-# change it; CCOUNT, and so the tick, runs at this rate.
-sys_clock_hz: 40000000
+# boards/esp32/board_esp32.c moves the CPU from the 40 MHz crystal the boot
+# ROM leaves it on to 240 MHz from the PLL; CCOUNT, and so the tick, runs at
+# this rate. EOS_ESP32_CPU_MHZ and EOS_SYS_CLOCK_HZ below must agree.
+sys_clock_hz: 240000000
 cflags:
   # The windowed ABI, GCC's default for the ESP32 and the one the toolchain's
   # newlib and libgcc, the boot ROM and Espressif's binary libraries use
@@ -30,7 +31,8 @@ cflags:
   - -ffunction-sections
   - -fdata-sections
   - -fno-common
-  - -DEOS_SYS_CLOCK_HZ=40000000U
+  - -DEOS_ESP32_CPU_MHZ=240U
+  - -DEOS_SYS_CLOCK_HZ=240000000U
   # eos_hal_init() registers hal/src/hal_esp32 (GPIO, UART0-2).
   - -DEOS_HAL_BACKEND_ESP32
   # Extended HAL parts the ESP32 port implements (hal_esp32_analog.c).

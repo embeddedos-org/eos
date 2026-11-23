@@ -51,7 +51,18 @@ extern "C" {
 #define EOS_BOARD_UART2_RX_GPIO 16U
 #endif
 
-/** Disable the watchdogs the boot ROM armed. Called by _start before .bss is
+/*
+ * CPU clock, set by eos_esp32_early_init(): 240, 160 or 80 MHz from the PLL
+ * (APB then runs at 80 MHz), or 40 to stay on the crystal as the ROM leaves
+ * it (APB 40 MHz). EOS_SYS_CLOCK_HZ, which the tick is computed from, must
+ * match (board_esp32.c checks). A board whose crystal is not 40 MHz stops
+ * at boot unless this is 40.
+ */
+#ifndef EOS_ESP32_CPU_MHZ
+#define EOS_ESP32_CPU_MHZ 240U
+#endif
+
+/** Disable the watchdogs the boot ROM armed and switch the CPU clock. Called by _start before .bss is
  *  zeroed, so it must not use .bss. */
 void eos_esp32_early_init(void);
 

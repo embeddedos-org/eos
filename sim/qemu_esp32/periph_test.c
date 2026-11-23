@@ -32,7 +32,7 @@
 
 #define REG32(a) (*(volatile uint32_t *)(uintptr_t)(a))
 #define GPIO_IN_REG 0x3FF4403CU
-#define CYCLES_PER_MS 40000U
+#define CYCLES_PER_MS (EOS_ESP32_CPU_MHZ * 1000U)
 
 static int s_failures;
 

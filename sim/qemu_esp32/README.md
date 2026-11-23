@@ -101,25 +101,21 @@ HiLetGo ESP-WROOM-32 (ESP32-D0WD-V3 rev 3.1, 4 MB flash), 2026-11-23:
 `capture_serial.py`:
 
 ```
-[  0.024s] rst:0x1 (POWERON_RESET),boot:0x13 (SPI_FAST_FLASH_BOOT)
-[  0.024s] load:0x3fff0000,len:588
-[  0.074s] load:0x40080400,len:5072
-[  0.074s] entry 0x40080970
-[  0.074s] EoS on ESP32 (Xtensa LX6): booting
-[  0.074s] scheduler: starting kernel
-[  0.475s] scheduler: worker_a=40 worker_b=20 led_toggles=8 led_readback_errors=0 ticks=400 cycles_per_400ms=16000876
-[  0.476s] SCHEDULER TEST PASSED
-[ 11.468s] heartbeat tick=11400 led_toggles=228 led_readback_errors=0
+[  0.071s] EoS on ESP32 (Xtensa LX6): booting
+[  0.071s] scheduler: starting kernel
+[  0.472s] scheduler: worker_a=40 worker_b=20 led_toggles=8 led_readback_errors=0 ticks=400 cycles_per_400ms=96000928
+[  0.473s] SCHEDULER TEST PASSED
+[ 11.467s] heartbeat tick=11400 led_toggles=228 led_readback_errors=0
 verdict: PASS; heartbeats: 11
-heartbeat spacing: mean 1.0039s min 1.0037s max 1.0044s over 10 gaps
+heartbeat spacing: mean 1.0000s min 0.9983s max 1.0017s over 10 gaps
 ```
 
-`context_test.c` on the same board (windowed port, with the deep-recursion checks):
+`context_test.c` on the same board (windowed port at 240 MHz; 240 rounds per task at 40 MHz):
 
 ```
-context: task0 rounds=240 error=0
-context: task1 rounds=240 error=0
-context: task2 rounds=240 error=0
+context: task0 rounds=1474 error=0
+context: task1 rounds=1474 error=0
+context: task2 rounds=1472 error=0
 CONTEXT TEST PASSED
 ```
 
@@ -198,9 +194,15 @@ matched against ESP-IDF's `uart_ll.h`:
   but leaves it 16 bytes of its own; the tests use 512 to 3072.
 - No watchdog: the two the ROM arms are switched off at boot, and nothing
   re-arms one. A hung task stays hung.
-- The CPU stays on the 40 MHz crystal the ROM leaves it on. On the board above
-  1000 ticks took about 1.004 s of host time (0.4% slow) in every run; the
-  cause (crystal tolerance or otherwise) was not investigated.
+- The CPU runs at 240 MHz from the PLL (`-DEOS_ESP32_CPU_MHZ=240` in
+  `sim.yaml`; 160, 80, or 40 to stay on the crystal), switched by
+  `boards/esp32/board_esp32.c` with ESP-IDF's BBPLL sequence through the
+  ROM's `rom_i2c_writeReg`. APB is then 80 MHz. Only a 40 MHz crystal is
+  supported; any other stops the boot with a message rather than running
+  with every timing wrong. On the board, 400 ms of ticks counted 96,000,928
+  CPU cycles, and host-timed heartbeats were 1.0000 s apart (0.9983-1.0017).
+  The 1.004 s recorded at 40 MHz came from `capture_serial.py`'s 50 ms read
+  timeout, now 2 ms, not from the crystal.
 - Only level-1 CPU interrupt lines can carry handlers
   (`eos_arch_irq_register()`); routing a peripheral to one through the
   interrupt matrix is not implemented. `eos_arch_irq_set_priority()` does

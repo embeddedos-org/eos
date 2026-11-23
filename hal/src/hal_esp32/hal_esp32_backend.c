@@ -235,7 +235,7 @@ static void uart_rx_drain(uint8_t p)
  */
 static void uart_settle(uint8_t p)
 {
-    uint32_t wait = 2U * s_uart_frame_bits[p] * (ESP32_APB_HZ / s_uart_baud[p] + 1U);
+    uint32_t wait = 2U * s_uart_frame_bits[p] * (ESP32_CPU_HZ / s_uart_baud[p] + 1U);
     uint32_t t0 = eos_esp32_ccount();
     while (eos_esp32_ccount() - t0 < wait || UART_ST_URX(REG32(UART_STATUS(p))) != 0U) {
     }
@@ -344,10 +344,10 @@ static int esp32_uart_read(uint8_t port, uint8_t *data, size_t len, uint32_t tim
     } else {
         return -1;
     }
-    /* CCOUNT runs at the 40 MHz the ROM leaves the CPU on and wraps every
-     * 107 s, so elapsed time is accumulated from wrap-safe deltas rather than
-     * measured from the start: any timeout_ms up to UINT32_MAX expires. */
-    const uint32_t cycles_per_ms = 40000U;
+    /* CCOUNT runs at the CPU clock and wraps every 17.9 s at 240 MHz, so
+     * elapsed time is accumulated from wrap-safe deltas rather than measured
+     * from the start: any timeout_ms up to UINT32_MAX expires. */
+    const uint32_t cycles_per_ms = ESP32_CPU_HZ / 1000U;
     uint32_t last = eos_esp32_ccount();
     uint32_t cycles = 0;
     uint32_t elapsed_ms = 0;
