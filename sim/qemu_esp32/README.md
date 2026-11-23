@@ -147,6 +147,30 @@ stalls the other CPU around them); `kernel/src/multicore.c`'s generic API
 (`eos_task_set_affinity()`, `eos_spin_lock()`) is still its host stub and
 not connected to this scheduler.
 
+## Wi-Fi and Bluetooth: not implemented
+
+The port now uses the windowed ABI, which removes the first obstacle:
+Espressif's Wi-Fi libraries (`libnet80211`, `libpp`, `libphy`, `librtc`,
+`libcoexist`, ESP-IDF v5.4.2) link against EoS objects and the toolchain's
+newlib. What a link of only `esp_wifi_init_internal()` into the scheduler
+test showed (2026-11-23):
+
+- the code does not fit: the libraries are about 440 KB, and that one
+  entry point already overflows IRAM by 218,829 bytes. ESP-IDF runs them
+  from flash through the cache MMU, which this port does not set up (the
+  boot ROM loads EoS into RAM only);
+- 19 symbols are still unresolved at that depth (`esp_dport_access_reg_read`,
+  `phy_enter_critical`, `WIFI_EVENT`, newlib's system calls, ...), and the
+  libraries' full list is 241, besides the ~80 functions of the OS adapter
+  table (`wifi_os_adapter.h`) that ESP-IDF implements on FreeRTOS.
+
+What Wi-Fi needs, in order: (1) execute-in-place from flash: map an image
+partition through the cache MMU as ESP-IDF's second-stage bootloader does;
+(2) the OS adapter on EoS tasks, semaphores, queues and timers, plus the
+ESP-IDF services the libraries call (`esp_timer`, the event loop, NVS,
+interrupt allocation, newlib system calls); (3) PHY initialisation and RF
+calibration. Bluetooth adds the controller library and its own adapter.
+
 ## Verified on hardware
 
 HiLetGo ESP-WROOM-32 (ESP32-D0WD-V3 rev 3.1, 4 MB flash), 2026-11-23:
