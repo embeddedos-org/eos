@@ -1967,6 +1967,14 @@ typedef struct {
     uint8_t pingreq[2];
 } drain_test_ctx_t;
 
+static void drain_puback_cb(const char *topic, const uint8_t *payload, size_t len, void *ctx) {
+    (void)topic; (void)payload; (void)len; (void)ctx;
+    /* Sleep 50ms in callback to guarantee elapsed_ms >= keepalive_ms (1000ms)
+     * when control returns to mqtt_wait_for_ack, forcing keepalive drain to run. */
+    struct timespec ts = { .tv_sec = 0, .tv_nsec = 50 * 1000 * 1000 };
+    nanosleep(&ts, NULL);
+}
+
 static void *broker_drain_queued_puback(void *arg) {
     drain_test_ctx_t *ctx = (drain_test_ctx_t *)arg;
     eos_socket_t s = broker_listen_ready(ctx->port, &ctx->sync);
@@ -1974,20 +1982,42 @@ static void *broker_drain_queued_puback(void *arg) {
     eos_socket_t c = broker_accept_and_connack(s);
     if (c == EOS_SOCKET_INVALID) return NULL;
 
-    /* Receive QoS 1 PUBLISH */
+    /* Receive SUBSCRIBE from client (PID 1) */
+    uint8_t sub_hdr[2];
+    if (broker_recv_exact(c, sub_hdr, 2) == 0) {
+        uint8_t sub_buf[64];
+        if (broker_recv_exact(c, sub_buf, sub_hdr[1]) == 0) {
+            uint16_t sub_pid = (uint16_t)((sub_buf[0] << 8) | sub_buf[1]);
+            uint8_t suback[5] = { 0x90, 0x03, (uint8_t)(sub_pid >> 8), (uint8_t)(sub_pid & 0xFF), 0x00 };
+            eos_net_send(c, suback, sizeof(suback));
+        }
+    }
+
+    /* Receive QoS 1 PUBLISH (PID 2) */
     uint8_t hdr[2];
     if (broker_recv_exact(c, hdr, 2) == 0) {
         uint8_t buf[64];
         if (broker_recv_exact(c, buf, hdr[1]) == 0) {
             /* Now wait for PINGREQ from keep-alive before sending PUBACK */
             if (broker_recv_exact(c, ctx->pingreq, 2) == 0) {
-                /* Delay near window edge (~750ms) */
-                struct timespec ts = { .tv_sec = 0, .tv_nsec = 750 * 1000 * 1000 };
+                /* Delay near the 1000ms keepalive window (~960ms) */
+                struct timespec ts = { .tv_sec = 0, .tv_nsec = 960 * 1000 * 1000 };
                 nanosleep(&ts, NULL);
-                /* Send queued PUBACK for PID 1, followed immediately by PINGRESP */
-                uint8_t pkts[6] = {
-                    0x40, 0x02, 0x00, 0x01, /* PUBACK PID 1 */
-                    0xD0, 0x00              /* PINGRESP */
+
+                /* Send an interleaved inbound PUBLISH on "sensor/dummy" followed by
+                 * queued PUBACK for PID 2 and PINGRESP in a single payload.
+                 * The main read consumes the inbound PUBLISH, its callback pushes elapsed_ms
+                 * past 1000ms, and mqtt_keepalive_check_deadline drains the queued PUBACK & PINGRESP.
+                 */
+                uint8_t pkts[] = {
+                    /* Inbound QoS 0 PUBLISH on "sensor/dummy": 0x30, rem_len 16 (0x10), topic len 12 (0x00, 0x0C), "sensor/dummy", payload "hi" */
+                    0x30, 0x10,
+                    0x00, 0x0C, 's', 'e', 'n', 's', 'o', 'r', '/', 'd', 'u', 'm', 'm', 'y',
+                    'h', 'i',
+                    /* PUBACK PID 2 */
+                    0x40, 0x02, 0x00, 0x02,
+                    /* PINGRESP */
+                    0xD0, 0x00
                 };
                 eos_net_send(c, pkts, sizeof(pkts));
             }
@@ -2015,8 +2045,18 @@ static void test_mqtt_drain_queued_puback(void) {
     eos_mqtt_handle_t h = eos_mqtt_connect(&cfg);
     CHECK(h != EOS_MQTT_INVALID);
 
-    /* Publish with 2500ms timeout so keepalive prepare triggers PINGREQ,
-     * and when PUBACK+PINGRESP arrive during drain, PUBACK is routed to the waiter */
+    /* Subscribe first (PID 1) to "sensor/dummy" with callback that delays ~50ms */
+    CHECK(eos_mqtt_subscribe(h, "sensor/dummy", 0, drain_puback_cb, NULL) == 0);
+
+    /* Publish with QoS 1 (PID 2). The waiter will encounter:
+     * - Keep-alive interval (1s) expires, sending PINGREQ.
+     * - Broker delays ~960ms, then sends [Inbound PUBLISH] + [PUBACK PID 2] + [PINGRESP].
+     * - Main read in mqtt_wait_for_ack consumes the inbound PUBLISH (leaving pending_ack incomplete).
+     * - drain_puback_cb takes 50ms, ensuring elapsed_ms >= 1000ms.
+     * - mqtt_keepalive_check_deadline executes the drain loop, consumes the queued PUBACK,
+     *   routes it to pending_ack.completed = true, drains PINGRESP, and returns 0.
+     * - The waiter verifies pending_ack.completed is true and returns 0.
+     */
     CHECK(eos_mqtt_publish(h, "sensor/data", "val", 3, 1) == 0);
     CHECK(eos_mqtt_disconnect(h) == 0);
 
@@ -2033,11 +2073,33 @@ static void *broker_drain_eof(void *arg) {
     eos_socket_t c = broker_accept_and_connack(s);
     if (c == EOS_SOCKET_INVALID) return NULL;
 
+    /* Receive SUBSCRIBE from client (PID 1) */
+    uint8_t sub_hdr[2];
+    if (broker_recv_exact(c, sub_hdr, 2) == 0) {
+        uint8_t sub_buf[64];
+        if (broker_recv_exact(c, sub_buf, sub_hdr[1]) == 0) {
+            uint16_t sub_pid = (uint16_t)((sub_buf[0] << 8) | sub_buf[1]);
+            uint8_t suback[5] = { 0x90, 0x03, (uint8_t)(sub_pid >> 8), (uint8_t)(sub_pid & 0xFF), 0x00 };
+            eos_net_send(c, suback, sizeof(suback));
+        }
+    }
+
     if (broker_recv_exact(c, ctx->pingreq, 2) == 0) {
         ctx->pingreq_len = 2;
-        /* Wait near edge (~750ms), then close connection (EOF) instead of sending PINGRESP */
-        struct timespec ts = { .tv_sec = 0, .tv_nsec = 750 * 1000 * 1000 };
+        /* Delay near keepalive deadline (~960ms) */
+        struct timespec ts = { .tv_sec = 0, .tv_nsec = 960 * 1000 * 1000 };
         nanosleep(&ts, NULL);
+
+        /* Send an inbound PUBLISH so the main read consumes it successfully,
+         * then immediately close the connection (EOF). When the callback returns
+         * after deadline expiration, the subsequent drain encounters EOF. */
+        uint8_t pub_pkt[] = {
+            /* Inbound QoS 0 PUBLISH on "sensor/dummy" */
+            0x30, 0x10,
+            0x00, 0x0C, 's', 'e', 'n', 's', 'o', 'r', '/', 'd', 'u', 'm', 'm', 'y',
+            'h', 'i'
+        };
+        eos_net_send(c, pub_pkt, sizeof(pub_pkt));
         eos_net_close(c);
         return NULL;
     }
@@ -2061,6 +2123,9 @@ static void test_mqtt_drain_eof_returns_error(void) {
     eos_mqtt_handle_t h = eos_mqtt_connect(&cfg);
     CHECK(h != EOS_MQTT_INVALID);
 
+    /* Subscribe first so client has a handler for inbound PUBLISH */
+    CHECK(eos_mqtt_subscribe(h, "sensor/dummy", 0, drain_puback_cb, NULL) == 0);
+
     /* Idle past 1 second so loop will send PINGREQ */
     struct timespec sleep_ts = { .tv_sec = 1, .tv_nsec = 100 * 1000 * 1000 };
     nanosleep(&sleep_ts, NULL);
@@ -2068,13 +2133,17 @@ static void test_mqtt_drain_eof_returns_error(void) {
     /* First loop sends PINGREQ */
     CHECK(eos_mqtt_loop(h, 50) == 0);
 
-    /* Wait for broker to close */
-    struct timespec wait_edge = { .tv_sec = 0, .tv_nsec = 800 * 1000 * 1000 };
-    nanosleep(&wait_edge, NULL);
+    /* Call loop with 1500ms timeout:
+     * - The broker delays ~960ms, sends an inbound PUBLISH on "sensor/dummy", and closes (EOF).
+     * - Main read in eos_mqtt_loop consumes the PUBLISH cleanly (rc == 0).
+     * - drain_puback_cb delays 50ms, pushing elapsed_ms past 1000ms.
+     * - Next, mqtt_keepalive_check_deadline executes the drain loop because elapsed_ms >= keepalive_ms.
+     * - Drain loop calls mqtt_process_one_packet(c, 0) and encounters EOF, returning -1.
+     * - eos_mqtt_loop propagates the drain error and returns -1, releasing the handle.
+     */
+    CHECK(eos_mqtt_loop(h, 1500) == -1);
 
-    /* Loop at window edge must drain EOF and return -1 (not 0!) */
-    CHECK(eos_mqtt_loop(h, 100) == -1);
-    /* Client must be released */
+    /* Client session must now be released */
     CHECK(eos_mqtt_loop(h, 100) == -1);
 
     pthread_join(t, NULL);

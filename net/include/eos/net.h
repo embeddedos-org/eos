@@ -102,9 +102,10 @@ typedef struct {
  * Contract:
  * - 'topic' and 'payload' buffers are valid only for the duration of this
  *   synchronous callback. Callbacks needing data asynchronously must copy them.
- * - Callbacks must not invoke synchronous eos_mqtt_* operations (connect,
- *   disconnect, publish, subscribe, unsubscribe, loop); reentrant calls on
- *   active clients are rejected.
+ * - Callbacks must not invoke synchronous eos_mqtt_* operations (disconnect,
+ *   publish, subscribe, unsubscribe, loop) on the same client; same-client
+ *   reentrant calls are rejected, while cross-client operations are permitted.
+ *   eos_mqtt_connect() is prohibited while any client callback is executing.
  */
 typedef void (*eos_mqtt_msg_callback_t)(const char *topic,
                                          const uint8_t *payload,

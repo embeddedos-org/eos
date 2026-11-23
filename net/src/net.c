@@ -528,8 +528,11 @@ static int mqtt_keepalive_check_deadline(mqtt_client_t *c)
                                                       : (0xFFFFFFFFu - c->ping_sent_ms + now_ms);
 
     if (elapsed_ms >= keepalive_ms) {
-        /* Drain any queued input before declaring PINGRESP missed */
-        while (c->ping_pending) {
+        /* Drain any queued input before declaring PINGRESP missed.
+         * Bounded to 32 iterations so a broker streaming PUBLISH cannot stall indefinitely. */
+        int drain_count = 0;
+        const int max_drain = 32;
+        while (c->ping_pending && drain_count++ < max_drain) {
             bool got_pkt = false;
             uint8_t pkt_type = 0;
             uint16_t pkt_pid = 0;
