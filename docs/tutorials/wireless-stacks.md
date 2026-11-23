@@ -13,7 +13,7 @@ in the tree, and says plainly what is not implemented yet.
 | Stack | Header | API status | Backend ships in this tree? |
 |-------|--------|------------|------------------------------|
 | BLE | `<eos/hal_extended.h>` | Declared: config + 9 functions, **no GATT** | **No** — the only definitions are stubs that return `-1` |
-| WiFi | `<eos/hal_extended.h>` | Declared: config + 11 functions | **No** — the only definitions are stubs that return `-1` |
+| WiFi | `<eos/hal_extended.h>` | Declared: config + 9 functions | **No** — the only definitions are stubs that return `-1` |
 | LoRa / LoRaWAN | *(none — no header exists)* | **No API in EoS** | **No** |
 
 BLE and WiFi are declared in `hal/include/eos/hal_extended.h` and gated on
