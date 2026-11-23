@@ -43,14 +43,18 @@ to restore the board.
 | `run.sh` | Boots a flash image in QEMU and checks for the expected output |
 | `capture_serial.py` | Resets a board, records its UART0 output with host timestamps, checks the verdict and heartbeat spacing |
 | `scheduler_test.c` | Starts the kernel; workers progress only through the tick and the context switch; blinks the LED through the HAL and reads the pad back. Its tasks block almost at once, so it does not show that a preempted task keeps its registers |
-| `context_test.c`, `context_regcheck.S` | Three tasks that never block check a0..a15, SAR and a zero-overhead loop while the tick preempts them; any register the frame loses, or one restored from another task, fails |
+| `context_test.c`, `context_regcheck.S` | Three tasks that never block check a0..a15, SAR and a zero-overhead loop, and run 24-deep recursions through CALL4, CALL8 and CALL12 (longer than the 16-window register file), while the tick preempts them; any register the frame or a window spill loses, one restored from another task, or a task starved of its share of the CPU fails |
 | `periph_test.c` | ADC (with its eFuse calibration), DAC, PWM and UART1/2 through loopbacks inside the chip (board only; see below) |
 | `fault_test.c` | A task returns; the port must report `EOS FATAL code=7` (`task_returned`, not any other fault) and run nothing after it |
 
-Mutation check: with the SAR restore in `vectors.S` replaced by `nop`, or
-LCOUNT restored as 0, `context_test` fails (error 2, error 1) where
-`scheduler_test` still passed; with a task's return address set to 0,
-`fault_test` fails (the fault is `code=2 exccause=20`, not `code=7`).
+Mutation checks (each run in QEMU): with no window spill in the interrupt
+handler, or the 16-byte base save area gap removed, `context_test` fails
+(a fatal exception; tasks starved to 8-12 rounds against about 7000); a
+wrong register in the CALL4, CALL8 or CALL12 overflow or underflow handler
+fails it with error 5, a fatal exception, or error 6. Under the earlier CALL0
+port, a missing SAR or LCOUNT restore failed it where `scheduler_test`
+still passed; with a task's return address set to 0, `fault_test` fails
+(the fault is `code=2 exccause=20`, not `code=7`).
 
 ## The port
 
@@ -63,18 +67,22 @@ LCOUNT restored as 0, `context_test` fails (error 2, error 1) where
 
 Design choices, and why:
 
-- **CALL0 ABI (`-mabi=call0`).** With no register windows, a context is
-  a0..a15 plus SAR and the loop registers, so the handler saves one 96-byte
-  frame and never spills windows. The cost: windowed code cannot be linked
-  in. That rules out the toolchain's newlib and libgcc (hence `-nostdlib` and
-  `boards/esp32/freestanding.c`; the kernel needs only `memset` and `memcpy`)
-  and Espressif's prebuilt Wi-Fi/BLE libraries.
+- **Windowed ABI**, as the boot ROM, the toolchain's newlib and libgcc and
+  Espressif's binary libraries use (the port was first built with CALL0,
+  which ruled all of those out). The level-1 handler saves the interrupted
+  function's window (a0..a15) in a 96-byte frame and spills every older
+  window to the save areas the ABI reserves on the task's own stack; the
+  task's callers come back through underflow exceptions as it returns into
+  them. The frame sits 16 bytes below the task's stack pointer, leaving the
+  caller's base save area free. The six window overflow/underflow handlers
+  are the ISA's standard sequences; an alloca exception (MOVSP) is handled by
+  the same spill.
 - **Tick = CCOMPARE0 (CPU line 6), yield = software interrupt (line 7).** Both
   are level 1; they play SysTick's and PendSV's parts, and `eos_schedule()`
   is shared with the Cortex-M port unchanged.
 - **Separate interrupt stack.** The frame goes on the task's stack; the C
-  dispatcher runs on its own 2 KB stack, so a task only needs 96 bytes of
-  headroom (the idle task has 256).
+  dispatcher runs on its own 2 KB stack, so a task only needs 112 bytes of
+  headroom beyond its own frames (the idle task has 256).
 - **The dispatcher runs with `PS.EXCM` clear** (INTLEVEL 3 keeps level-1
   interrupts masked). With EXCM set the core does not loop back at `LEND`,
   so every zero-overhead `loop` GCC emits would run once. That was the first
@@ -106,12 +114,12 @@ verdict: PASS; heartbeats: 11
 heartbeat spacing: mean 1.0039s min 1.0037s max 1.0044s over 10 gaps
 ```
 
-`context_test.c` on the same board:
+`context_test.c` on the same board (windowed port, with the deep-recursion checks):
 
 ```
-context: task0 rounds=252 error=0
-context: task1 rounds=252 error=0
-context: task2 rounds=251 error=0
+context: task0 rounds=240 error=0
+context: task1 rounds=240 error=0
+context: task2 rounds=240 error=0
 CONTEXT TEST PASSED
 ```
 
@@ -184,10 +192,10 @@ matched against ESP-IDF's `uart_ll.h`:
 ## Limits
 
 - One core. The APP CPU stays in reset.
-- A preempted task carries a 96-byte frame on its stack, against 68 bytes on
-  Cortex-M. `EOS_MIN_STACK_SIZE` (128) still admits a task, but leaves it only
-  32 bytes of its own; the tests use 512.
-- No Wi-Fi or Bluetooth (they need ESP-IDF's windowed binary libraries).
+- A preempted task carries a 112-byte frame (96 plus the caller's 16-byte
+  save area) on its stack, against 68 bytes on Cortex-M, and windowed frames
+  are larger than CALL0 ones. `EOS_MIN_STACK_SIZE` (128) still admits a task,
+  but leaves it 16 bytes of its own; the tests use 512 to 3072.
 - No watchdog: the two the ROM arms are switched off at boot, and nothing
   re-arms one. A hung task stays hung.
 - The CPU stays on the 40 MHz crystal the ROM leaves it on. On the board above

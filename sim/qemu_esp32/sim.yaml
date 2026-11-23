@@ -18,11 +18,9 @@ cpu: esp32
 # change it; CCOUNT, and so the tick, runs at this rate.
 sys_clock_hz: 40000000
 cflags:
-  # CALL0: no register windows, so the context switch saves a0..a15 and
-  # nothing more (kernel/src/arch/xtensa_lx6/vectors.S). The toolchain's
-  # newlib and libgcc are windowed, hence -nostdlib below and
-  # boards/esp32/freestanding.c.
-  - -mabi=call0
+  # The windowed ABI, GCC's default for the ESP32 and the one the toolchain's
+  # newlib and libgcc, the boot ROM and Espressif's binary libraries use
+  # (kernel/src/arch/xtensa_lx6/vectors.S spills windows on a task switch).
   - -std=c11
   - -Os
   - -g
@@ -32,9 +30,6 @@ cflags:
   - -ffunction-sections
   - -fdata-sections
   - -fno-common
-  # Keeps memset/memcpy in freestanding.c from being compiled into calls to
-  # themselves.
-  - -fno-tree-loop-distribute-patterns
   - -DEOS_SYS_CLOCK_HZ=40000000U
   # eos_hal_init() registers hal/src/hal_esp32 (GPIO, UART0-2).
   - -DEOS_HAL_BACKEND_ESP32
@@ -50,11 +45,13 @@ includes:
   - kernel/src/arch/xtensa_lx6
   - hal/src/hal_esp32
 ldflags:
-  - -mabi=call0
+  # No C runtime start files: boards/esp32/startup_esp32.S is the entry.
   - -nostdlib
   - -nostartfiles
   - -Wl,--gc-sections
-libs: []
+# The toolchain's newlib (memset, memcpy, ...) and libgcc. Nothing that
+# needs newlib's system calls is linked.
+libs: ["-lc", "-lgcc"]
 linker_script: boards/esp32/esp32.ld
 # esptool turns the ELF into the image format the boot ROM loads, written at
 # flash offset 0x1000.
@@ -67,7 +64,6 @@ image:
 sources:
   - boards/esp32/startup_esp32.S
   - boards/esp32/board_esp32.c
-  - boards/esp32/freestanding.c
   - kernel/src/arch/xtensa_lx6/vectors.S
   - kernel/src/arch/xtensa_lx6/port.c
   - kernel/src/task.c

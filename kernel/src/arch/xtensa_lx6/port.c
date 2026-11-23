@@ -9,8 +9,8 @@
  * SysTick and CPU software interrupt 7 for PendSV. Both are level-1 lines
  * handled by vectors.S, which calls eos_xtensa_irq_dispatch() here.
  *
- * Requires -mabi=call0: vectors.S saves a0..a15 and nothing else, which is
- * the whole register state only when no register windows are in use.
+ * Windowed ABI (GCC's default for the ESP32): vectors.S saves the
+ * interrupted window and spills the older ones to the task's stack.
  */
 
 #include "eos/arch.h"
@@ -19,8 +19,8 @@
 #include <stddef.h>
 #include <string.h>
 
-#if !defined(__XTENSA_CALL0_ABI__)
-#error "The Xtensa LX6 port needs the CALL0 ABI: build with -mabi=call0"
+#if defined(__XTENSA_CALL0_ABI__)
+#error "The Xtensa LX6 port uses the windowed ABI: do not build it with -mabi=call0"
 #endif
 
 /*
@@ -42,8 +42,8 @@
 
 #define XT_NUM_INTERRUPTS  32U
 
-_Static_assert(XT_FRAME_SIZE % 16 == 0, "CALL0 ABI keeps a1 16-byte aligned");
-_Static_assert(XT_F_LCOUNT + 4 <= XT_FRAME_SIZE, "frame fields fit the frame");
+_Static_assert(XT_STACK_FRAME % 16 == 0, "the ABI keeps a1 16-byte aligned");
+_Static_assert(XT_F_EXCCAUSE + 4 <= XT_FRAME_SIZE, "frame fields fit the frame");
 
 /* Scheduler state shared with task.c and vectors.S */
 extern uint32_t **g_current_sp;
@@ -101,32 +101,33 @@ static inline void xt_set_intenable(uint32_t v)
 
 /* ---- task frames -------------------------------------------------------- */
 
-/*
- * A task function that returns has no caller to return to. The Cortex-M port
- * gives it an invalid LR so that it faults; this does the same explicitly,
- * reporting through the fatal path rather than running off into memory. It
- * has a code of its own so that a test can tell this path from any other
- * fault (returning to address 0 would also stop the system, as code 2).
- */
-static void task_returned(void)
-{
-    __asm volatile (
-        "movi a2, %0\n\t"
-        "j    _xt_fatal_entry"
-        :: "i" (XT_FATAL_TASK_RETURN) : "a2");
-    for (;;) {}
-}
+extern void eos_xtensa_task_returned(void);
 
+/*
+ * A new task's frame makes RFE land on the entry function's ENTRY as if the
+ * restored window had just executed CALL4 to it: PS.CALLINC = 1, a4 the
+ * return address, a6 the argument (CALL4 passes a callee's a2 in the
+ * caller's a6), and a1 the stack top, from which ENTRY carves the function's
+ * frame. A task function that returns has no caller to return to: RETW goes
+ * to eos_xtensa_task_returned (vectors.S), which reports through the fatal
+ * path with a code of its own, so a test can tell this path from any other
+ * fault. The top two bits of a windowed return address carry the caller's
+ * window increment (1, for CALL4); RETW keeps the PC's own top bits, which
+ * are the same 0b01 for every IRAM address.
+ */
 uint32_t *eos_port_init_stack(uint32_t *stack_top, void (*entry)(void *), void *arg)
 {
     uintptr_t top = (uintptr_t)stack_top & ~(uintptr_t)15U;
-    uint32_t *frame = (uint32_t *)(top - XT_FRAME_SIZE);
+    uint32_t *frame = (uint32_t *)(top - XT_STACK_FRAME);
+    uint32_t ret = (uint32_t)(uintptr_t)eos_xtensa_task_returned;
 
-    memset(frame, 0, XT_FRAME_SIZE);
+    /* The base save area too: the entry function's RETW reloads the
+     * restored window's a0..a3 from it. */
+    memset(frame, 0, XT_STACK_FRAME);
     frame[XT_F_PC / 4] = (uint32_t)(uintptr_t)entry;
-    frame[XT_F_PS / 4] = XT_PS_TASK;
-    frame[XT_F_A0 / 4] = (uint32_t)(uintptr_t)task_returned;  /* return address */
-    frame[XT_F_A2 / 4] = (uint32_t)(uintptr_t)arg;            /* first argument */
+    frame[XT_F_PS / 4] = XT_PS_TASK | (1U << XT_PS_CALLINC_SHIFT);
+    frame[XT_F_A4 / 4] = (ret & 0x3FFFFFFFU) | (1U << 30);
+    frame[XT_F_A6 / 4] = (uint32_t)(uintptr_t)arg;
     return frame;
 }
 
