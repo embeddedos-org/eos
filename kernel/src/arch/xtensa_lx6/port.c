@@ -104,14 +104,16 @@ static inline void xt_set_intenable(uint32_t v)
 /*
  * A task function that returns has no caller to return to. The Cortex-M port
  * gives it an invalid LR so that it faults; this does the same explicitly,
- * reporting through the fatal path rather than running off into memory.
+ * reporting through the fatal path rather than running off into memory. It
+ * has a code of its own so that a test can tell this path from any other
+ * fault (returning to address 0 would also stop the system, as code 2).
  */
 static void task_returned(void)
 {
     __asm volatile (
         "movi a2, %0\n\t"
         "j    _xt_fatal_entry"
-        :: "i" (XT_FATAL_USER_EXC) : "a2");
+        :: "i" (XT_FATAL_TASK_RETURN) : "a2");
     for (;;) {}
 }
 
@@ -149,8 +151,13 @@ uint32_t eos_port_enter_critical(void)
 {
     uint32_t ps;
     /* XCHAL_EXCM_LEVEL is 3 on the ESP32; every line this port uses is
-     * level 1, so level 3 masks them all. */
-    __asm volatile ("rsil %0, 3" : "=a" (ps) :: "memory");
+     * level 1, so level 3 masks them all. Only ever raise the level: a caller
+     * already above 3 (the boot code runs at 15) keeps its level, where an
+     * unconditional RSIL 3 would lower it. */
+    __asm volatile ("rsr.ps %0" : "=a" (ps) :: "memory");
+    if ((ps & XT_PS_INTLEVEL_MASK) < 3U) {
+        __asm volatile ("rsil %0, 3" : "=a" (ps) :: "memory");
+    }
     return ps;
 }
 

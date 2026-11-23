@@ -6,11 +6,13 @@
  *
  * A task that returns from its entry function has nowhere to go. The port
  * gives every task task_returned() as its return address, which reports
- * through the fatal path (XT_FATAL_USER_EXC = 2). The check is that the
- * report appears and that nothing scheduled after it runs: the task after the
- * fault would print "RAN AFTER FAULT" if the kernel had carried on.
+ * through the fatal path with a code of its own (XT_FATAL_TASK_RETURN = 7),
+ * so a task returning to anywhere else (address 0 faults as code 2) does not
+ * pass. The check is that the report appears and that nothing scheduled after
+ * it runs: the task after the fault would print "RAN AFTER FAULT" if the
+ * kernel had carried on.
  *
- *   sim/qemu_esp32/run.sh OUT.flash.bin 30 "EOS FATAL code=2"
+ *   sim/qemu_esp32/run.sh OUT.flash.bin 30 "EOS FATAL code=7"
  */
 #include "eos/kernel.h"
 #include "board_esp32.h"

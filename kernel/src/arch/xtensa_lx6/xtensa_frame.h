@@ -84,5 +84,6 @@
 #define XT_FATAL_WINDOW       4   /* window vector: impossible with CALL0 */
 #define XT_FATAL_HIGH_INT     5   /* level 2-5, debug or NMI: none enabled */
 #define XT_FATAL_MAIN_RETURN  6
+#define XT_FATAL_TASK_RETURN  7   /* a task function returned (task_returned) */
 
 #endif /* EOS_XTENSA_FRAME_H */

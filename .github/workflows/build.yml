@@ -240,12 +240,23 @@ jobs:
           xtensa-esp32-elf-size _build_esp32/scheduler.elf
           sim/qemu_esp32/run.sh _build_esp32/scheduler.flash.bin 60
 
+      # The scheduler test's tasks block almost at once, so the tick seldom
+      # interrupts a task with live registers. Here three tasks never block
+      # and check a0..a15, SAR and a zero-overhead loop while the tick
+      # preempts them; a frame that loses any of them fails.
+      - name: Context integrity on QEMU (sim/qemu_esp32)
+        run: |
+          sim/qemu_esp32/build.sh _build_esp32/context.elf \
+            sim/qemu_esp32/context_test.c sim/qemu_esp32/context_regcheck.S
+          sim/qemu_esp32/run.sh _build_esp32/context.flash.bin 60 "CONTEXT TEST PASSED"
+
       # A fault must stop the system, not be returned from: a task that
-      # returns has to produce the fatal report, and nothing may run after it.
+      # returns has to produce its own fatal report (code 7), and nothing may
+      # run after it.
       - name: Fault stops the system on QEMU (sim/qemu_esp32)
         run: |
           sim/qemu_esp32/build.sh _build_esp32/fault.elf sim/qemu_esp32/fault_test.c
-          sim/qemu_esp32/run.sh _build_esp32/fault.flash.bin 60 "EOS FATAL code=2"
+          sim/qemu_esp32/run.sh _build_esp32/fault.flash.bin 60 "EOS FATAL code=7"
 
   # ── Required check ────────────────────────────────────────────────────────
   # See https://github.com/embeddedos-org/.github/blob/master/STANDARDS.md --

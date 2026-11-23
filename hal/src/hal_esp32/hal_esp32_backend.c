@@ -79,8 +79,11 @@ static int esp32_gpio_init(const eos_gpio_config_t *cfg)
     uint16_t pin = cfg->pin;
 
     if (cfg->mode != EOS_GPIO_INPUT && cfg->mode != EOS_GPIO_OUTPUT) return -1;
-    /* GPIO34-39 are input-only pads. */
-    if (cfg->mode == EOS_GPIO_OUTPUT && pin >= 34U) return -1;
+    /* GPIO34-39 are input-only pads with no internal pull resistors: an
+     * output, or a pull that would silently do nothing, is refused. */
+    if (pin >= 34U && (cfg->mode == EOS_GPIO_OUTPUT || cfg->pull != EOS_GPIO_PULL_NONE)) {
+        return -1;
+    }
 
     uint32_t mux = REG32(IO_MUX_BASE + s_iomux_offset[pin]);
     mux &= ~(MCU_SEL_M | FUN_PU | FUN_PD);
@@ -145,16 +148,27 @@ static int esp32_uart_write(uint8_t port, const uint8_t *data, size_t len)
 static int esp32_uart_read(uint8_t port, uint8_t *data, size_t len, uint32_t timeout_ms)
 {
     if (port != EOS_BOARD_CONSOLE_UART || (data == NULL && len != 0U)) return -1;
-    /* CCOUNT runs at the 40 MHz the ROM leaves the CPU on. */
+    /* CCOUNT runs at the 40 MHz the ROM leaves the CPU on and wraps every
+     * 107 s, so elapsed time is accumulated from wrap-safe deltas rather than
+     * measured from the start: any timeout_ms up to UINT32_MAX expires. */
     const uint32_t cycles_per_ms = 40000U;
-    uint32_t start = eos_esp32_ccount();
+    uint32_t last = eos_esp32_ccount();
+    uint32_t cycles = 0;
+    uint32_t elapsed_ms = 0;
     size_t got = 0;
     while (got < len) {
         if (UART_RXFIFO_CNT(REG32(UART0_STATUS)) != 0U) {
             data[got++] = (uint8_t)REG32(UART0_FIFO_AHB);
             continue;
         }
-        if ((eos_esp32_ccount() - start) / cycles_per_ms >= timeout_ms) break;
+        uint32_t now = eos_esp32_ccount();
+        cycles += now - last;
+        last = now;
+        while (cycles >= cycles_per_ms) {
+            cycles -= cycles_per_ms;
+            elapsed_ms++;
+        }
+        if (elapsed_ms >= timeout_ms) break;
     }
     return (int)got;
 }
