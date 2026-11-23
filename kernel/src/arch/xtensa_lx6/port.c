@@ -46,15 +46,50 @@ _Static_assert(XT_STACK_FRAME % 16 == 0, "the ABI keeps a1 16-byte aligned");
 _Static_assert(XT_F_EXCCAUSE + 4 <= XT_FRAME_SIZE, "frame fields fit the frame");
 
 /* Scheduler state shared with task.c and vectors.S */
-extern uint32_t **g_current_sp;
+#include "eos/kernel_internal.h"   /* g_current_sp (per CPU on SMP) */
 extern volatile uint32_t g_tick;
 extern void eos_schedule(void);
 extern void eos_task_wake_check(uint32_t current_tick);
 extern void eos_swtimer_tick(uint32_t current_tick);
 
 extern void eos_xtensa_start_first_task(void);
-
 void eos_xtensa_irq_dispatch(void);
+
+#if EOS_SMP_CORES > 1
+/*
+ * SMP (EOS_SMP_CORES 2, the ESP32's PRO and APP CPUs). The board routes a
+ * cross-CPU interrupt to line XT_INT_IPI on each CPU (eos_board_ipi_*), and
+ * starts the APP CPU at _start_app (boards/esp32), which ends in
+ * eos_xtensa_secondary_main() below.
+ */
+#define XT_INT_IPI 2U
+extern void eos_board_ipi_init(uint32_t cpu);
+extern void eos_board_ipi_raise(uint32_t cpu);
+extern void eos_board_ipi_clear(uint32_t cpu);
+void eos_xtensa_secondary_main(void);
+
+uint32_t eos_port_cpu_id(void)
+{
+    uint32_t prid;
+    __asm volatile ("rsr.prid %0" : "=a" (prid));
+    return (prid >> 13) & 1U;     /* 0xCDCD: PRO CPU, 0xABAB: APP CPU */
+}
+
+/* The kernel lock: 0 when free, else the owning CPU + 1. Recursive on the
+ * owning CPU (nested critical sections), with the depth kept per CPU. */
+static volatile uint32_t s_klock;
+static uint32_t s_kdepth[EOS_SMP_CORES];
+
+/* Compare-and-swap with S32C1I: stores @p desired if *addr == @p expected;
+ * returns the value *addr held. */
+static inline uint32_t cas32(volatile uint32_t *addr, uint32_t expected, uint32_t desired)
+{
+    __asm volatile ("wsr.scompare1 %2\n\t"
+                    "s32c1i %0, %1, 0"
+                    : "+a" (desired) : "a" (addr), "a" (expected) : "memory");
+    return desired;
+}
+#endif
 
 static eos_irq_handler_t s_irq_handlers[XT_NUM_INTERRUPTS];
 
@@ -134,6 +169,10 @@ uint32_t *eos_port_init_stack(uint32_t *stack_top, void (*entry)(void *), void *
 void eos_port_start_first_task(void)
 {
     uint32_t mask = (1U << XT_INT_TICK) | (1U << XT_INT_YIELD);
+#if EOS_SMP_CORES > 1
+    eos_board_ipi_init(eos_port_cpu_id());
+    mask |= 1U << XT_INT_IPI;
+#endif
 
     xt_set_ccompare0(xt_ccount() + XT_TICK_CYCLES);
     xt_set_intenable(xt_intenable() | mask);
@@ -146,6 +185,14 @@ void eos_port_yield(void)
      * until the section ends, as PendSV does on Cortex-M. */
     uint32_t bit = 1U << XT_INT_YIELD;
     __asm volatile ("wsr.intset %0\n\trsync" :: "a" (bit) : "memory");
+#if EOS_SMP_CORES > 1
+    /* What made this CPU reschedule (a task readied, deleted, moved) may
+     * concern the others: let them reschedule too. */
+    uint32_t me = eos_port_cpu_id();
+    for (uint32_t c = 0; c < EOS_SMP_CORES; c++) {
+        if (c != me) eos_board_ipi_raise(c);
+    }
+#endif
 }
 
 uint32_t eos_port_enter_critical(void)
@@ -159,11 +206,32 @@ uint32_t eos_port_enter_critical(void)
     if ((ps & XT_PS_INTLEVEL_MASK) < 3U) {
         __asm volatile ("rsil %0, 3" : "=a" (ps) :: "memory");
     }
+#if EOS_SMP_CORES > 1
+    /* Masked first, then locked: the lock is never held with this CPU's
+     * interrupts open, so nothing on this CPU can try to take it again
+     * except through the recursion below. */
+    uint32_t cpu = eos_port_cpu_id(), me = cpu + 1U;
+    if (s_klock == me) {
+        s_kdepth[cpu]++;
+    } else {
+        while (cas32(&s_klock, 0U, me) != 0U) {
+        }
+        s_kdepth[cpu] = 1U;
+    }
+#endif
     return ps;
 }
 
 void eos_port_exit_critical(uint32_t state)
 {
+#if EOS_SMP_CORES > 1
+    uint32_t cpu = eos_port_cpu_id();
+    if (s_klock == cpu + 1U && --s_kdepth[cpu] == 0U) {
+        __asm volatile ("memw" ::: "memory");
+        s_klock = 0U;
+        __asm volatile ("memw" ::: "memory");
+    }
+#endif
     __asm volatile ("wsr.ps %0\n\trsync" :: "a" (state) : "memory");
 }
 
@@ -181,6 +249,11 @@ static void tick_handler(void)
         xt_set_ccompare0(xt_ccount() + XT_TICK_CYCLES);
     }
 
+#if EOS_SMP_CORES > 1
+    /* Every CPU's tick time-slices its own tasks; kernel time, delays and
+     * software timers advance on CPU 0 only. */
+    if (eos_port_cpu_id() != 0U) return;
+#endif
     eos_kernel_tick();
     eos_task_wake_check(g_tick);
     eos_swtimer_tick(g_tick);
@@ -191,6 +264,15 @@ void eos_xtensa_irq_dispatch(void)
 {
     uint32_t pending = xt_interrupt() & xt_intenable() & XT_INTLEVEL1_MASK;
     int reschedule = 0;
+#if EOS_SMP_CORES > 1
+    /* The kernel lock for the tick, the handlers and the scheduler. */
+    uint32_t crit = eos_port_enter_critical();
+    if (pending & (1U << XT_INT_IPI)) {
+        eos_board_ipi_clear(eos_port_cpu_id());
+        reschedule = 1;
+    }
+    pending &= ~(1U << XT_INT_IPI);
+#endif
 
     if (pending & (1U << XT_INT_TICK)) {
         tick_handler();
@@ -218,7 +300,20 @@ void eos_xtensa_irq_dispatch(void)
     if (reschedule && g_current_sp != NULL) {
         eos_schedule();
     }
+#if EOS_SMP_CORES > 1
+    eos_port_exit_critical(crit);
+#endif
 }
+
+#if EOS_SMP_CORES > 1
+/* The APP CPU, from boards/esp32 _start_app on its own boot stack: join the
+ * scheduler. Its tick and cross-CPU interrupt are set up by
+ * eos_port_start_first_task(). */
+void eos_xtensa_secondary_main(void)
+{
+    eos_kernel_start_secondary();
+}
+#endif
 
 /* ---- arch IRQ API (eos/arch.h) ------------------------------------------ */
 
@@ -232,6 +327,9 @@ static int irq_line_usable(uint32_t irq_num)
 {
     if (irq_num >= XT_NUM_INTERRUPTS) return 0;
     if (irq_num == XT_INT_TICK || irq_num == XT_INT_YIELD) return 0;
+#if EOS_SMP_CORES > 1
+    if (irq_num == XT_INT_IPI) return 0;
+#endif
     return (XT_INTLEVEL1_MASK & (1U << irq_num)) != 0U;
 }
 

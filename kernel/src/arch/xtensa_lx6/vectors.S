@@ -32,10 +32,44 @@
 
 #include "xtensa_frame.h"
 
-    .extern g_current_sp
     .extern eos_xtensa_irq_dispatch
     .extern eos_xtensa_fatal
     .extern _eos_isr_stack_top
+
+/*
+ * Per-CPU state. Single-CPU: one saved-SP slot (g_current_sp) and one
+ * interrupt stack. SMP (EOS_SMP_CORES > 1, the ESP32's two CPUs): the slot
+ * is g_cpu_sp[cpu] and CPU 1 has its own interrupt stack; the CPU number is
+ * bit 13 of PRID (0xCDCD on the PRO CPU, 0xABAB on the APP CPU).
+ *   cur_sp_slot reg, tmp : reg = address of this CPU's saved-SP slot
+ *   isr_stack   reg, tmp : reg = top of this CPU's interrupt stack
+ */
+#if defined(EOS_SMP_CORES) && EOS_SMP_CORES > 1
+    .extern g_cpu_sp
+    .extern _eos_isr_stack1_top
+    .macro  cur_sp_slot reg, tmp
+    rsr.prid \tmp
+    extui   \tmp, \tmp, 13, 1
+    movi    \reg, g_cpu_sp
+    addx4   \reg, \tmp, \reg
+    .endm
+    .macro  isr_stack reg, tmp
+    rsr.prid \tmp
+    extui   \tmp, \tmp, 13, 1
+    movi    \reg, _eos_isr_stack_top
+    beqz    \tmp, .Lisr_stack_\@
+    movi    \reg, _eos_isr_stack1_top
+.Lisr_stack_\@:
+    .endm
+#else
+    .extern g_current_sp
+    .macro  cur_sp_slot reg, tmp
+    movi    \reg, g_current_sp
+    .endm
+    .macro  isr_stack reg, tmp
+    movi    \reg, _eos_isr_stack_top
+    .endm
+#endif
 
 /*
  * Spill every live window except the current one. Each AND reads a12..a15,
@@ -268,17 +302,17 @@ _xt_user_exception:
      * this frame (CALL4 preserves the caller's a0..a3) so the NULL case
      * still returns to it. */
     mov     a2, a1
-    movi    a3, g_current_sp
+    cur_sp_slot a3, a4
     l32i    a3, a3, 0
     beqz    a3, 2f
     s32i    a1, a3, 0
 2:
-    movi    a1, _eos_isr_stack_top
+    isr_stack a1, a4
     call4   eos_xtensa_irq_dispatch
 
     /* Resume whichever task g_current_sp now names. */
     mov     a1, a2
-    movi    a3, g_current_sp
+    cur_sp_slot a3, a4
     l32i    a3, a3, 0
     beqz    a3, _xt_restore_frame
     l32i    a1, a3, 0
@@ -338,7 +372,7 @@ _xt_restore_frame:
     .align  4
 eos_xtensa_start_first_task:
     entry   a1, 16
-    movi    a2, g_current_sp
+    cur_sp_slot a2, a3
     l32i    a2, a2, 0
     l32i    a1, a2, 0
     j       _xt_restore_frame
@@ -371,7 +405,7 @@ _xt_fatal_entry:
     rsync
     mov     a6, a2
     reset_windowstart
-    movi    a1, _eos_isr_stack_top
+    isr_stack a1, a3
     rsr.exccause a7
     rsr.epc1 a8
     rsr.excvaddr a9

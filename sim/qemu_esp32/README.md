@@ -46,6 +46,7 @@ to restore the board.
 | `context_test.c`, `context_regcheck.S` | Three tasks that never block check a0..a15, SAR and a zero-overhead loop, and run 24-deep recursions through CALL4, CALL8 and CALL12 (longer than the 16-window register file), while the tick preempts them; any register the frame or a window spill loses, one restored from another task, or a task starved of its share of the CPU fails |
 | `periph_test.c` | ADC (with its eFuse calibration), DAC, PWM and UART1/2 through loopbacks inside the chip (board only; see below) |
 | `bus_test.c` | GPIO pulls on RTC and digital pads, SPI2/SPI3 in a MOSI-to-MISO loopback, I2S0 in a DOUT-to-DIN loopback with WS/BCK measured on the pads, and I2C0 against I2C1 as a slave (board only; see below) |
+| `smp_test.c` | The kernel on both CPUs (`-DEOS_SMP_CORES=2`): parallelism, mutex, migration with full context checks, cross-CPU wake-ups, pinning (QEMU and board) |
 | `rtc_test.c` | Touch pads, light sleep and deep sleep (board only; see below) |
 | `board_suite.sh` | Runs the QEMU tests and every test image on a board, one PASS/FAIL line each |
 | `fault_test.c` | A task returns; the port must report `EOS FATAL code=7` (`task_returned`, not any other fault) and run nothing after it |
@@ -95,6 +96,56 @@ Design choices, and why:
 - **Faults stop the system.** Every vector the port does not expect reports
   `EOS FATAL code=… exccause=… epc1=…` on UART0 and halts with interrupts
   masked.
+
+## Both CPUs (SMP)
+
+Built with `-DEOS_SMP_CORES=2` the kernel schedules tasks on the PRO and
+APP CPUs (`kernel/src/task.c`, `kernel/src/arch/xtensa_lx6/`,
+`boards/esp32/`):
+
+- One scheduler, run by each CPU for itself: each picks the best READY task
+  it may run (`eos_task_set_core_mask()`) that no other CPU is still
+  executing. Each CPU has its own idle task (handles 0 and 1), current-task
+  slot, saved-SP slot and interrupt stack.
+- The kernel's critical section is also a lock shared by both CPUs: an
+  S32C1I spinlock, recursive on the CPU that holds it, taken only with that
+  CPU's interrupts masked.
+- Each CPU has its own CCOMPARE0 tick for time slicing; kernel time,
+  delays and software timers advance on CPU 0. A yield, an unblock or a
+  delay expiring raises the other CPU's cross-CPU interrupt (interrupt
+  matrix sources 24/25 on CPU line 2), so it reschedules at once: a
+  semaphore round trip between the CPUs takes about 60 us on the board.
+- The APP CPU is released from reset as ESP-IDF's `start_other_core()` does
+  and enters at `_start_app` (`startup_esp32.S`).
+- The single-CPU build is unchanged: no SMP code is compiled, and the
+  structures keep their layout. With SMP, `eos_task_t` gains `core_mask`,
+  and the idle tasks take handles 0 and 1.
+
+`smp_test.c` on the board:
+
+```
+CHECK racers pinned to CPU0/CPU1 ran on CPU0/CPU1, unlocked count 299961 of 400000 (100039 lost: both CPUs ran at once)  PASS
+CHECK mutex across CPUs: 40000 of 40000, lockers ran on both  PASS
+CHECK spinners (registers, loop, CALL4/8/12 windows) migrating: t0 rounds=1748 err=0 on both t1 rounds=1593 err=0 on both t2 rounds=1594 err=0 on both  PASS
+CHECK semaphore ping-pong CPU0<->CPU1: 1000 of 1000 round trips in 60 ms, ping on CPU0, pong on CPU1  PASS
+CHECK unpinned block/unblock storm: 20000+20000 of 40000 in 740 ms, ran on both, a task on two CPUs at once: 0  PASS
+CHECK READY-but-still-running window, widened to 20 us: 2000 of 2000 rounds, a task on two CPUs at once: 0  PASS
+CHECK API: idle tasks protected, bad masks refused  PASS
+SMP TEST PASSED
+```
+
+Mutation checks on the board: with the kernel lock disabled the test stops
+with a fatal exception. With the scheduler's "still executing on another
+CPU" check removed it still passes: the unblock's cross-CPU interrupt makes
+the first CPU save the task before the second can pick it up, so no test
+here reaches the case the check covers; it stays as the guarantee.
+
+Limits of the SMP build: the HAL drivers take no locks of their own, so a
+peripheral must be used from one task at a time; DPORT register reads are
+not protected against the ESP32's dual-CPU DPORT read erratum (ESP-IDF
+stalls the other CPU around them); `kernel/src/multicore.c`'s generic API
+(`eos_task_set_affinity()`, `eos_spin_lock()`) is still its host stub and
+not connected to this scheduler.
 
 ## Verified on hardware
 
@@ -284,7 +335,8 @@ matched against ESP-IDF's `uart_ll.h`:
 
 ## Limits
 
-- One core. The APP CPU stays in reset.
+- One CPU unless built with `-DEOS_SMP_CORES=2` (see "Both CPUs" above);
+  the default image leaves the APP CPU in reset.
 - A preempted task carries a 112-byte frame (96 plus the caller's 16-byte
   save area) on its stack, against 68 bytes on Cortex-M, and windowed frames
   are larger than CALL0 ones. `EOS_MIN_STACK_SIZE` (128) still admits a task,

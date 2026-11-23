@@ -65,6 +65,20 @@ void eos_port_exit_critical(uint32_t state);
 typedef void (*eos_irq_handler_t)(void);
 
 int  eos_arch_irq_register(uint32_t irq_num, eos_irq_handler_t handler);
+
+/* ============================================================
+ * SMP hooks, needed only when EOS_SMP_CORES > 1 (eos/kernel.h)
+ *
+ * eos_port_enter_critical()/eos_port_exit_critical() must then also take
+ * and release a lock shared by every CPU, recursively on the same CPU;
+ * eos_port_yield() must make the other CPUs reschedule too.
+ * ============================================================ */
+
+/** The CPU executing the caller, 0 .. EOS_SMP_CORES-1. */
+uint32_t eos_port_cpu_id(void);
+
+/** Start CPUs 1 .. EOS_SMP_CORES-1; each calls eos_kernel_start_secondary(). */
+void eos_port_start_secondary_cpus(void);
 void eos_arch_irq_enable(uint32_t irq_num);
 void eos_arch_irq_disable(uint32_t irq_num);
 void eos_arch_irq_set_priority(uint32_t irq_num, uint8_t priority);

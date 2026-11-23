@@ -79,6 +79,18 @@ SECTIONS
         _eos_isr_stack_top = ABSOLUTE(.);
     } > bss_seg
 
+    /* The APP CPU's boot and interrupt stacks (SMP builds; a single-CPU
+     * build carries them unused, 3 KB). */
+    .app_stacks (NOLOAD) :
+    {
+        . = ALIGN(16);
+        . += 1024;
+        _eos_app_stack_top = ABSOLUTE(.);
+        . = ALIGN(16);
+        . += 2048;
+        _eos_isr_stack1_top = ABSOLUTE(.);
+    } > bss_seg
+
     /* EOS_ESP32_RTC_NOINIT variables: not loaded and not zeroed, so they
      * keep their values across deep sleep (and hold garbage after power-on:
      * check a tag before trusting them). */
@@ -95,5 +107,6 @@ SECTIONS
 /* Boot ROM functions (ESP-IDF v5.4, components/esp_rom/esp32/ld/esp32.rom.ld).
  * The ROM is built for the windowed ABI, as EoS now is. */
 PROVIDE(rom_i2c_writeReg = 0x400041a4);
+PROVIDE(ets_set_appcpu_boot_addr = 0x4000689c);
 
 ASSERT((_eos_vector_table_start & 0x3FF) == 0, "VECBASE must be 1 KB aligned")

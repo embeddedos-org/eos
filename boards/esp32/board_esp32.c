@@ -282,6 +282,63 @@ static void rtc_init(void)
     field(RTC_CNTL_CLK_CONF, 29, 1U, 1U);                       /* FAST_CLK_RTC_SEL: RC */
 }
 
+/* ---- Second CPU (SMP builds) ----------------------------------------------
+ * ESP-IDF v5.4 esp_system/port/cpu_start.c start_other_core(): enable the
+ * APP CPU's clock, clear run-stall, pulse its reset, and hand the boot ROM
+ * (now running on it) the entry address. Cross-CPU interrupts: the two
+ * "from CPU" interrupt sources (ETS_FROM_CPU_INTR0/1_SOURCE, 24 and 25),
+ * each mapped to line XT_INT_IPI (2, level 1) of one CPU through the
+ * interrupt matrix; writing 1 raises the source, 0 clears it.
+ */
+#include "eos/kernel.h"
+#if EOS_SMP_CORES > 1
+#define DPORT_APPCPU_CTRL_A        0x3FF0002CU   /* bit 0: resetting */
+#define DPORT_APPCPU_CTRL_B        0x3FF00030U   /* bit 0: clock gate enable */
+#define DPORT_APPCPU_CTRL_C        0x3FF00034U   /* bit 0: run-stall */
+#define DPORT_CPU_INTR_FROM_CPU(n) (0x3FF000DCU + 4U * (n))
+#define DPORT_PRO_INTR_MAP(src)    (0x3FF00104U + 4U * (src))
+#define DPORT_APP_INTR_MAP(src)    (0x3FF00218U + 4U * (src))
+#define FROM_CPU_INTR_SOURCE(n)    (24U + (n))
+#define XT_INT_IPI_LINE            2U
+
+extern void ets_set_appcpu_boot_addr(uint32_t addr);
+extern void _start_app(void);
+void eos_esp32_app_cpu_entry(void);
+extern void eos_xtensa_secondary_main(void);
+
+void eos_board_ipi_init(uint32_t cpu)
+{
+    if (cpu == 0U) REG32(DPORT_PRO_INTR_MAP(FROM_CPU_INTR_SOURCE(0))) = XT_INT_IPI_LINE;
+    else           REG32(DPORT_APP_INTR_MAP(FROM_CPU_INTR_SOURCE(1))) = XT_INT_IPI_LINE;
+    REG32(DPORT_CPU_INTR_FROM_CPU(cpu)) = 0;
+}
+
+void eos_board_ipi_raise(uint32_t cpu)
+{
+    REG32(DPORT_CPU_INTR_FROM_CPU(cpu)) = 1U;
+}
+
+void eos_board_ipi_clear(uint32_t cpu)
+{
+    REG32(DPORT_CPU_INTR_FROM_CPU(cpu)) = 0;
+}
+
+void eos_port_start_secondary_cpus(void)
+{
+    REG32(DPORT_APPCPU_CTRL_B) |= 1U;          /* clock on */
+    REG32(DPORT_APPCPU_CTRL_C) &= ~1U;         /* not stalled */
+    REG32(DPORT_APPCPU_CTRL_A) |= 1U;          /* reset pulse */
+    REG32(DPORT_APPCPU_CTRL_A) &= ~1U;
+    ets_set_appcpu_boot_addr((uint32_t)(uintptr_t)_start_app);
+}
+
+void eos_esp32_app_cpu_entry(void)
+{
+    ets_set_appcpu_boot_addr(0);               /* as ESP-IDF's call_start_cpu1() */
+    eos_xtensa_secondary_main();
+}
+#endif
+
 uint32_t eos_esp32_irq_save(void)
 {
     uint32_t ps;

@@ -75,3 +75,41 @@ _start:
     movi    a2, XT_FATAL_MAIN_RETURN
     j       _xt_fatal_entry
     .size   _start, . - _start
+
+#if defined(EOS_SMP_CORES) && EOS_SMP_CORES > 1
+/*
+ * _start_app -- the APP CPU's entry (SMP builds, EOS_SMP_CORES > 1). The
+ * PRO CPU releases it from reset in eos_port_start_secondary_cpus()
+ * (board_esp32.c), and the boot ROM running on it jumps here. Same clean
+ * window state as _start, on the APP CPU's own boot stack and with the same
+ * vector table (the vectors pick per-CPU state by PRID).
+ */
+    .section .text.startup, "ax"
+    .literal_position
+    .align  4
+    .global _start_app
+    .type   _start_app, @function
+_start_app:
+    movi    a0, XT_PS_INTLEVEL_MASK
+    wsr.ps  a0
+    rsync
+    movi    a0, 1
+    wsr.windowstart a0
+    movi    a0, 0
+    wsr.windowbase a0
+    rsync
+    movi    a1, _eos_app_stack_top
+    movi    a0, _eos_vector_table
+    wsr.vecbase a0
+    movi    a0, 0
+    wsr.intenable a0
+    wsr.cpenable a0
+    movi    a0, XT_PS_WOE | XT_PS_INTLEVEL_MASK
+    wsr.ps  a0
+    rsync
+    movi    a0, 0
+    call4   eos_esp32_app_cpu_entry
+    movi    a2, XT_FATAL_MAIN_RETURN
+    j       _xt_fatal_entry
+    .size   _start_app, . - _start_app
+#endif
