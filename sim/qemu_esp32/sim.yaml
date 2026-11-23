@@ -1,0 +1,73 @@
+# EoS on the ESP32 (Xtensa LX6): Espressif's QEMU "esp32" machine, and real
+# ESP-WROOM-32 boards through the same image.
+#
+# Consumed by sim/qemu_esp32/build.sh and by the "QEMU ESP32 Boot Test" job in
+# .github/workflows/build.yml. Paths are relative to the eos repository root.
+# Application sources are added by the caller.
+schema: 1
+qemu:
+  # Espressif's fork (github.com/espressif/qemu); upstream QEMU has no esp32
+  # machine.
+  binary: qemu-system-xtensa
+  machine: esp32
+  args: ["-nographic", "-no-reboot"]
+  # The machine boots the ROM, which loads the image from this flash file.
+  flash_arg: "-drive file={flash},if=mtd,format=raw"
+cpu: esp32
+# The boot ROM leaves the CPU on the 40 MHz crystal and the port does not
+# change it; CCOUNT, and so the tick, runs at this rate.
+sys_clock_hz: 40000000
+cflags:
+  # CALL0: no register windows, so the context switch saves a0..a15 and
+  # nothing more (kernel/src/arch/xtensa_lx6/vectors.S). The toolchain's
+  # newlib and libgcc are windowed, hence -nostdlib below and
+  # boards/esp32/freestanding.c.
+  - -mabi=call0
+  - -std=c11
+  - -Os
+  - -g
+  - -Wall
+  - -Wextra
+  - -ffreestanding
+  - -ffunction-sections
+  - -fdata-sections
+  - -fno-common
+  # Keeps memset/memcpy in freestanding.c from being compiled into calls to
+  # themselves.
+  - -fno-tree-loop-distribute-patterns
+  - -DEOS_SYS_CLOCK_HZ=40000000U
+  # eos_hal_init() registers hal/src/hal_esp32 (GPIO, UART0).
+  - -DEOS_HAL_BACKEND_ESP32
+includes:
+  - kernel/include
+  - include
+  - hal/include
+  - boards/esp32
+  - kernel/src/arch/xtensa_lx6
+ldflags:
+  - -mabi=call0
+  - -nostdlib
+  - -nostartfiles
+  - -Wl,--gc-sections
+libs: []
+linker_script: boards/esp32/esp32.ld
+# esptool turns the ELF into the image format the boot ROM loads, written at
+# flash offset 0x1000.
+image:
+  chip: esp32
+  flash_mode: dio
+  flash_freq: 40m
+  flash_size: 4MB
+  offset: 0x1000
+sources:
+  - boards/esp32/startup_esp32.S
+  - boards/esp32/board_esp32.c
+  - boards/esp32/freestanding.c
+  - kernel/src/arch/xtensa_lx6/vectors.S
+  - kernel/src/arch/xtensa_lx6/port.c
+  - kernel/src/task.c
+  - kernel/src/sync.c
+  - kernel/src/ipc.c
+  - kernel/src/mem/heap.c
+  - hal/src/hal_common.c
+  - hal/src/hal_esp32/hal_esp32_backend.c
