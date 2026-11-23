@@ -53,9 +53,12 @@ ldflags:
   - -nostdlib
   - -nostartfiles
   - -Wl,--gc-sections
-# The toolchain's newlib (memset, memcpy, ...) and libgcc. Nothing that
-# needs newlib's system calls is linked.
-libs: ["-lc", "-lgcc"]
+# The toolchain's newlib-nano and libgcc; boards/esp32/syscalls_esp32.c
+# gives newlib its system calls (printf to the UART0 console, malloc's heap).
+# nano, as on the Cortex-M targets: full newlib's printf overflowed the
+# rtos-app template's 1024-byte task stack (a double exception in a window
+# spill), nano's runs in it.
+libs: ["-lc_nano", "-lgcc"]
 linker_script: boards/esp32/esp32.ld
 # esptool turns the ELF into the image format the boot ROM loads, written at
 # flash offset 0x1000.
@@ -68,6 +71,7 @@ image:
 sources:
   - boards/esp32/startup_esp32.S
   - boards/esp32/board_esp32.c
+  - boards/esp32/syscalls_esp32.c
   - kernel/src/arch/xtensa_lx6/vectors.S
   - kernel/src/arch/xtensa_lx6/port.c
   - kernel/src/task.c

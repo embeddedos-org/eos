@@ -91,6 +91,15 @@ SECTIONS
         _eos_isr_stack1_top = ABSOLUTE(.);
     } > bss_seg
 
+    /* newlib's heap (syscalls_esp32.c _sbrk): the rest of the DRAM region. */
+    .heap (NOLOAD) :
+    {
+        . = ALIGN(16);
+        _eos_heap_start = ABSOLUTE(.);
+        . = ORIGIN(bss_seg) + LENGTH(bss_seg);
+        _eos_heap_end = ABSOLUTE(.);
+    } > bss_seg
+
     /* EOS_ESP32_RTC_NOINIT variables: not loaded and not zeroed, so they
      * keep their values across deep sleep (and hold garbage after power-on:
      * check a tag before trusting them). */
