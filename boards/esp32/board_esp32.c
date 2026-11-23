@@ -72,6 +72,8 @@ extern void rom_i2c_writeReg(uint8_t block, uint8_t host_id, uint8_t reg_add, ui
 #error "EOS_SYS_CLOCK_HZ must equal EOS_ESP32_CPU_MHZ MHz: the tick counts CPU cycles"
 #endif
 
+static void rtc_init(void);
+
 static void delay_cycles(uint32_t n)
 {
     uint32_t t0 = eos_esp32_ccount();
@@ -112,7 +114,7 @@ static uint32_t xtal_mhz(void)
  * so UART0 (115200 8N1 from the ROM) gets a new divider: the caller has let
  * its TX FIFO drain first.
  */
-static void clock_to_pll(uint32_t cpu_mhz)
+void esp32_clock_to_pll(uint32_t cpu_mhz)
 {
     int pll480 = cpu_mhz == 240U;
 
@@ -168,6 +170,7 @@ void eos_esp32_early_init(void)
     REG32(RTC_CNTL_WDTCONFIG0) = 0;
     REG32(RTC_CNTL_WDTWPROTECT) = 0;
 
+    rtc_init();
     if (EOS_ESP32_CPU_MHZ == 40U) return;
     if (xtal_mhz() != 40U) {
         /* The tick, the UART dividers and every timeout are compiled for
@@ -183,7 +186,116 @@ void eos_esp32_early_init(void)
     while (UART_TXFIFO_CNT(REG32(UART0_STATUS)) != 0U ||
            UART_ST_UTX(REG32(UART0_STATUS)) != 0U) {
     }
-    clock_to_pll(EOS_ESP32_CPU_MHZ);
+    esp32_clock_to_pll(EOS_ESP32_CPU_MHZ);
+}
+
+/*
+ * Back to the 40 MHz crystal (ESP-IDF rtc_clk_cpu_freq_to_xtal()): CPU and
+ * APB 40 MHz, REF_TICK from the crystal, core voltage back to 1.10 V. UART0
+ * gets its 40 MHz divider; the caller has let its TX FIFO drain. Sleep
+ * (hal_esp32_sleep.c) runs on the crystal, as ESP-IDF's does, and the PLL is
+ * left running for esp32_clock_to_pll() to switch back to.
+ */
+#define SYSCON_XTAL_TICK_CONF 0x3FF66004U
+void esp32_clock_to_xtal(void)
+{
+    field(RTC_CNTL_CLK_CONF, SOC_CLK_SEL_S, 3U, 0U);
+    REG32(SYSCON_XTAL_TICK_CONF) = 40U - 1U;
+    REG32(DPORT_CPU_PER_CONF) = 0U;
+    uint32_t apb = 40000000U >> 12;
+    REG32(RTC_CNTL_STORE5) = (apb & 0xFFFFU) | ((apb & 0xFFFFU) << 16);
+    uint32_t div16 = (40000000U * 16U + 115200U / 2U) / 115200U;
+    REG32(UART0_CLKDIV) = ((div16 & 0xFU) << 20) | (div16 >> 4);
+    field(RTC_CNTL_REG, DIG_DBIAS_WAK_S, 7U, DIG_DBIAS_1V10);
+}
+
+/*
+ * RTC power and clock control as ESP-IDF v5.4's rtc_init() (pwrctl_init,
+ * rtc_dboost_fpd) and the slow-clock part of rtc_clk_init() leave them
+ * (esp_hw_support/port/esp32/rtc_init.c, rtc_clk_init.c, RTC_CONFIG_DEFAULT).
+ * The boot ROM leaves most digital power domains forced on and forced
+ * unisolated, and the 150 kHz RC slow clock untuned (SCK_DCAP 0: it ran at
+ * about 357 kHz): with those, the sleep state machine could not power the
+ * digital core down, and deep sleep reset the RTC controller and woke at
+ * once (found on the board by comparing every RTC_CNTL register with an
+ * ESP-IDF build's). Not ported: the cache/ROM "force on" clears
+ * (clkctl_init, light-sleep memory gating) and sar_periph_ctrl_init().
+ */
+#define RTC_CNTL_ANA_CONF     0x3FF48030U
+#define RTC_CNTL_TIMER1       0x3FF4801CU
+#define RTC_CNTL_INT_ENA      0x3FF4803CU
+#define RTC_CNTL_INT_CLR      0x3FF48048U
+#define RTC_CNTL_BIAS_CONF    0x3FF48078U
+#define RTC_CNTL_PWC          0x3FF48080U
+#define RTC_CNTL_DIG_PWC      0x3FF48084U
+#define RTC_CNTL_DIG_ISO      0x3FF48088U
+static void rtc_init(void)
+{
+    const uint32_t BIT = 1U;
+    REG32(RTC_CNTL_DIG_PWC) &= ~(BIT << 17);                    /* WIFI_FORCE_PD */
+    REG32(RTC_CNTL_DIG_ISO) &= ~(BIT << 28);                    /* WIFI_FORCE_ISO */
+    /* PVTMON, TXRF_I2C, RFRX_PBUS, CKGEN_I2C, PLL_I2C power-ups off */
+    REG32(RTC_CNTL_ANA_CONF) &= ~((BIT << 26) | (BIT << 27) | (BIT << 28) | (BIT << 30) | (BIT << 31));
+    field(RTC_CNTL_TIMER1, 24, 0xFFU, 20U);                     /* PLL_BUF_WAIT */
+    field(RTC_CNTL_TIMER1, 14, 0x3FFU, 20U);                    /* XTL_BUF_WAIT */
+    field(RTC_CNTL_TIMER1, 6, 0xFFU, 20U);                      /* CK8M_WAIT */
+    field(RTC_CNTL_BIAS_CONF, 24, 3U, 3U);                      /* DBG_ATTEN default */
+    REG32(RTC_CNTL_BIAS_CONF) |= (BIT << 30) | (BIT << 29);     /* heartbeat width/period */
+    field(RTC_CNTL_REG, 25, 7U, DIG_DBIAS_1V10);                /* RTC DBIAS_WAK */
+    field(RTC_CNTL_REG, 22, 7U, DIG_DBIAS_1V10);                /* RTC DBIAS_SLP */
+
+    REG32(RTC_CNTL_CLK_CONF) &= ~(BIT << 26);                   /* CK8M_FORCE_PU */
+    /* XTL, BIAS_CORE, BIAS_I2C force-ups and BIAS_FORCE_NOSLEEP off; the
+     * biases follow the 8 MHz clock. BBPLL force-ups off (the PLL runs on
+     * its own enable, set by esp32_clock_to_pll()). */
+    REG32(RTC_CNTL_OPTIONS0) &= ~((BIT << 13) | (BIT << 22) | (BIT << 19) | (BIT << 16) |
+                                  (BIT << 11) | (BIT << 9));
+    REG32(RTC_CNTL_OPTIONS0) |= (BIT << 20) | (BIT << 17) | (BIT << 14);
+    REG32(RTC_CNTL_ANA_CONF) &= ~(BIT << 24);                   /* PLLA_FORCE_PU */
+    REG32(RTC_CNTL_ANA_CONF) |= BIT << 23;                      /* PLLA_FORCE_PD */
+    REG32(RTC_CNTL_REG) &= ~((BIT << 31) | (BIT << 29));        /* FORCE_PU, DBOOST_FORCE_PU */
+    REG32(RTC_CNTL_REG) |= BIT << 28;                           /* DBOOST_FORCE_PD */
+    /* LSLP_MEM, DG_WRAP, WIFI, CPU ROM/RAM force power-up off */
+    REG32(RTC_CNTL_DIG_PWC) &= ~((BIT << 4) | (BIT << 20) | (BIT << 18) | 0x15540U);
+    REG32(RTC_CNTL_PWC) &= ~(0x12000U | (BIT << 19));           /* MEM_FORCE_PU, PWC_FORCE_PU */
+    /* DG_WRAP, WIFI, CPU ROM/RAM force no-isolation off; pads not forced */
+    REG32(RTC_CNTL_DIG_ISO) &= ~((BIT << 31) | (BIT << 29) | 0x0AAA0000U | (BIT << 14) | (BIT << 12));
+    REG32(RTC_CNTL_PWC) &= ~(0x5U | (BIT << 5));                /* MEM_FORCE_NOISO, FORCE_NOISO */
+    /* Modem (Wi-Fi/BT) domain powered down and isolated until used. */
+    REG32(RTC_CNTL_DIG_ISO) |= BIT << 28;
+    REG32(RTC_CNTL_DIG_PWC) |= BIT << 17;
+    REG32(RTC_CNTL_INT_ENA) = 0;
+    REG32(RTC_CNTL_INT_CLR) = 0xFFFFFFFFU;
+
+    /* rtc_clk_init(): tune the RC slow and fast clocks (SCK_DCAP 255,
+     * CK8M_DFREQ 172), run the 8 MHz RC undivided with its /256 output off,
+     * and take the RTC fast clock from it rather than from XTAL/4: the
+     * crystal powers down in deep sleep (XTL_FORCE_PU is clear above), and
+     * the RTC state machine that wakes the chip runs on the fast clock. With
+     * XTAL/4 the board went into deep sleep and never woke. */
+    field(RTC_CNTL_REG, 14, 0xFFU, 255U);
+    field(RTC_CNTL_CLK_CONF, 17, 0xFFU, 172U);
+    field(RTC_CNTL_CLK_CONF, 12, 7U, 0U);                       /* CK8M_DIV_SEL: /1 */
+    REG32(RTC_CNTL_CLK_CONF) &= ~((BIT << 6) | (BIT << 9));     /* ENB_CK8M, D256_EN */
+    REG32(RTC_CNTL_CLK_CONF) |= BIT << 7;                       /* ENB_CK8M_DIV */
+    delay_cycles(50U * 40U);                                    /* 8 MHz RC settles: 50 us */
+    field(RTC_CNTL_CLK_CONF, 29, 1U, 1U);                       /* FAST_CLK_RTC_SEL: RC */
+}
+
+uint32_t eos_esp32_irq_save(void)
+{
+    uint32_t ps;
+    /* Only raise the level, as eos_port_enter_critical() does. */
+    __asm volatile ("rsr.ps %0" : "=a" (ps) :: "memory");
+    if ((ps & XT_PS_INTLEVEL_MASK) < 3U) {
+        __asm volatile ("rsil %0, 3" : "=a" (ps) :: "memory");
+    }
+    return ps;
+}
+
+void eos_esp32_irq_restore(uint32_t ps)
+{
+    __asm volatile ("wsr.ps %0\n\trsync" :: "a" (ps) : "memory");
 }
 
 uint32_t eos_esp32_ccount(void)

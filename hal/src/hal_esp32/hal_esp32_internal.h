@@ -59,6 +59,11 @@ int  esp32_pin_route_input(uint16_t pin, uint32_t signal);
  *  digital GPIO and matrix paths until this clears it. */
 void esp32_rtc_pad_release(uint16_t gpio);
 
+/** Give an RTC-capable pad to the RTC block for analog use (ADC, DAC,
+ *  touch): RTC function 0, digital input and pulls off. -1 if @p gpio has
+ *  no RTC pad. */
+int  esp32_rtc_pad_analog(uint16_t gpio);
+
 /** Set the pulls of an RTC-capable pad (GPIO0, 2, 4, 12-15, 25-27, 32-39),
  *  which live in its RTC IO register: on these pads the IO_MUX pull bits
  *  have no effect (ESP-IDF gpio_ll_pullup_en() does the same). Returns 1 if
@@ -85,6 +90,10 @@ int  esp32_i2c_read(uint8_t port, uint16_t addr, uint8_t *data, size_t len);
 int  esp32_spi_init(const eos_spi_config_t *cfg);
 void esp32_spi_deinit(uint8_t port);
 int  esp32_spi_transfer(uint8_t port, const uint8_t *tx, uint8_t *rx, size_t len);
+
+/* CPU clock switches (board_esp32.c), for sleep. */
+void esp32_clock_to_pll(uint32_t cpu_mhz);
+void esp32_clock_to_xtal(void);
 
 /** Convert a @p bits-wide raw reading of ADC @p unit (1 or 2) at 12 dB
  *  attenuation to millivolts with the chip's eFuse calibration

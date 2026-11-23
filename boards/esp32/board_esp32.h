@@ -168,6 +168,44 @@ int  eos_esp32_i2s_set_loopback(bool enable);
 /** I2S0's actual sample rate from the clock divider, 0 if not running. */
 uint32_t eos_esp32_i2s_get_rate(void);
 
+/*
+ * Capacitive touch pads T0-T9 on GPIO4, 0, 2, 15, 13, 12, 14, 27, 33, 32
+ * (hal_esp32_touch.c). A reading counts charge cycles in a ~4 ms window and
+ * drops when a finger is on the pad. On DevKit boards T1 (GPIO0, the BOOT
+ * button) and T2 (GPIO2, the LED) have parts on the pad that hold it, so
+ * their readings mean little.
+ */
+int  eos_esp32_touch_init(void);
+int  eos_esp32_touch_read(uint8_t pad, uint16_t *value);
+/** GPIO of touch pad @p pad (0-9), 0xFFFF for any other. */
+uint16_t eos_esp32_touch_gpio(uint8_t pad);
+
+/*
+ * Sleep with an RTC-timer wake-up (hal_esp32_sleep.c). Light sleep returns
+ * 0 after waking (CCOUNT and the kernel tick stand still meanwhile); deep
+ * sleep does not return: the chip resets on wake-up, with
+ * eos_esp32_reset_reason() 5 (DEEPSLEEP_RESET). Both return -1 if the sleep
+ * could not start. EOS_ESP32_RTC_NOINIT places a variable in RTC slow
+ * memory, which keeps its value through deep sleep; after power-on it holds
+ * garbage, so keep a tag next to it.
+ */
+#define EOS_ESP32_RTC_NOINIT __attribute__((section(".rtc.noinit")))
+#define EOS_ESP32_RESET_POWERON    1U
+#define EOS_ESP32_RESET_DEEPSLEEP  5U
+int      eos_esp32_light_sleep_us(uint64_t us);
+int      eos_esp32_deep_sleep_us(uint64_t us);
+uint32_t eos_esp32_reset_reason(void);
+/** Wake-up sources that fired (RTC_CNTL wakeup_cause; bit 3 is the timer). */
+uint32_t eos_esp32_wakeup_cause(void);
+/** RTC timer (slow clock ticks, 48 bits): runs through every sleep. */
+uint64_t eos_esp32_rtc_time(void);
+/** RTC slow clock rate in Hz, measured against CCOUNT. */
+uint32_t eos_esp32_rtc_slow_hz(void);
+/** Mask interrupts (to level 3, the port's critical level); returns the
+ *  previous PS for eos_esp32_irq_restore(). */
+uint32_t eos_esp32_irq_save(void);
+void     eos_esp32_irq_restore(uint32_t ps);
+
 /** Connect UART @p port's TX to its own RX inside the peripheral (ports 1
  *  and 2, after eos_uart_init()). For self-tests; -1 for any other port. */
 int  eos_esp32_uart_set_loopback(uint8_t port, bool enable);

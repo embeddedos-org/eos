@@ -27,6 +27,8 @@ MEMORY
     iram_seg (RX) : org = 0x40080400, len = 0xFC00
     dram_seg (RW) : org = 0x3FFF0000, len = 0x6000
     bss_seg  (RW) : org = 0x3FFB0000, len = 0x30000
+    /* RTC slow memory: kept through deep sleep (hal_esp32_sleep.c). */
+    rtc_slow_seg (RW) : org = 0x50000000, len = 0x2000
 }
 
 SECTIONS
@@ -76,6 +78,16 @@ SECTIONS
         . += 2048;
         _eos_isr_stack_top = ABSOLUTE(.);
     } > bss_seg
+
+    /* EOS_ESP32_RTC_NOINIT variables: not loaded and not zeroed, so they
+     * keep their values across deep sleep (and hold garbage after power-on:
+     * check a tag before trusting them). */
+    .rtc.noinit (NOLOAD) :
+    {
+        . = ALIGN(4);
+        *(.rtc.noinit .rtc.noinit.*)
+        . = ALIGN(4);
+    } > rtc_slow_seg
 
     /DISCARD/ : { *(.comment) *(.note.*) *(.xtensa.info) *(.xt.prop*) *(.xt.lit*) }
 }

@@ -81,3 +81,5 @@ sources:
   - hal/src/hal_esp32/hal_esp32_spi.c
   - hal/src/hal_esp32/hal_esp32_i2c.c
   - hal/src/hal_esp32/hal_esp32_i2s.c
+  - hal/src/hal_esp32/hal_esp32_touch.c
+  - hal/src/hal_esp32/hal_esp32_sleep.c

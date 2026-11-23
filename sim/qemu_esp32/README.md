@@ -46,6 +46,8 @@ to restore the board.
 | `context_test.c`, `context_regcheck.S` | Three tasks that never block check a0..a15, SAR and a zero-overhead loop, and run 24-deep recursions through CALL4, CALL8 and CALL12 (longer than the 16-window register file), while the tick preempts them; any register the frame or a window spill loses, one restored from another task, or a task starved of its share of the CPU fails |
 | `periph_test.c` | ADC (with its eFuse calibration), DAC, PWM and UART1/2 through loopbacks inside the chip (board only; see below) |
 | `bus_test.c` | GPIO pulls on RTC and digital pads, SPI2/SPI3 in a MOSI-to-MISO loopback, I2S0 in a DOUT-to-DIN loopback with WS/BCK measured on the pads, and I2C0 against I2C1 as a slave (board only; see below) |
+| `rtc_test.c` | Touch pads, light sleep and deep sleep (board only; see below) |
+| `board_suite.sh` | Runs the QEMU tests and every test image on a board, one PASS/FAIL line each |
 | `fault_test.c` | A task returns; the port must report `EOS FATAL code=7` (`task_returned`, not any other fault) and run nothing after it |
 
 Mutation checks (each run in QEMU): with no window spill in the interrupt
@@ -229,6 +231,44 @@ cannot form inside the chip, and the ESP32 master stalls when its SDA input
 does not follow what it drives, so without wires the slave can only listen:
 I2C data transfers in either direction need the two jumpers.
 
+### Touch pads and sleep (board API)
+
+The extended HAL's touch API describes touch panels, and the portable power
+API (`power/`) has no platform backend, so these are board APIs in
+`board_esp32.h`:
+
+- `eos_esp32_touch_init()` / `eos_esp32_touch_read(pad)`: T0-T9 on GPIO4, 0,
+  2, 15, 13, 12, 14, 27, 33, 32; a count that drops under a finger. On a
+  DevKit T1 (BOOT button) and T2 (LED) read 0.
+- `eos_esp32_light_sleep_us()`: returns after the RTC timer wakes the chip;
+  CCOUNT and the kernel tick stand still meanwhile, so kernel time does not
+  include the sleep. `eos_esp32_deep_sleep_us()`: the wake-up is a reset
+  (reason 5); `EOS_ESP32_RTC_NOINIT` variables (RTC slow memory) and the RTC
+  timer carry over.
+- Boot now runs the power-control part of ESP-IDF's `rtc_init()` and tunes
+  the RC clocks (`board_esp32.c`). Without it deep sleep reset the RTC
+  controller and woke at once, then (with the crystal allowed to power
+  down but the RTC fast clock still on XTAL/4) never woke; found by
+  comparing every RTC_CNTL register with an ESP-IDF build's on the same
+  board. The 150 kHz slow clock had been running untuned at about 357 kHz.
+
+`rtc_test.c` on the board (it deep-sleeps and reports from the next boot):
+
+```
+CHECK touch pads read and stable (5 reads): T0=849 T1=0(info) T2=0(info) T3=808 T4=837 T5=908 T6=968 T7=978 T8=1098 T9=1111  PASS
+CHECK touch T0 count moves with the pad's pull-down on: idle 849, pulled down 0, released 849  PASS
+CHECK touch T0 finger: idle 849, lowest 848  NOT RUN (no touch seen)
+CHECK light sleep 200 ms: rc 0, RTC timer 200 ms (slow clock 162400 Hz), CPU ran 0 ms of it  PASS
+rtc_test: deep sleep 1 s
+rst:0x5 (DEEPSLEEP_RESET),boot:0x13 (SPI_FAST_FLASH_BOOT)
+rtc_test: woke from deep sleep
+CHECK deep sleep 1 s: reset reason 5, wake cause 8, RTC memory kept, 1034 ms from sleep to this boot  PASS
+RTC TEST PASSED
+```
+
+By host time the deep sleep lasted 1.001 s (the 1034 ms includes the boot).
+Finger detection needs a person: touch GPIO4 during the 5 s window.
+
 ESP32 UART behaviours the driver works around, each found on the board and
 matched against ESP-IDF's `uart_ll.h`:
 
@@ -265,7 +305,7 @@ matched against ESP-IDF's `uart_ll.h`:
   interrupt matrix is not implemented. `eos_arch_irq_set_priority()` does
   nothing, because Xtensa fixes each line's level in hardware.
 - The HAL implements GPIO, UART0-2, ADC, DAC, PWM, SPI, I2C and I2S
-  audio (above).
+  audio, plus board APIs for touch pads and sleep (above).
   UART0 stays at 115200 8N1. Timers, Wi-Fi and Bluetooth calls return -1. GPIO refuses GPIO1/3 (the console), GPIO6-11 (the module's
   flash), outputs on the input-only GPIO34-39, and pulls on GPIO34-39, which
   have none.

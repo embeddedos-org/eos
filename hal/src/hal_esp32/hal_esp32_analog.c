@@ -72,7 +72,7 @@ static const rtc_pad_t *rtc_pad(uint16_t gpio)
 
 /* Give the pad to the RTC block for analog use: RTC function 0, no digital
  * input, no pulls. */
-static int rtc_pad_analog(uint16_t gpio)
+int esp32_rtc_pad_analog(uint16_t gpio)
 {
     const rtc_pad_t *p = rtc_pad(gpio);
     if (p == NULL) return -1;
@@ -154,7 +154,7 @@ int eos_adc_init(const eos_adc_config_t *cfg)
     /* The SAR ADC resolves 9 to 12 bits. sample_rate_hz is not used: every
      * eos_adc_read() is one conversion started by software. */
     if (cfg->resolution_bits < 9U || cfg->resolution_bits > 12U) return -1;
-    if (rtc_pad_analog(gpio) != 0) return -1;
+    if (esp32_rtc_pad_analog(gpio) != 0) return -1;
     s_adc_bits[cfg->channel] = cfg->resolution_bits;
     return 0;
 }
@@ -272,7 +272,7 @@ int eos_dac_init(const eos_dac_config_t *cfg)
     /* The ESP32 DAC is 8 bits; 0 asks for the default. */
     if (cfg == NULL || cfg->channel > 1U) return -1;
     if (cfg->resolution_bits != 0U && cfg->resolution_bits != 8U) return -1;
-    if (rtc_pad_analog(cfg->channel == 0U ? 25U : 26U) != 0) return -1;
+    if (esp32_rtc_pad_analog(cfg->channel == 0U ? 25U : 26U) != 0) return -1;
     s_dac_vref_mv[cfg->channel] = cfg->vref_mv != 0U ? cfg->vref_mv : 3300U;
     REG32(SENS_SAR_DAC_CTRL2) &= ~DAC_CW_EN(cfg->channel);   /* no cosine generator */
     uint32_t reg = PDAC_REG(cfg->channel);
