@@ -339,6 +339,21 @@ target_include_directories(test_ui_gesture PRIVATE
 )
 add_test(NAME test_ui_gesture COMMAND test_ui_gesture)
 
+# --- test_ui_touch_drv: LVGL touch read callback (rotation) ---
+add_executable(test_ui_touch_drv test_ui_touch_drv.c)
+target_compile_definitions(test_ui_touch_drv PRIVATE
+    EOS_ENABLE_UI=1
+    EOS_ENABLE_TOUCH=1
+    EOS_ENABLE_DISPLAY=1
+)
+target_include_directories(test_ui_touch_drv PRIVATE
+    ${CMAKE_CURRENT_SOURCE_DIR}/../include
+    ${CMAKE_CURRENT_SOURCE_DIR}/../hal/include
+    ${CMAKE_CURRENT_SOURCE_DIR}/../services/ui/include
+    ${CMAKE_CURRENT_SOURCE_DIR}/mocks
+)
+add_test(NAME test_ui_touch_drv COMMAND test_ui_touch_drv)
+
 # --- test_power: Power management framework ---
 add_executable(test_power test_power.c)
 target_link_libraries(test_power PRIVATE eos_power)
