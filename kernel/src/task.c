@@ -246,6 +246,9 @@ static void idle_task_func(void *arg)
         __asm volatile ("wfi");
 #elif defined(__riscv)
         __asm volatile ("wfi");
+#elif defined(__XTENSA__)
+        /* Sleep at interrupt level 0 until the next interrupt. */
+        __asm volatile ("waiti 0");
 #elif (defined(__x86_64__) || defined(_M_X64)) && !defined(_WIN32) && \
       !defined(__STDC_HOSTED__)
         __asm volatile ("hlt");
