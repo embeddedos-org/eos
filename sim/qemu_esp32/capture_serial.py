@@ -41,11 +41,21 @@ def main() -> int:
 
     lines = []
     buf = b""
+    # The USB-serial bridge can still hold bytes from before the reset, which
+    # arrive in the first few ms; record from the boot ROM's banner on.
+    booted = False
     while time.monotonic() - t0 < seconds:
         buf += ser.read(256)
         while b"\n" in buf:
             raw, buf = buf.split(b"\n", 1)
             text = raw.decode("utf-8", "replace").rstrip("\r")
+            if not booted:
+                # "rst:0x1 (POWERON_RESET),boot:0x13 (...)"; stale bytes can
+                # run into the front of it, so match its tail.
+                if "_RESET),boot:" not in text:
+                    continue
+                booted = True
+                text = text[text.rfind("(", 0, text.index("_RESET),boot:")) :]
             stamp = time.monotonic() - t0
             lines.append((stamp, text))
             print(f"[{stamp:7.3f}s] {text}", flush=True)
