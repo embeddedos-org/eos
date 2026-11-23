@@ -50,7 +50,7 @@ s=sim/qemu_esp32
 qemu sched "SCHEDULER TEST PASSED" $s/scheduler_test.c
 qemu ctx "CONTEXT TEST PASSED" $s/context_test.c $s/context_regcheck.S
 qemu fault "EOS FATAL code=7" $s/fault_test.c
-EXTRA="-DEOS_SMP_CORES=2 -DEOS_TASK_STACK_POOL_SIZE=32768"
+EXTRA="-DEOS_SMP_CORES=2 -DEOS_TASK_STACK_POOL_SIZE=32768 -DEOS_MAX_TASKS=32"
 qemu smp "SMP TEST PASSED" $s/smp_test.c $s/context_regcheck.S
 EXTRA=""
 board sched "SCHEDULER TEST PASSED" 12 $s/scheduler_test.c
@@ -60,7 +60,7 @@ board fault "EOS FATAL code=7" 3 $s/fault_test.c
 board periph "PERIPH TEST PASSED" 4 $s/periph_test.c
 board bus "BUS TEST PASSED" 4 $s/bus_test.c
 board rtc "RTC TEST PASSED" 10 $s/rtc_test.c
-EXTRA="-DEOS_SMP_CORES=2 -DEOS_TASK_STACK_POOL_SIZE=32768"
+EXTRA="-DEOS_SMP_CORES=2 -DEOS_TASK_STACK_POOL_SIZE=32768 -DEOS_MAX_TASKS=32"
 board smp "SMP TEST PASSED" 8 $s/smp_test.c $s/context_regcheck.S
 EXTRA=""
 exit $fail

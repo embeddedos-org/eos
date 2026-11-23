@@ -6,10 +6,11 @@
  *
  * Phase 1, 1 s, run by the tick alone:
  *  - Two "racer" tasks pinned to CPU 0 and CPU 1 increment one shared
- *    counter with no lock. Updates are lost only if both CPUs run tasks at
- *    the same time, so lost updates are the evidence of real parallelism
- *    (a one-CPU kernel would lose none: a time slice never splits an
- *    increment's window this often).
+ *    counter with no lock, each watching the other's progress. Each pinned
+ *    to its own CPU, seeing the other part-way through while it runs shows
+ *    both CPUs running tasks at once. Lost updates are reported too; on the
+ *    board they show the overlap at instruction level, but QEMU runs its
+ *    two CPUs in turns and may lose none, so they are not required.
  *  - Two "locker" tasks, unpinned, increment another counter inside an
  *    eos_mutex: it must come out exact.
  *  - Three "spinner" tasks, unpinned, run context_test's register,
@@ -31,6 +32,13 @@
  *    because the unblock's cross-CPU interrupt makes the first CPU save the
  *    task's context before the second can take it. The check stays as the
  *    guarantee; no test here reaches the case it covers.
+ *
+ * Phase 5: tasks on both CPUs create children that run once and delete
+ *    themselves; each child's entry must run exactly once. It guards the
+ *    rule that a slot a CPU still executes is not reused, but with that
+ *    rule removed it still passed on the board: the window (between a
+ *    self-delete releasing the lock and its CPU switching away) is a few
+ *    instructions, found by review rather than by a test.
  *
  * Prints CHECK lines and "SMP TEST PASSED" or "SMP TEST FAILED". Runs in
  * Espressif's QEMU (which models both CPUs) and on a board.
@@ -56,7 +64,8 @@ extern uint32_t eos_test_regcheck(uint32_t seed, uint32_t rounds);
 extern uint32_t eos_test_win4(uint32_t n, uint32_t x);
 extern uint32_t eos_test_win12(uint32_t n, uint32_t x);
 
-static volatile uint32_t s_race, s_race_done[2], s_race_cpus[2];
+static volatile uint32_t s_race, s_race_done[2], s_race_cpus[2], s_race_ready[2];
+static volatile uint32_t s_race_progress[2], s_race_overlap[2];
 static volatile uint32_t s_locked, s_lock_done, s_lock_cpus[2];
 static volatile uint32_t s_spin_rounds[SPINNERS], s_spin_err[SPINNERS], s_spin_cpus[SPINNERS];
 static eos_mutex_handle_t s_mutex;
@@ -79,11 +88,20 @@ static uint32_t cpu_bit(void) { return 1U << eos_kernel_cpu_id(); }
 static void racer(void *arg)
 {
     uint32_t id = (uint32_t)(uintptr_t)arg;
+    /* Start together: one racer could otherwise finish before the other's
+     * CPU has started, and nothing would overlap. */
+    s_race_ready[id] = 1;
+    while (!s_race_ready[id ^ 1U]) {
+    }
     for (uint32_t i = 0; i < RACE_ROUNDS; i++) {
         uint32_t v = s_race;           /* read ... */
         __asm volatile ("" ::: "memory");
         s_race = v + 1U;               /* ... write: not atomic on purpose */
         s_race_cpus[id] |= cpu_bit();
+        s_race_progress[id] = i + 1U;
+        /* The other racer seen part-way through while this one runs. */
+        uint32_t other = s_race_progress[id ^ 1U];
+        if (other > 0U && other < RACE_ROUNDS) s_race_overlap[id] = 1;
     }
     s_race_done[id] = 1;
     for (;;) eos_task_delay_ms(1000);
@@ -237,6 +255,34 @@ static void window_waker(void *arg)
     }
 }
 
+/* ---- create/self-delete churn on both CPUs ------------------------------ */
+#define CHURN 300U
+static volatile uint32_t s_child_runs, s_churn_done;
+
+static void child(void *arg)
+{
+    (void)arg;
+    uint32_t crit = eos_port_enter_critical();
+    s_child_runs++;
+    eos_port_exit_critical(crit);
+    /* Deletes itself while still executing: its slot must not be handed to
+     * a task the other CPU creates before this CPU has switched away. */
+    eos_task_delete(eos_task_get_current());
+    for (;;) eos_task_delay_ms(1000);
+}
+
+static void creator(void *arg)
+{
+    (void)arg;
+    for (uint32_t i = 0; i < CHURN; i++) {
+        while (eos_task_create("child", child, NULL, 1, 768) < 0) eos_task_delay_ms(1);
+    }
+    uint32_t crit = eos_port_enter_critical();
+    s_churn_done++;
+    eos_port_exit_critical(crit);
+    for (;;) eos_task_delay_ms(1000);
+}
+
 static void put_cpus(uint32_t bits)
 {
     put(bits == 1U ? "CPU0" : bits == 2U ? "CPU1" : bits == 3U ? "both" : "none");
@@ -258,9 +304,10 @@ static void monitor(void *arg)
     put_u(total);
     put(" (");
     put_u(total - got);
-    put(" lost: both CPUs ran at once)");
+    put(" lost), each saw the other mid-run: ");
+    put(s_race_overlap[0] && s_race_overlap[1] ? "yes" : "no");
     check(s_race_done[0] && s_race_done[1] && s_race_cpus[0] == 1U &&
-          s_race_cpus[1] == 2U && got < total);
+          s_race_cpus[1] == 2U && s_race_overlap[0] && s_race_overlap[1]);
 
     put("CHECK mutex across CPUs: ");
     put_u(s_locked);
@@ -342,6 +389,21 @@ static void monitor(void *arg)
     put_u(s_win_double);
     check(wpin && s_win_rounds == WINDOWS && s_win_double == 0U);
     if (ww >= 0) eos_task_delete((eos_task_handle_t)ww);
+
+    int c0 = eos_task_create("creat0", creator, NULL, 2, 1024);
+    int c1 = eos_task_create("creat1", creator, NULL, 2, 1024);
+    bool cpin = c0 >= 0 && c1 >= 0 &&
+                eos_task_set_core_mask((eos_task_handle_t)c0, 1U) == EOS_KERN_OK &&
+                eos_task_set_core_mask((eos_task_handle_t)c1, 2U) == EOS_KERN_OK;
+    t0 = eos_tick_get();
+    while (s_churn_done < 2U && eos_tick_get() - t0 < 8000U) eos_task_delay_ms(20);
+    eos_task_delay_ms(50);
+    put("CHECK create / self-delete churn on both CPUs: ");
+    put_u(s_child_runs);
+    put(" of ");
+    put_u(2U * CHURN);
+    put(" children ran");
+    check(cpin && s_churn_done == 2U && s_child_runs == 2U * CHURN);
 
     put("CHECK API: idle tasks protected, bad masks refused");
     bool api = eos_task_delete(0) == EOS_KERN_INVALID && eos_task_delete(1) == EOS_KERN_INVALID &&

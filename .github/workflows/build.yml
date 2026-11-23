@@ -262,7 +262,7 @@ jobs:
       # window checks, cross-CPU semaphores and pinning must all hold.
       - name: SMP on QEMU (sim/qemu_esp32)
         run: |
-          EOS_EXTRA_CFLAGS="-DEOS_SMP_CORES=2 -DEOS_TASK_STACK_POOL_SIZE=32768" \
+          EOS_EXTRA_CFLAGS="-DEOS_SMP_CORES=2 -DEOS_TASK_STACK_POOL_SIZE=32768 -DEOS_MAX_TASKS=32" \
             sim/qemu_esp32/build.sh _build_esp32/smp.elf \
             sim/qemu_esp32/smp_test.c sim/qemu_esp32/context_regcheck.S
           sim/qemu_esp32/run.sh _build_esp32/smp.flash.bin 90 "SMP TEST PASSED"

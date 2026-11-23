@@ -188,12 +188,19 @@ void eos_port_yield(void)
 #if EOS_SMP_CORES > 1
     /* What made this CPU reschedule (a task readied, deleted, moved) may
      * concern the others: let them reschedule too. */
+    eos_port_kick_other_cpus();
+#endif
+}
+
+#if EOS_SMP_CORES > 1
+void eos_port_kick_other_cpus(void)
+{
     uint32_t me = eos_port_cpu_id();
     for (uint32_t c = 0; c < EOS_SMP_CORES; c++) {
         if (c != me) eos_board_ipi_raise(c);
     }
-#endif
 }
+#endif
 
 uint32_t eos_port_enter_critical(void)
 {

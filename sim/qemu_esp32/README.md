@@ -124,21 +124,27 @@ APP CPUs (`kernel/src/task.c`, `kernel/src/arch/xtensa_lx6/`,
 `smp_test.c` on the board:
 
 ```
-CHECK racers pinned to CPU0/CPU1 ran on CPU0/CPU1, unlocked count 299961 of 400000 (100039 lost: both CPUs ran at once)  PASS
+CHECK racers pinned to CPU0/CPU1 ran on CPU0/CPU1, unlocked count 343498 of 400000 (56502 lost), each saw the other mid-run: yes  PASS
 CHECK mutex across CPUs: 40000 of 40000, lockers ran on both  PASS
-CHECK spinners (registers, loop, CALL4/8/12 windows) migrating: t0 rounds=1748 err=0 on both t1 rounds=1593 err=0 on both t2 rounds=1594 err=0 on both  PASS
-CHECK semaphore ping-pong CPU0<->CPU1: 1000 of 1000 round trips in 60 ms, ping on CPU0, pong on CPU1  PASS
-CHECK unpinned block/unblock storm: 20000+20000 of 40000 in 740 ms, ran on both, a task on two CPUs at once: 0  PASS
+CHECK spinners (registers, loop, CALL4/8/12 windows) migrating: t0 rounds=1299 err=0 on both t1 rounds=1301 err=0 on both t2 rounds=1305 err=0 on both  PASS
+CHECK semaphore ping-pong CPU0<->CPU1: 1000 of 1000 round trips in 70 ms, ping on CPU0, pong on CPU1  PASS
+CHECK unpinned block/unblock storm: 20000+20000 of 40000 in 860 ms, ran on both, a task on two CPUs at once: 0  PASS
 CHECK READY-but-still-running window, widened to 20 us: 2000 of 2000 rounds, a task on two CPUs at once: 0  PASS
+CHECK create / self-delete churn on both CPUs: 600 of 600 children ran  PASS
 CHECK API: idle tasks protected, bad masks refused  PASS
 SMP TEST PASSED
 ```
 
 Mutation checks on the board: with the kernel lock disabled the test stops
-with a fatal exception. With the scheduler's "still executing on another
-CPU" check removed it still passes: the unblock's cross-CPU interrupt makes
-the first CPU save the task before the second can pick it up, so no test
-here reaches the case the check covers; it stays as the guarantee.
+with a fatal exception. Two rules are not reached by any test here, and
+were kept on review rather than on evidence: the scheduler's "still
+executing on another CPU" check (the unblock's cross-CPU interrupt makes the
+first CPU save the task before the second can pick it up), and not reusing
+a task slot a CPU is still executing (a self-deleting task's window is a
+few instructions). With either removed the test still passes.
+
+The SMP build is built with `-DEOS_MAX_TASKS=32`: the test runs more than
+the default 16 tasks.
 
 Limits of the SMP build: the HAL drivers take no locks of their own, so a
 peripheral must be used from one task at a time; DPORT register reads are

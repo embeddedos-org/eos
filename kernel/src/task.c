@@ -61,7 +61,11 @@ static int g_task_count = 0;
 static int g_running = 0;
 
 /* The task each CPU is executing (-1 before the kernel starts). */
-static int g_cur[EOS_SMP_CORES] = { -1 };
+#if EOS_SMP_CORES > 1
+static int g_cur[EOS_SMP_CORES] = { [0 ... EOS_SMP_CORES - 1] = -1 };
+#else
+static int g_cur[1] = { -1 };
+#endif
 #if EOS_SMP_CORES > 1
 #define THIS_CPU() ((int)eos_port_cpu_id())
 #else
@@ -224,6 +228,9 @@ void eos_schedule(void)
     if (g_current >= 0 && g_tasks[g_current].state == EOS_TASK_RUNNING) {
         g_tasks[g_current].state = EOS_TASK_READY;
     }
+#if EOS_SMP_CORES > 1
+    int outgoing = g_current;
+#endif
 
     int next = find_next_task();
     /*
@@ -254,6 +261,14 @@ void eos_schedule(void)
     g_current_sp = &g_tasks[next].stack_ptr;
 #if EOS_SMP_CORES == 1
     g_next_sp = g_current_sp;
+#else
+    /* A task this CPU just let go of while it is still READY may be what
+     * another CPU should run; until now no CPU could take it (it was still
+     * executing here), so tell the others to look again. */
+    if (outgoing >= 0 && outgoing != next && g_tasks[outgoing].state == EOS_TASK_READY &&
+        (g_tasks[outgoing].core_mask & ~(1U << THIS_CPU())) != 0U) {
+        eos_port_kick_other_cpus();
+    }
 #endif
 }
 
@@ -459,6 +474,11 @@ int eos_task_create(const char *name, eos_task_func_t entry, void *arg,
     /* Find free slot (skip the idle tasks' slots) */
     int slot = -1;
     for (int i = FIRST_USER_SLOT; i < EOS_MAX_TASKS; i++) {
+        /* Not a slot a CPU is still executing: a task that deleted itself
+         * runs on until its CPU switches away, and that switch stores its
+         * stack pointer into the slot (on SMP another CPU can create a task
+         * in between). */
+        if (task_cpu(i) >= 0) continue;
         if (g_tasks[i].entry == NULL ||
             g_tasks[i].state == EOS_TASK_DELETED) {
             slot = i;

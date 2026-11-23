@@ -79,6 +79,10 @@ uint32_t eos_port_cpu_id(void);
 
 /** Start CPUs 1 .. EOS_SMP_CORES-1; each calls eos_kernel_start_secondary(). */
 void eos_port_start_secondary_cpus(void);
+
+/** Make every other CPU reschedule, without rescheduling this one (the
+ *  scheduler calls it, so it must not pend this CPU's own switch). */
+void eos_port_kick_other_cpus(void);
 void eos_arch_irq_enable(uint32_t irq_num);
 void eos_arch_irq_disable(uint32_t irq_num);
 void eos_arch_irq_set_priority(uint32_t irq_num, uint8_t priority);
