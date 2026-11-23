@@ -45,6 +45,7 @@ to restore the board.
 | `scheduler_test.c` | Starts the kernel; workers progress only through the tick and the context switch; blinks the LED through the HAL and reads the pad back. Its tasks block almost at once, so it does not show that a preempted task keeps its registers |
 | `context_test.c`, `context_regcheck.S` | Three tasks that never block check a0..a15, SAR and a zero-overhead loop, and run 24-deep recursions through CALL4, CALL8 and CALL12 (longer than the 16-window register file), while the tick preempts them; any register the frame or a window spill loses, one restored from another task, or a task starved of its share of the CPU fails |
 | `periph_test.c` | ADC (with its eFuse calibration), DAC, PWM and UART1/2 through loopbacks inside the chip (board only; see below) |
+| `bus_test.c` | GPIO pulls on RTC and digital pads, SPI2/SPI3 in a MOSI-to-MISO loopback, and I2C0 against I2C1 as a slave (board only; see below) |
 | `fault_test.c` | A task returns; the port must report `EOS FATAL code=7` (`task_returned`, not any other fault) and run nothing after it |
 
 Mutation checks (each run in QEMU): with no window spill in the interrupt
@@ -172,6 +173,46 @@ CHECK GPIO25 digital again after the DAC -> 0 wrong of 20  PASS
 PERIPH TEST PASSED
 ```
 
+### SPI and I2C
+
+| API | ESP32 |
+|---|---|
+| SPI port 2 / 3 | SPI2 (HSPI) / SPI3 (VSPI): SCLK, MOSI, MISO on GPIO14, 13, 12 / 18, 23, 19 (`EOS_BOARD_SPIn_*_GPIO`); CS is any GPIO, held low for the whole transfer, or `EOS_ESP32_SPI_NO_CS` |
+| I2C port 0 / 1 | I2C0 / I2C1: SDA, SCL on GPIO21, 22 / 33, 32 (`EOS_BOARD_I2Cn_*_GPIO`), open drain with the internal pull-ups |
+
+- SPI: full duplex, modes 0-3, 8-bit words, MSB first, polled, any length
+  (through the 64-byte buffer). The clock is the fastest divider not above
+  the request (`eos_esp32_spi_get_hz()` reports it), from 152 Hz to APB/3
+  (26.67 MHz), ESP-IDF's limit through the GPIO matrix.
+- I2C: master, 7-bit addresses, 2.5 kHz to 1 MHz, any length (the 32-byte
+  FIFO is refilled between END commands). A NACK, lost arbitration or
+  timeout returns -1 and resets the controller. A polled slave is available
+  as a board API (`eos_esp32_i2c_slave_*`). The portable
+  `eos_i2c_write_reg()`/`eos_i2c_read_reg()` are stubs on every platform in
+  `hal_common.c` and still return -1.
+
+`bus_test.c` on the board:
+
+```
+CHECK gpio pull-up/pull-down read back on GPIO4, 33 (RTC pads) and 23: 4=ok 33=ok 23=ok  PASS
+CHECK spi2 loopback, modes 0-3 x 100 kHz/1/10/20/26.67 MHz, 200-byte transfers -> 20/20, CS idle high after each: yes, SCLK idles at CPOL: yes  PASS
+CHECK spi3 loopback, modes 0-3 x 100 kHz/1/10/20/26.67 MHz, 200-byte transfers -> 20/20, CS idle high after each: yes, SCLK idles at CPOL: yes  PASS
+CHECK spi2 write-only then read-only (read returns the 0xFF it clocks out)  PASS
+CHECK spi clock never above the request: 1000000->1000000 26000000->20000000 26666667->26666666 3000000->2962962 200->200 100->0  PASS
+CHECK spi rejects port 1, 16-bit words, 0 Hz, 27 MHz and a flash pin as CS  PASS
+CHECK i2c0 address reaches listening i2c1 slave 0x28 (no wire), master reports NACK, slave matched, other address ignored  PASS
+CHECK i2c rejects port 2, 1 kHz, 2 MHz, 10-bit address, empty read  PASS
+CHECK i2c data transfers: NOT RUN (join GPIO21-GPIO33 and GPIO22-GPIO32 to run them)
+BUS TEST PASSED
+```
+
+What these do not show: an SPI loopback samples the master's own output on
+its own edge, so a wrong clock phase (CPHA) would still pass; only CPOL is
+checked, as the SCLK idle level. An I2C bus is a wired AND that two pads
+cannot form inside the chip, and the ESP32 master stalls when its SDA input
+does not follow what it drives, so without wires the slave can only listen:
+I2C data transfers in either direction need the two jumpers.
+
 ESP32 UART behaviours the driver works around, each found on the board and
 matched against ESP-IDF's `uart_ll.h`:
 
@@ -207,9 +248,8 @@ matched against ESP-IDF's `uart_ll.h`:
   (`eos_arch_irq_register()`); routing a peripheral to one through the
   interrupt matrix is not implemented. `eos_arch_irq_set_priority()` does
   nothing, because Xtensa fixes each line's level in hardware.
-- The HAL implements GPIO, UART0-2, ADC, DAC and PWM (below). UART0 stays at
-  the 115200 8N1 the ROM set. SPI, I2C, timers, Wi-Fi and Bluetooth calls
-  return -1. GPIO refuses GPIO1/3 (the console), GPIO6-11 (the module's
+- The HAL implements GPIO, UART0-2, ADC, DAC, PWM, SPI and I2C (above).
+  UART0 stays at 115200 8N1. Timers, Wi-Fi and Bluetooth calls return -1. GPIO refuses GPIO1/3 (the console), GPIO6-11 (the module's
   flash), outputs on the input-only GPIO34-39, and pulls on GPIO34-39, which
   have none.
 - QEMU's GPIO model does not reflect outputs in `GPIO_IN`, hence

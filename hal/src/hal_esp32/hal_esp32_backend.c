@@ -81,14 +81,17 @@ bool esp32_pin_usable(uint16_t pin)
 #define GPIO_FUNC_IN_SEL(sig) (GPIO_BASE + 0x0130U + 4U * (sig))
 #define GPIO_SIG_IN_SEL       (1U << 7)   /* route through the matrix, not IO_MUX */
 
+static void pin_pulls(uint16_t pin, bool up, bool down);
+
 int esp32_pin_route_output(uint16_t pin, uint32_t signal)
 {
     if (!esp32_pin_usable(pin) || pin >= 34U || signal > SIG_GPIO_OUT_IDX) return -1;
     esp32_rtc_pad_release(pin);
     uint32_t mux = REG32(IO_MUX_BASE + s_iomux_offset[pin]);
-    mux &= ~(MCU_SEL_M | FUN_PU | FUN_PD);
+    mux &= ~MCU_SEL_M;
     mux |= (PIN_FUNC_GPIO << MCU_SEL_S) | FUN_IE;   /* IE: the pad can be read back */
     REG32(IO_MUX_BASE + s_iomux_offset[pin]) = mux;
+    pin_pulls(pin, false, false);
     REG32(GPIO_FUNC_OUT_SEL(pin)) = signal;
     if (pin < 32U) REG32(GPIO_ENABLE_W1TS) = 1U << pin;
     else           REG32(GPIO_ENABLE1_W1TS) = 1U << (pin - 32U);
@@ -107,6 +110,25 @@ int esp32_pin_route_input(uint16_t pin, uint32_t signal)
     return 0;
 }
 
+/* Pulls: an RTC-capable pad's are in its RTC IO register; the IO_MUX bits
+ * do nothing there. Both are written so neither is left stale. */
+static void pin_pulls(uint16_t pin, bool up, bool down)
+{
+    uint32_t reg = IO_MUX_BASE + s_iomux_offset[pin];
+    uint32_t mux = REG32(reg) & ~(FUN_PU | FUN_PD);
+    if (esp32_rtc_pad_pull(pin, up, down) == 0) {
+        if (up) mux |= FUN_PU;
+        if (down) mux |= FUN_PD;
+    }
+    REG32(reg) = mux;
+}
+
+void esp32_pin_pull_up(uint16_t pin, bool enable)
+{
+    if (!esp32_pin_usable(pin) || pin >= 34U) return;
+    pin_pulls(pin, enable, false);
+}
+
 static int esp32_gpio_init(const eos_gpio_config_t *cfg)
 {
     if (cfg == NULL || !esp32_pin_usable(cfg->pin)) return -1;
@@ -122,11 +144,10 @@ static int esp32_gpio_init(const eos_gpio_config_t *cfg)
     esp32_rtc_pad_release(pin);
 
     uint32_t mux = REG32(IO_MUX_BASE + s_iomux_offset[pin]);
-    mux &= ~(MCU_SEL_M | FUN_PU | FUN_PD);
+    mux &= ~MCU_SEL_M;
     mux |= (PIN_FUNC_GPIO << MCU_SEL_S) | FUN_IE;   /* IE: GPIO_IN reads the pad */
-    if (cfg->pull == EOS_GPIO_PULL_UP) mux |= FUN_PU;
-    else if (cfg->pull == EOS_GPIO_PULL_DOWN) mux |= FUN_PD;
     REG32(IO_MUX_BASE + s_iomux_offset[pin]) = mux;
+    pin_pulls(pin, cfg->pull == EOS_GPIO_PULL_UP, cfg->pull == EOS_GPIO_PULL_DOWN);
 
     if (cfg->mode == EOS_GPIO_OUTPUT) {
         REG32(GPIO_FUNC_OUT_SEL(pin)) = SIG_GPIO_OUT_IDX;
@@ -397,6 +418,10 @@ static const eos_hal_backend_t s_esp32_backend = {
     .spi_init    = esp32_spi_init,
     .spi_deinit  = esp32_spi_deinit,
     .spi_transfer = esp32_spi_transfer,
+    .i2c_init    = esp32_i2c_init,
+    .i2c_deinit  = esp32_i2c_deinit,
+    .i2c_write   = esp32_i2c_write,
+    .i2c_read    = esp32_i2c_read,
 };
 
 /* Selected by eos_hal_init() when built with -DEOS_HAL_BACKEND_ESP32. */

@@ -59,10 +59,25 @@ int  esp32_pin_route_input(uint16_t pin, uint32_t signal);
  *  digital GPIO and matrix paths until this clears it. */
 void esp32_rtc_pad_release(uint16_t gpio);
 
+/** Set the pulls of an RTC-capable pad (GPIO0, 2, 4, 12-15, 25-27, 32-39),
+ *  which live in its RTC IO register: on these pads the IO_MUX pull bits
+ *  have no effect (ESP-IDF gpio_ll_pullup_en() does the same). Returns 1 if
+ *  @p gpio is an RTC pad and was set, 0 if it is not one. */
+int  esp32_rtc_pad_pull(uint16_t gpio, bool up, bool down);
+
 /** GPIO through the backend (pin checks, RTC pad release) for the other
  *  ESP32 sources. */
 int  esp32_gpio_configure(const eos_gpio_config_t *cfg);
 void esp32_gpio_set(uint16_t pin, bool value);
+
+/** Turn @p pin's IO_MUX pull-up on (pull-down off) or both off. */
+void esp32_pin_pull_up(uint16_t pin, bool enable);
+
+/* I2C master (hal_esp32_i2c.c) */
+int  esp32_i2c_init(const eos_i2c_config_t *cfg);
+void esp32_i2c_deinit(uint8_t port);
+int  esp32_i2c_write(uint8_t port, uint16_t addr, const uint8_t *data, size_t len);
+int  esp32_i2c_read(uint8_t port, uint16_t addr, uint8_t *data, size_t len);
 
 /* SPI master (hal_esp32_spi.c). Through the GPIO matrix the master samples
  * MISO too early above APB/3 (26.67 MHz); the driver refuses faster clocks. */

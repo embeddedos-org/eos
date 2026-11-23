@@ -31,7 +31,8 @@
 
 /* ---- RTC pads -------------------------------------------------------------
  * The ADC and DAC reach a pin through its RTC pad: the pad's MUX_SEL bit
- * hands it from the digital IO_MUX to the RTC block. Values are those of
+ * hands it from the digital IO_MUX to the RTC block. An RTC pad's pull
+ * resistors are also here, whichever mux has the pad. Values are those of
  * ESP-IDF's rtc_io_desc[] (soc/esp32/rtc_io_periph.c), resolved from the
  * register headers.
  */
@@ -86,6 +87,17 @@ void esp32_rtc_pad_release(uint16_t gpio)
 {
     const rtc_pad_t *p = rtc_pad(gpio);
     if (p != NULL) REG32(p->reg) &= ~p->mux;
+}
+
+int esp32_rtc_pad_pull(uint16_t gpio, bool up, bool down)
+{
+    const rtc_pad_t *p = rtc_pad(gpio);
+    if (p == NULL) return 0;
+    uint32_t v = REG32(p->reg) & ~(p->rue | p->rde);
+    if (up) v |= p->rue;
+    if (down) v |= p->rde;
+    REG32(p->reg) = v;
+    return 1;
 }
 
 /* ---- ADC ------------------------------------------------------------------ */

@@ -77,3 +77,4 @@ sources:
   - hal/src/hal_esp32/hal_esp32_analog.c
   - hal/src/hal_esp32/hal_esp32_adc_cal.c
   - hal/src/hal_esp32/hal_esp32_spi.c
+  - hal/src/hal_esp32/hal_esp32_i2c.c

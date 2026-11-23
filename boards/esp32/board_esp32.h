@@ -114,6 +114,37 @@ int  eos_esp32_spi_set_loopback(uint8_t port, bool enable);
  *  is not initialised. */
 uint32_t eos_esp32_spi_get_hz(uint8_t port);
 
+/*
+ * I2C ports 0 and 1. GPIO21/22 are the DevKit's usual I2C pins; I2C1 uses
+ * GPIO33/32. Both are open drain with the internal pull-ups.
+ */
+#ifndef EOS_BOARD_I2C0_SDA_GPIO
+#define EOS_BOARD_I2C0_SDA_GPIO 21U
+#endif
+#ifndef EOS_BOARD_I2C0_SCL_GPIO
+#define EOS_BOARD_I2C0_SCL_GPIO 22U
+#endif
+#ifndef EOS_BOARD_I2C1_SDA_GPIO
+#define EOS_BOARD_I2C1_SDA_GPIO 33U
+#endif
+#ifndef EOS_BOARD_I2C1_SCL_GPIO
+#define EOS_BOARD_I2C1_SCL_GPIO 32U
+#endif
+
+/** Make I2C @p port a polled slave at 7-bit @p addr (the portable API has
+ *  no slave mode). */
+int  eos_esp32_i2c_slave_init(uint8_t port, uint16_t addr, uint32_t clock_hz);
+/** Queue up to 32 bytes for the master to read; returns how many fit. */
+int  eos_esp32_i2c_slave_queue(uint8_t port, const uint8_t *data, size_t len);
+/** Take up to @p max bytes the master wrote; returns how many. */
+int  eos_esp32_i2c_slave_take(uint8_t port, uint8_t *data, size_t max);
+/** True once slave @p port has matched its address on the bus. */
+bool eos_esp32_i2c_slave_addressed(uint8_t port);
+/** Self-test without wires: feed slave @p slave's inputs from master
+ *  @p master's pads, so it hears the master but cannot answer it (see
+ *  hal_esp32_i2c.c). */
+int  eos_esp32_i2c_slave_listen(uint8_t slave, uint8_t master);
+
 /** Connect UART @p port's TX to its own RX inside the peripheral (ports 1
  *  and 2, after eos_uart_init()). For self-tests; -1 for any other port. */
 int  eos_esp32_uart_set_loopback(uint8_t port, bool enable);

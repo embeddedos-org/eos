@@ -2,7 +2,7 @@
 // Copyright (c) 2026 EoS Project
 /**
  * @file bus_test.c
- * @brief On-board check of the ESP32 SPI master driver.
+ * @brief On-board check of the ESP32 SPI and I2C drivers.
  *
  * Every check is a loopback inside the chip, so a bare DevKit needs no wire:
  * the GPIO matrix feeds each SPI port's MISO from its own MOSI pad, and a
@@ -11,6 +11,15 @@
  * three times under one chip select. A loopback cannot show the clock
  * phase (the master samples its own output on its own edge), so CPHA is not
  * checked; CPOL is, as the idle level of the SCLK pad.
+ *
+ * I2C0 is the master and I2C1 a slave at 0x28. An I2C bus is a wired AND,
+ * which two pads cannot form inside the chip, so with no wires the slave
+ * only listens to the master's pads (eos_esp32_i2c_slave_listen()): it must
+ * match the address the master sends, ignore another, and the master must
+ * report the NACK and keep working. With GPIO21-GPIO33 and GPIO22-GPIO32
+ * joined (detected), writes of up to 32 bytes (the slave's FIFO), reads of
+ * the slave's queued bytes and a NACK from an absent address run too;
+ * without them those print NOT RUN, not PASS.
  *
  * Prints one CHECK line per item and "BUS TEST PASSED" or "BUS TEST FAILED".
  * Needs a board: QEMU's esp32 machine does not model SPI2/SPI3 through the
@@ -131,15 +140,179 @@ static void test_spi_rejects(void)
     check(bad == 0);
 }
 
+/* ---- I2C: master I2C0, slave I2C1 at 0x28 ---------------------------- */
+
+#define I2C_SLAVE_ADDR 0x28U
+
+static bool i2c_pair(uint32_t hz)
+{
+    eos_i2c_config_t m = { .port = 0, .clock_hz = hz, .own_addr = 0 };
+    return eos_i2c_init(&m) == 0 && eos_esp32_i2c_slave_init(1, I2C_SLAVE_ADDR, hz) == 0;
+}
+
+/* Wired bus: GPIO21-GPIO33 and GPIO22-GPIO32 joined. Detected by driving one
+ * end through GPIO and reading the other with its pull-up on. */
+static bool i2c_wired(void)
+{
+    const uint16_t ends[2][2] = { { EOS_BOARD_I2C0_SDA_GPIO, EOS_BOARD_I2C1_SDA_GPIO },
+                                  { EOS_BOARD_I2C0_SCL_GPIO, EOS_BOARD_I2C1_SCL_GPIO } };
+    bool wired = true;
+    for (int i = 0; i < 2; i++) {
+        eos_gpio_config_t in = { .pin = ends[i][1], .mode = EOS_GPIO_INPUT, .pull = EOS_GPIO_PULL_UP };
+        eos_gpio_config_t out = { .pin = ends[i][0], .mode = EOS_GPIO_OUTPUT, .pull = EOS_GPIO_PULL_NONE };
+        eos_gpio_write(ends[i][0], false);
+        eos_gpio_init(&in);
+        eos_gpio_init(&out);
+        uint32_t t0 = eos_esp32_ccount();
+        while (eos_esp32_ccount() - t0 < 24000U) {
+        }
+        wired = wired && !eos_gpio_read(ends[i][1]);
+        eos_gpio_write(ends[i][0], true);
+        t0 = eos_esp32_ccount();
+        while (eos_esp32_ccount() - t0 < 24000U) {
+        }
+        wired = wired && eos_gpio_read(ends[i][1]);
+        out.mode = EOS_GPIO_INPUT;
+        eos_gpio_init(&out);
+    }
+    return wired;
+}
+
+static void test_i2c_address_no_wire(void)
+{
+    /* The slave hears the master's pads but cannot answer: the master must
+     * report the NACK, and the slave must have matched the address the
+     * master sent. Then the master must still work: a second attempt
+     * behaves the same. */
+    put("CHECK i2c0 address reaches listening i2c1 slave 0x28 (no wire), master reports NACK");
+    bool ok = i2c_pair(100000U) && eos_esp32_i2c_slave_listen(1, 0) == 0;
+    s_tx[0] = 0x11;
+    bool nack = ok && eos_i2c_write(0, I2C_SLAVE_ADDR, s_tx, 1) < 0;
+    bool heard = eos_esp32_i2c_slave_addressed(1);
+    ok = ok && eos_esp32_i2c_slave_init(1, 0x29U, 100000U) == 0 &&
+         eos_esp32_i2c_slave_listen(1, 0) == 0;
+    bool nack2 = ok && eos_i2c_read(0, I2C_SLAVE_ADDR, s_rx, 1) < 0;
+    bool other = !eos_esp32_i2c_slave_addressed(1);   /* 0x29 must not match 0x28 */
+    put(heard ? ", slave matched" : ", slave did not match");
+    put(other ? ", other address ignored" : ", other address matched");
+    check(nack && heard && nack2 && other);
+}
+
+static void test_i2c_write(uint32_t hz, uint32_t len)
+{
+    put("CHECK i2c0 -> i2c1 slave 0x28 (wired): write ");
+    put_u(len);
+    put(" bytes at ");
+    put_u(hz / 1000U);
+    put(" kHz ->");
+    bool ok = i2c_pair(hz);
+    for (uint32_t i = 0; i < len; i++) s_tx[i] = (uint8_t)(0xA0U + i * 7U);
+    int n = ok ? eos_i2c_write(0, I2C_SLAVE_ADDR, s_tx, len) : -1;
+    int got = eos_esp32_i2c_slave_take(1, s_rx, sizeof(s_rx));
+    put(" master ");
+    put(n == (int)len ? "ok" : "error");
+    put(", slave got ");
+    put_u(got < 0 ? 0U : (uint32_t)got);
+    bool same = n == (int)len && got == (int)len;
+    for (uint32_t i = 0; same && i < len; i++) same = s_rx[i] == s_tx[i];
+    put(same ? ", data matches" : ", data differs");
+    check(same);
+}
+
+static void test_i2c_read(uint32_t hz, uint32_t len)
+{
+    put("CHECK i2c0 <- i2c1 slave 0x28 (wired): read ");
+    put_u(len);
+    put(" bytes at ");
+    put_u(hz / 1000U);
+    put(" kHz ->");
+    bool ok = i2c_pair(hz);
+    for (uint32_t i = 0; i < len; i++) s_tx[i] = (uint8_t)(0x5AU ^ (i * 13U));
+    ok = ok && eos_esp32_i2c_slave_queue(1, s_tx, len) == (int)len;
+    for (uint32_t i = 0; i < len; i++) s_rx[i] = 0;
+    int n = ok ? eos_i2c_read(0, I2C_SLAVE_ADDR, s_rx, len) : -1;
+    bool same = n == (int)len;
+    for (uint32_t i = 0; same && i < len; i++) same = s_rx[i] == s_tx[i];
+    put(same ? " data matches" : " data differs");
+    check(same);
+}
+
+static void test_i2c_nack(void)
+{
+    put("CHECK i2c0 write to absent 0x50 fails, then 0x28 works (wired)");
+    bool ok = i2c_pair(100000U);
+    s_tx[0] = 1;
+    bool nack = eos_i2c_write(0, 0x50U, s_tx, 1) < 0;
+    bool after = ok && eos_i2c_write(0, I2C_SLAVE_ADDR, s_tx, 1) == 1;
+    check(nack && after);
+}
+
+static void test_i2c_rejects(void)
+{
+    put("CHECK i2c rejects port 2, 1 kHz, 2 MHz, 10-bit address, empty read");
+    eos_i2c_config_t c = { .port = 2, .clock_hz = 100000U, .own_addr = 0 };
+    int bad = eos_i2c_init(&c) == 0;
+    c.port = 0; c.clock_hz = 1000U;    bad += eos_i2c_init(&c) == 0;
+    c.clock_hz = 2000000U;             bad += eos_i2c_init(&c) == 0;
+    c.clock_hz = 100000U;
+    bad += eos_i2c_init(&c) != 0;
+    bad += eos_i2c_write(0, 0x150U, s_tx, 1) >= 0;
+    bad += eos_i2c_read(0, I2C_SLAVE_ADDR, s_rx, 0) >= 0;
+    check(bad == 0);
+}
+
+/* Pulls on an RTC-capable pad (GPIO4, 33) live in the RTC IO register and
+ * on a digital pad (GPIO23) in IO_MUX; an input with nothing attached must
+ * follow either. */
+static void test_gpio_pulls(void)
+{
+    static const uint16_t pins[] = { 4, 33, 23 };
+    put("CHECK gpio pull-up/pull-down read back on GPIO4, 33 (RTC pads) and 23:");
+    bool ok = true;
+    for (uint32_t i = 0; i < sizeof(pins) / sizeof(pins[0]); i++) {
+        eos_gpio_config_t g = { .pin = pins[i], .mode = EOS_GPIO_INPUT, .pull = EOS_GPIO_PULL_UP };
+        bool up = eos_gpio_init(&g) == 0;
+        uint32_t t0 = eos_esp32_ccount();
+        while (eos_esp32_ccount() - t0 < 240000U) {
+        }
+        up = up && eos_gpio_read(pins[i]);
+        g.pull = EOS_GPIO_PULL_DOWN;
+        bool down = eos_gpio_init(&g) == 0;
+        t0 = eos_esp32_ccount();
+        while (eos_esp32_ccount() - t0 < 240000U) {
+        }
+        down = down && !eos_gpio_read(pins[i]);
+        put(" ");
+        put_u(pins[i]);
+        put(up && down ? "=ok" : "=bad");
+        ok = ok && up && down;
+    }
+    check(ok);
+}
+
 int main(void)
 {
     eos_hal_init();
     put("bus_test: starting\n");
+    test_gpio_pulls();
     test_spi_loopback(2);
     test_spi_loopback(3);
     test_spi_write_read();
     test_spi_clock();
     test_spi_rejects();
+    test_i2c_address_no_wire();
+    test_i2c_rejects();
+    if (i2c_wired()) {
+        test_i2c_write(100000U, 4);
+        test_i2c_write(400000U, 31);
+        test_i2c_write(100000U, 32);   /* the slave's RX FIFO holds 32 */
+        test_i2c_read(100000U, 1);
+        test_i2c_read(400000U, 16);
+        test_i2c_read(100000U, 32);
+        test_i2c_nack();
+    } else {
+        put("CHECK i2c data transfers: NOT RUN (join GPIO21-GPIO33 and GPIO22-GPIO32 to run them)\n");
+    }
     put(s_failures == 0 ? "BUS TEST PASSED\n" : "BUS TEST FAILED\n");
     for (;;) {
         __asm volatile ("waiti 0");
