@@ -12,6 +12,7 @@
 
 #include <eos/hal.h>
 #include "board_esp32.h"
+#include "hal_esp32_internal.h"
 
 #define REG32(addr) (*(volatile uint32_t *)(uintptr_t)(addr))
 
@@ -68,14 +69,41 @@ static int gpio_reserved(uint16_t pin)
     return pin == 1U || pin == 3U || (pin >= 6U && pin <= 11U);
 }
 
-static int gpio_usable(uint16_t pin)
+bool esp32_pin_usable(uint16_t pin)
 {
     return pin < ESP32_GPIO_COUNT && s_iomux_offset[pin] != 0U && !gpio_reserved(pin);
 }
 
+#define GPIO_FUNC_IN_SEL(sig) (GPIO_BASE + 0x0130U + 4U * (sig))
+#define GPIO_SIG_IN_SEL       (1U << 7)   /* route through the matrix, not IO_MUX */
+
+int esp32_pin_route_output(uint16_t pin, uint32_t signal)
+{
+    if (!esp32_pin_usable(pin) || pin >= 34U || signal > SIG_GPIO_OUT_IDX) return -1;
+    uint32_t mux = REG32(IO_MUX_BASE + s_iomux_offset[pin]);
+    mux &= ~(MCU_SEL_M | FUN_PU | FUN_PD);
+    mux |= (PIN_FUNC_GPIO << MCU_SEL_S) | FUN_IE;   /* IE: the pad can be read back */
+    REG32(IO_MUX_BASE + s_iomux_offset[pin]) = mux;
+    REG32(GPIO_FUNC_OUT_SEL(pin)) = signal;
+    if (pin < 32U) REG32(GPIO_ENABLE_W1TS) = 1U << pin;
+    else           REG32(GPIO_ENABLE1_W1TS) = 1U << (pin - 32U);
+    return 0;
+}
+
+int esp32_pin_route_input(uint16_t pin, uint32_t signal)
+{
+    if (!esp32_pin_usable(pin) || signal >= SIG_GPIO_OUT_IDX) return -1;
+    uint32_t mux = REG32(IO_MUX_BASE + s_iomux_offset[pin]);
+    mux &= ~MCU_SEL_M;
+    mux |= (PIN_FUNC_GPIO << MCU_SEL_S) | FUN_IE;
+    REG32(IO_MUX_BASE + s_iomux_offset[pin]) = mux;
+    REG32(GPIO_FUNC_IN_SEL(signal)) = GPIO_SIG_IN_SEL | pin;
+    return 0;
+}
+
 static int esp32_gpio_init(const eos_gpio_config_t *cfg)
 {
-    if (cfg == NULL || !gpio_usable(cfg->pin)) return -1;
+    if (cfg == NULL || !esp32_pin_usable(cfg->pin)) return -1;
     uint16_t pin = cfg->pin;
 
     if (cfg->mode != EOS_GPIO_INPUT && cfg->mode != EOS_GPIO_OUTPUT) return -1;
@@ -105,21 +133,21 @@ static int esp32_gpio_init(const eos_gpio_config_t *cfg)
 
 static void esp32_gpio_write(uint16_t pin, bool value)
 {
-    if (!gpio_usable(pin) || pin >= 34U) return;
+    if (!esp32_pin_usable(pin) || pin >= 34U) return;
     if (pin < 32U) REG32(value ? GPIO_OUT_W1TS : GPIO_OUT_W1TC) = 1U << pin;
     else           REG32(value ? GPIO_OUT1_W1TS : GPIO_OUT1_W1TC) = 1U << (pin - 32U);
 }
 
 static bool esp32_gpio_read(uint16_t pin)
 {
-    if (!gpio_usable(pin)) return false;
+    if (!esp32_pin_usable(pin)) return false;
     if (pin < 32U) return (REG32(GPIO_IN_REG) >> pin) & 1U;
     return (REG32(GPIO_IN1_REG) >> (pin - 32U)) & 1U;
 }
 
 static void esp32_gpio_toggle(uint16_t pin)
 {
-    if (!gpio_usable(pin) || pin >= 34U) return;
+    if (!esp32_pin_usable(pin) || pin >= 34U) return;
     /* Toggle the output latch, not the pad: an external load cannot make
      * this flip the wrong way. */
     bool on = (pin < 32U) ? ((REG32(GPIO_OUT_REG) >> pin) & 1U)
