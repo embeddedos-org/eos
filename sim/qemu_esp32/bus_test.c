@@ -28,6 +28,7 @@
 #include <stdbool.h>
 #include <stdint.h>
 #include "eos/hal.h"
+#include "eos/hal_extended.h"
 #include "board_esp32.h"
 
 #define REG32(a) (*(volatile uint32_t *)(uintptr_t)(a))
@@ -290,6 +291,122 @@ static void test_gpio_pulls(void)
     check(ok);
 }
 
+/* ---- I2S0: DOUT looped to DIN in the matrix ----------------------------- */
+
+/* 14 leading zeros: the receiver's FIFO is full of older words when the
+ * pattern starts, and drops what arrives before eos_audio_record() reads;
+ * the zeros take that loss. 14 + 48 + the closing zero frame is 64 words,
+ * one transmit FIFO, so eos_audio_play() returns at once instead of waiting
+ * for the FIFO to drain while the receiver overflows. */
+#define LEAD 14
+static int16_t s_pcm_tx[LEAD + 48], s_pcm_rx[400];
+
+static int find_pattern(int n_bytes, int div)
+{
+    for (int i = 0; n_bytes > 0 && i + 48 <= n_bytes / 2; i++) {
+        bool m = true;
+        for (int k = 0; m && k < 48; k++) m = s_pcm_rx[i + k] == s_pcm_tx[LEAD + k] / div;
+        if (m) return i;
+    }
+    return -1;
+}
+
+/* Count rising edges on @p pin over @p ms by sampling GPIO_IN. */
+static uint32_t edges(uint16_t pin, uint32_t ms)
+{
+    uint32_t n = 0, prev = (REG32(GPIO_IN_REG) >> pin) & 1U;
+    uint32_t t0 = eos_esp32_ccount(), span = ms * (EOS_ESP32_CPU_MHZ * 1000U);
+    while (eos_esp32_ccount() - t0 < span) {
+        uint32_t v = (REG32(GPIO_IN_REG) >> pin) & 1U;
+        if (v && !prev) n++;
+        prev = v;
+    }
+    return n;
+}
+
+static void test_i2s(uint32_t rate)
+{
+    put("CHECK i2s0 ");
+    put_u(rate);
+    put(" Hz stereo 16-bit:");
+    eos_audio_config_t cfg = { .id = 0, .sample_rate = rate, .channels = 2,
+                               .format = EOS_AUDIO_FMT_PCM_16 };
+    bool ok = eos_audio_init(&cfg) == 0 && eos_esp32_i2s_set_loopback(true) == 0;
+    uint32_t got_rate = eos_esp32_i2s_get_rate();
+    uint32_t ws = edges(EOS_BOARD_I2S_WS_GPIO, 20) * 50U;     /* per second */
+    uint32_t bck = edges(EOS_BOARD_I2S_BCK_GPIO, 2) * 500U;
+    put(" divider ");
+    put_u(got_rate);
+    put(" Hz, WS ");
+    put_u(ws);
+    put(" Hz, BCK ");
+    put_u(bck);
+    put(" Hz;");
+    for (uint32_t i = 0; i < 48U; i++) {
+        s_pcm_tx[LEAD + i] = (int16_t)(0x1234 + (int32_t)i * 0x0507 - (int32_t)(i & 1U) * 0x4000);
+    }
+    ok = ok && eos_audio_play(0, (const uint8_t *)s_pcm_tx, sizeof(s_pcm_tx)) == (int)sizeof(s_pcm_tx);
+    int n = ok ? eos_audio_record(0, (uint8_t *)s_pcm_rx, sizeof(s_pcm_rx), 100) : -1;
+    /* The receiver runs from the start: find the pattern in what it heard. */
+    int at = find_pattern(n, 1);
+    put(at >= 0 ? " 48 samples looped back in order" : " pattern not found");
+    eos_audio_deinit(0);
+    bool clocks = got_rate > rate * 999U / 1000U && got_rate < rate * 1001U / 1000U &&
+                  ws > rate * 97U / 100U && ws < rate * 103U / 100U &&
+                  bck > rate * 32U * 97U / 100U && bck < rate * 32U * 103U / 100U;
+    check(ok && at >= 0 && clocks);
+}
+
+static void test_i2s_mono(void)
+{
+    /* One channel: each sample goes out in both slots and comes back once.
+     * 7 lead zeros + 24 samples, doubled, plus the zero frame: 64 words. */
+    static int16_t tx[31], rx[200];
+    put("CHECK i2s0 mono 16 kHz: 24 samples looped back in order");
+    eos_audio_config_t cfg = { .id = 0, .sample_rate = 16000, .channels = 1,
+                               .format = EOS_AUDIO_FMT_PCM_16 };
+    bool ok = eos_audio_init(&cfg) == 0 && eos_esp32_i2s_set_loopback(true) == 0;
+    for (uint32_t i = 0; i < 24U; i++) tx[7U + i] = (int16_t)(-3000 + (int32_t)i * 251);
+    ok = ok && eos_audio_play(0, (const uint8_t *)tx, sizeof(tx)) == (int)sizeof(tx);
+    int n = ok ? eos_audio_record(0, (uint8_t *)rx, sizeof(rx), 100) : -1;
+    int at = -1;
+    for (int i = 0; n > 0 && i + 24 <= n / 2 && at < 0; i++) {
+        bool m = true;
+        for (int k = 0; m && k < 24; k++) m = rx[i + k] == tx[7 + k];
+        if (m) at = i;
+    }
+    eos_audio_deinit(0);
+    check(ok && n == (int)sizeof(rx) && at >= 0);
+}
+
+static void test_i2s_volume(void)
+{
+    put("CHECK i2s0 volume 50% halves, mute zeroes, and the line idles at 0 after play:");
+    eos_audio_config_t cfg = { .id = 0, .sample_rate = 16000, .channels = 2,
+                               .format = EOS_AUDIO_FMT_PCM_16 };
+    bool ok = eos_audio_init(&cfg) == 0 && eos_esp32_i2s_set_loopback(true) == 0;
+    for (uint32_t i = 0; i < 48U; i++) s_pcm_tx[LEAD + i] = (int16_t)(1000 + (int32_t)i * 100);
+    ok = ok && eos_audio_set_volume(0, 50) == 0;
+    ok = ok && eos_audio_play(0, (const uint8_t *)s_pcm_tx, sizeof(s_pcm_tx)) > 0;
+    int n = ok ? eos_audio_record(0, (uint8_t *)s_pcm_rx, sizeof(s_pcm_rx), 100) : -1;
+    int at = find_pattern(n, 2);
+    /* After the pattern and the closing zero frame, only zeros. */
+    bool idle = at >= 0;
+    for (int i = at + 48 + 2; idle && i < n / 2; i++) idle = s_pcm_rx[i] == 0;
+    eos_audio_set_volume(0, 100);
+    ok = ok && eos_audio_mute(0, true) == 0;
+    ok = ok && eos_audio_play(0, (const uint8_t *)s_pcm_tx, sizeof(s_pcm_tx)) > 0;
+    n = ok ? eos_audio_record(0, (uint8_t *)s_pcm_rx, sizeof(s_pcm_rx), 100) : -1;
+    bool silent = n > 0;
+    for (int i = 0; silent && i < n / 2; i++) silent = s_pcm_rx[i] == 0;
+    eos_audio_mute(0, false);
+    eos_audio_deinit(0);
+    put(at >= 0 ? " halved" : " not halved");
+    put(idle ? ", idles at 0" : ", does not idle at 0");
+    put(silent ? ", muted silent" : ", muted not silent");
+    check(ok && at >= 0 && idle && silent);
+}
+
 int main(void)
 {
     eos_hal_init();
@@ -300,6 +417,10 @@ int main(void)
     test_spi_write_read();
     test_spi_clock();
     test_spi_rejects();
+    test_i2s(8000U);
+    test_i2s(44100U);
+    test_i2s_mono();
+    test_i2s_volume();
     test_i2c_address_no_wire();
     test_i2c_rejects();
     if (i2c_wired()) {

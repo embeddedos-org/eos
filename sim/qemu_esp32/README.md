@@ -45,7 +45,7 @@ to restore the board.
 | `scheduler_test.c` | Starts the kernel; workers progress only through the tick and the context switch; blinks the LED through the HAL and reads the pad back. Its tasks block almost at once, so it does not show that a preempted task keeps its registers |
 | `context_test.c`, `context_regcheck.S` | Three tasks that never block check a0..a15, SAR and a zero-overhead loop, and run 24-deep recursions through CALL4, CALL8 and CALL12 (longer than the 16-window register file), while the tick preempts them; any register the frame or a window spill loses, one restored from another task, or a task starved of its share of the CPU fails |
 | `periph_test.c` | ADC (with its eFuse calibration), DAC, PWM and UART1/2 through loopbacks inside the chip (board only; see below) |
-| `bus_test.c` | GPIO pulls on RTC and digital pads, SPI2/SPI3 in a MOSI-to-MISO loopback, and I2C0 against I2C1 as a slave (board only; see below) |
+| `bus_test.c` | GPIO pulls on RTC and digital pads, SPI2/SPI3 in a MOSI-to-MISO loopback, I2S0 in a DOUT-to-DIN loopback with WS/BCK measured on the pads, and I2C0 against I2C1 as a slave (board only; see below) |
 | `fault_test.c` | A task returns; the port must report `EOS FATAL code=7` (`task_returned`, not any other fault) and run nothing after it |
 
 Mutation checks (each run in QEMU): with no window spill in the interrupt
@@ -173,12 +173,13 @@ CHECK GPIO25 digital again after the DAC -> 0 wrong of 20  PASS
 PERIPH TEST PASSED
 ```
 
-### SPI and I2C
+### SPI, I2C and I2S
 
 | API | ESP32 |
 |---|---|
 | SPI port 2 / 3 | SPI2 (HSPI) / SPI3 (VSPI): SCLK, MOSI, MISO on GPIO14, 13, 12 / 18, 23, 19 (`EOS_BOARD_SPIn_*_GPIO`); CS is any GPIO, held low for the whole transfer, or `EOS_ESP32_SPI_NO_CS` |
 | I2C port 0 / 1 | I2C0 / I2C1: SDA, SCL on GPIO21, 22 / 33, 32 (`EOS_BOARD_I2Cn_*_GPIO`), open drain with the internal pull-ups |
+| Audio id 0 (`-DEOS_ENABLE_AUDIO=1`) | I2S0 master: BCK, WS, DOUT, DIN on GPIO27, 26, 25, 35 (`EOS_BOARD_I2S_*_GPIO`) |
 
 - SPI: full duplex, modes 0-3, 8-bit words, MSB first, polled, any length
   (through the 64-byte buffer). The clock is the fastest divider not above
@@ -191,6 +192,17 @@ PERIPH TEST PASSED
   `eos_i2c_write_reg()`/`eos_i2c_read_reg()` are stubs on every platform in
   `hal_common.c` and still return -1.
 
+- Audio (I2S0): Philips I2S, 16-bit, 1 or 2 channels, 8-48 kHz (MCLK
+  256 x fs from the 160 MHz PLL through the fractional divider; BCK 32 x fs),
+  transmit and receive full duplex on shared BCK/WS. The CPU feeds the
+  64-word FIFOs (no DMA), so: capture is continuous only while
+  `eos_audio_record()` runs and may start with up to 64 older words; a
+  `eos_audio_play()` of more than 64 words waits for the FIFO, and the
+  receiver drops what arrives meanwhile. Every buffer ends with a zero
+  frame, because the transmitter repeats its last word when the FIFO runs
+  dry (it held the last sample, a DC offset, until this was added). Volume
+  and mute scale samples in software.
+
 `bus_test.c` on the board:
 
 ```
@@ -200,6 +212,10 @@ CHECK spi3 loopback, modes 0-3 x 100 kHz/1/10/20/26.67 MHz, 200-byte transfers -
 CHECK spi2 write-only then read-only (read returns the 0xFF it clocks out)  PASS
 CHECK spi clock never above the request: 1000000->1000000 26000000->20000000 26666667->26666666 3000000->2962962 200->200 100->0  PASS
 CHECK spi rejects port 1, 16-bit words, 0 Hz, 27 MHz and a flash pin as CS  PASS
+CHECK i2s0 8000 Hz stereo 16-bit: divider 8000 Hz, WS 7950 Hz, BCK 256000 Hz; 48 samples looped back in order  PASS
+CHECK i2s0 44100 Hz stereo 16-bit: divider 44099 Hz, WS 44050 Hz, BCK 1411500 Hz; 48 samples looped back in order  PASS
+CHECK i2s0 mono 16 kHz: 24 samples looped back in order  PASS
+CHECK i2s0 volume 50% halves, mute zeroes, and the line idles at 0 after play: halved, idles at 0, muted silent  PASS
 CHECK i2c0 address reaches listening i2c1 slave 0x28 (no wire), master reports NACK, slave matched, other address ignored  PASS
 CHECK i2c rejects port 2, 1 kHz, 2 MHz, 10-bit address, empty read  PASS
 CHECK i2c data transfers: NOT RUN (join GPIO21-GPIO33 and GPIO22-GPIO32 to run them)
@@ -248,7 +264,8 @@ matched against ESP-IDF's `uart_ll.h`:
   (`eos_arch_irq_register()`); routing a peripheral to one through the
   interrupt matrix is not implemented. `eos_arch_irq_set_priority()` does
   nothing, because Xtensa fixes each line's level in hardware.
-- The HAL implements GPIO, UART0-2, ADC, DAC, PWM, SPI and I2C (above).
+- The HAL implements GPIO, UART0-2, ADC, DAC, PWM, SPI, I2C and I2S
+  audio (above).
   UART0 stays at 115200 8N1. Timers, Wi-Fi and Bluetooth calls return -1. GPIO refuses GPIO1/3 (the console), GPIO6-11 (the module's
   flash), outputs on the input-only GPIO34-39, and pulls on GPIO34-39, which
   have none.

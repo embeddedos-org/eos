@@ -145,6 +145,29 @@ bool eos_esp32_i2c_slave_addressed(uint8_t port);
  *  hal_esp32_i2c.c). */
 int  eos_esp32_i2c_slave_listen(uint8_t slave, uint8_t master);
 
+/*
+ * I2S0 (audio id 0): BCK, WS and DOUT are outputs, DIN an input (GPIO35 is
+ * input-only, which suits it). GPIO25/26 are also the DAC outputs.
+ */
+#ifndef EOS_BOARD_I2S_BCK_GPIO
+#define EOS_BOARD_I2S_BCK_GPIO  27U
+#endif
+#ifndef EOS_BOARD_I2S_WS_GPIO
+#define EOS_BOARD_I2S_WS_GPIO   26U
+#endif
+#ifndef EOS_BOARD_I2S_DOUT_GPIO
+#define EOS_BOARD_I2S_DOUT_GPIO 25U
+#endif
+#ifndef EOS_BOARD_I2S_DIN_GPIO
+#define EOS_BOARD_I2S_DIN_GPIO  35U
+#endif
+
+/** Feed I2S0's serial input from its own DOUT pad (after eos_audio_init()),
+ *  for self-tests. */
+int  eos_esp32_i2s_set_loopback(bool enable);
+/** I2S0's actual sample rate from the clock divider, 0 if not running. */
+uint32_t eos_esp32_i2s_get_rate(void);
+
 /** Connect UART @p port's TX to its own RX inside the peripheral (ports 1
  *  and 2, after eos_uart_init()). For self-tests; -1 for any other port. */
 int  eos_esp32_uart_set_loopback(uint8_t port, bool enable);

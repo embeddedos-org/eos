@@ -35,10 +35,12 @@ cflags:
   - -DEOS_SYS_CLOCK_HZ=240000000U
   # eos_hal_init() registers hal/src/hal_esp32 (GPIO, UART0-2).
   - -DEOS_HAL_BACKEND_ESP32
-  # Extended HAL parts the ESP32 port implements (hal_esp32_analog.c).
+  # Extended HAL parts the ESP32 port implements (hal_esp32_analog.c,
+  # hal_esp32_i2s.c).
   - -DEOS_ENABLE_ADC=1
   - -DEOS_ENABLE_DAC=1
   - -DEOS_ENABLE_PWM=1
+  - -DEOS_ENABLE_AUDIO=1
 includes:
   - kernel/include
   - include
@@ -78,3 +80,4 @@ sources:
   - hal/src/hal_esp32/hal_esp32_adc_cal.c
   - hal/src/hal_esp32/hal_esp32_spi.c
   - hal/src/hal_esp32/hal_esp32_i2c.c
+  - hal/src/hal_esp32/hal_esp32_i2s.c
