@@ -246,6 +246,20 @@ jobs:
           xtensa-esp32-elf-size _build_esp32/scheduler.elf
           sim/qemu_esp32/run.sh _build_esp32/scheduler.flash.bin 60
 
+      # Secure Boot V2 and flash encryption, with keys made on this runner
+      # for this run only: secure_burn.sh (the script a board is burned with)
+      # burns QEMU's emulated eFuses, then the ROM must boot the signed,
+      # encrypted scheduler image and refuse an unsigned one, a tampered one
+      # and an unencrypted one.
+      - name: Secure boot and flash encryption on QEMU (sim/qemu_esp32)
+        run: |
+          keys=$(mktemp -d)
+          espsecure generate_signing_key --version 2 --scheme rsa3072 "$keys/signing.pem"
+          espsecure generate_flash_encryption_key "$keys/flash.bin"
+          sim/qemu_esp32/secure_rehearse.sh _build_esp32/scheduler.bin \
+            "$keys/signing.pem" "$keys/flash.bin"
+          rm -rf "$keys"
+
       # The scheduler test's tasks block almost at once, so the tick seldom
       # interrupts a task with live registers. Here three tasks never block
       # and check a0..a15, SAR and a zero-overhead loop while the tick

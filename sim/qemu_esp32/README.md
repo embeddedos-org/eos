@@ -177,6 +177,91 @@ ESP-IDF services the libraries call (`esp_timer`, the event loop, NVS,
 interrupt allocation, newlib system calls); (3) PHY initialisation and RF
 calibration. Bluetooth adds the controller library and its own adapter.
 
+## Secure Boot V2 and flash encryption
+
+The boot ROM of an ESP32 rev3 can check an RSA-3072 signature on the image
+at 0x1000 (Secure Boot V2) and decrypt flash on the fly (flash encryption).
+EoS is that image, so nothing in EoS changes: the image is signed and
+encrypted on the host, and eFuses turn the checks on. Three scripts do it:
+
+- `secure_image.sh IN.bin OUT.bin SIGNING_KEY.pem [FLASH_KEY.bin]` signs
+  the image `build.sh` wrote, verifies the signature, and with a flash key
+  encrypts it for 0x1000 and checks it decrypts back. OUT.bin is written
+  only if every step succeeded.
+- `secure_burn.sh PORT SIGNING_KEY.pem FLASH_KEY.bin` burns, in order, the
+  flash key into BLOCK1 (read- and write-protected), the signing key's
+  public digest into BLOCK2 (write-protected), `FLASH_CRYPT_CONFIG=0xF`,
+  `FLASH_CRYPT_CNT=1`, `ABS_DONE_1`, and the write protection of `RD_DIS`
+  (as ESP-IDF does even in development mode: otherwise someone could later
+  read-protect BLOCK2 and the ROM would refuse every image). It refuses a
+  chip that is not rev3, is not on the 256-bit coding scheme, or already has
+  either feature on, and fails unless the chip reads back as expected,
+  including the read and write protections. It needs
+  `EOS_BURN_CONFIRM=burn-permanently` for any port.
+- `secure_rehearse.sh IMAGE.bin SIGNING_KEY.pem FLASH_KEY.bin` runs
+  `secure_burn.sh` against QEMU's emulated eFuses, then requires the ROM to
+  boot the signed, encrypted image and to refuse an unsigned image, a
+  tampered one and an unencrypted one. CI runs it with keys made for the
+  run. QEMU runs the real ESP32 ROM: with `ABS_DONE_1` set it printed
+  `secure boot verification failed` for an unsigned image that booted
+  before.
+
+This is **development mode**, and it does not protect against someone with
+the board's USB port: UART download mode stays on, and it can run code in
+RAM that reads flash through the decrypting cache. Release mode would also
+burn `DISABLE_DL_ENCRYPT`, `DISABLE_DL_DECRYPT`, `DISABLE_DL_CACHE`,
+`JTAG_DISABLE`, `CONSOLE_DEBUG_DISABLE`, the rest of `FLASH_CRYPT_CNT` (and
+write-protect it), and optionally `UART_DOWNLOAD_DIS`; after
+`UART_DOWNLOAD_DIS` the board can never be reflashed over USB. None of these
+are burned. A flash key generated on the host, as here, exists outside the
+chip; ESP-IDF's production flow generates it on the chip instead.
+
+What is permanent once burned: the chip boots only images signed by that
+signing key, for its whole life. If the key is lost, the board can never run
+new firmware from 0x1000. Development mode lets flash encryption be turned
+off up to three times by burning more `FLASH_CRYPT_CNT` bits; secure boot
+cannot be turned off.
+
+Procedure for a board (run the key commands yourself; keep the keys
+somewhere backed up and offline):
+
+```bash
+mkdir -p ~/esp/keys && chmod 700 ~/esp/keys
+espsecure generate_signing_key --version 2 --scheme rsa3072 ~/esp/keys/sbv2_signing.pem
+espsecure generate_flash_encryption_key ~/esp/keys/flash_encryption.bin
+chmod 600 ~/esp/keys/*
+sb=$(mktemp -d)
+
+# 1. Rehearse on QEMU with the same keys; stop if any case fails.
+EOS_EXTRA_CFLAGS=-DEOS_TEST_PAD_READBACK=0 \
+  sim/qemu_esp32/build.sh "$sb"/q_sched.elf sim/qemu_esp32/scheduler_test.c
+sim/qemu_esp32/secure_rehearse.sh "$sb"/q_sched.bin \
+  ~/esp/keys/sbv2_signing.pem ~/esp/keys/flash_encryption.bin
+
+# 2. Build, sign and encrypt the board image.
+sim/qemu_esp32/build.sh "$sb"/b_sched.elf sim/qemu_esp32/scheduler_test.c
+sim/qemu_esp32/secure_image.sh "$sb"/b_sched.bin "$sb"/b_sched.secure.bin \
+  ~/esp/keys/sbv2_signing.pem ~/esp/keys/flash_encryption.bin
+
+# 3. Write it while the chip still accepts any image ("keep" leaves the
+#    signed header untouched), then burn. Burning is PERMANENT.
+esptool --chip esp32 --port /dev/ttyUSB0 write_flash --flash_mode keep \
+  --flash_freq keep --flash_size keep 0x1000 "$sb"/b_sched.secure.bin
+EOS_BURN_CONFIRM=burn-permanently sim/qemu_esp32/secure_burn.sh /dev/ttyUSB0 \
+  ~/esp/keys/sbv2_signing.pem ~/esp/keys/flash_encryption.bin
+```
+
+If `secure_burn.sh` stops part-way (a dropped cable), the chip is left
+half-configured and a rerun refuses it. Read `espefuse --chip esp32 --port
+/dev/ttyUSB0 summary`, compare it with the list above, and burn only the
+missing eFuses by hand with the same `espefuse` commands the script runs.
+The rehearsal keeps its emulated eFuses, which then hold the flash key, in
+`/dev/shm` where available, and deletes them on exit.
+
+Press EN: the console should show `secure boot v2 enabled` and then the
+scheduler test. Later images go through `secure_image.sh` as well, and
+esptool needs `--force` to write below 0x8000 once secure boot is on.
+
 ## Verified on hardware
 
 HiLetGo ESP-WROOM-32 (ESP32-D0WD-V3 rev 3.1, 4 MB flash), 2026-11-23:
