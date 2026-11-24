@@ -186,6 +186,14 @@ void eos_http_response_free(eos_http_response_t *resp)
 #define EOS_MQTT_DRAIN_MAX_PACKETS 64
 #endif
 
+#ifndef EOS_MQTT_FRAME_BUDGET_MS
+#define EOS_MQTT_FRAME_BUDGET_MS 100u
+#endif
+
+#ifndef EOS_MQTT_KEEPALIVE_CEILING_FACTOR
+#define EOS_MQTT_KEEPALIVE_CEILING_FACTOR 2u
+#endif
+
 /* DISCONNECTED is 0 so the zero-initialised table starts with every slot
  * free and needs no init call. connect and disconnect are synchronous, so
  * CONNECTING and DISCONNECTING last only for the call; they keep the slot
@@ -574,10 +582,18 @@ static int mqtt_keepalive_check_deadline(mqtt_client_t *c)
             }
         }
 
-        if (c->ping_pending && quiet) {
-            /* Socket is quiet and keepalive deadline has expired without receiving PINGRESP */
-            mqtt_release(c);
-            return -1;
+        if (c->ping_pending) {
+            uint32_t ceiling_ms = keepalive_ms * EOS_MQTT_KEEPALIVE_CEILING_FACTOR;
+            if (elapsed_ms >= ceiling_ms) {
+                /* Absolute ceiling reached: broker failed to send PINGRESP within 2x keepalive window */
+                mqtt_release(c);
+                return -1;
+            }
+            if (quiet && packets_drained == 0) {
+                /* Socket is quiet, no traffic arrived during drain, and keepalive deadline has expired without PINGRESP */
+                mqtt_release(c);
+                return -1;
+            }
         }
     }
     return 0;
@@ -603,7 +619,7 @@ static int mqtt_process_one_packet(mqtt_client_t *c, uint32_t poll_timeout_ms, u
 
     if (got_packet) *got_packet = true;
     uint32_t pkt_start_ms = mqtt_now_ms();
-    uint32_t effective_budget_ms = (pkt_budget_ms > 0) ? pkt_budget_ms : EOS_MQTT_CONNACK_TIMEOUT_MS;
+    uint32_t effective_budget_ms = (pkt_budget_ms > 0) ? pkt_budget_ms : EOS_MQTT_FRAME_BUDGET_MS;
 
     size_t rl_count = 0;
     while (rl_count < 4) {
@@ -1177,8 +1193,9 @@ int eos_mqtt_loop(eos_mqtt_handle_t handle, uint32_t timeout_ms)
         return -1;
     }
 
+    uint32_t frame_budget_ms = wait_ms + EOS_MQTT_FRAME_BUDGET_MS;
     bool got_pkt = false;
-    int rc = mqtt_process_one_packet(c, wait_ms, EOS_MQTT_CONNACK_TIMEOUT_MS, &got_pkt, NULL, NULL, NULL);
+    int rc = mqtt_process_one_packet(c, wait_ms, frame_budget_ms, &got_pkt, NULL, NULL, NULL);
     if (rc < 0) {
         return -1;
     }

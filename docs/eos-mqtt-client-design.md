@@ -280,19 +280,22 @@ With the completion of Slice 3 (Issue #259), the following protocol behaviors an
    - Outbound traffic activity (`last_send_sec`) is refreshed on every transmitted control packet (PUBLISH, SUBSCRIBE, UNSUBSCRIBE, and PINGREQ).
    - If no control packet has been sent for `keepalive_sec` seconds, `eos_mqtt_loop()` or synchronous wait loops emit a PINGREQ.
 
-4. **PINGRESP Deadline Policy and Drain Window:**
+4. **PINGRESP Deadline Policy, Drain Window, and Absolute Ceiling:**
    - Upon sending PINGREQ, the client sets `ping_pending = true` and records `ping_sent_ms`.
    - The broker must respond with PINGRESP within `keepalive_sec * 1000` milliseconds.
    - To prevent false disconnects from network jitter or packet buffering, input is drained and processed when `keepalive_sec * 1000` ms elapses.
    - **Keep-Alive Drain Policy:** The keep-alive drain is bounded by an elapsed time budget (`EOS_MQTT_DRAIN_BUDGET_MS` = 100 ms) and a safety packet limit (`EOS_MQTT_DRAIN_MAX_PACKETS` = 64 packets). Each packet read during the drain receives the remaining drain budget rather than an unbounded per-packet timeout.
-   - If the socket becomes quiet (no pending data) while `ping_pending` remains true after deadline expiration, the broker is confirmed silent and the session is invalidated fail-closed and released.
-   - Conversely, if the drain budget or packet limit is reached while inbound packets are actively streaming, the session is **not** released, as a full read queue proves the broker connection is alive; the remaining input and PINGRESP evaluation are deferred to subsequent loop iterations.
+   - **Socket Work vs Callback Time:** The 100 ms drain budget bounds the client's own socket-processing work and excludes application callback execution. Slow application callbacks consume wall-clock time and shorten the remaining drain socket work window rather than extending it.
+   - **Liveness Proof vs Quiet Disconnect:** If packets are observed during the drain (`packets_drained > 0`), the broker is confirmed active. Even if the residual drain window times out without receiving PINGRESP, the session is **not** released; PINGRESP evaluation is deferred to subsequent loop iterations.
+   - If the socket is quiet (no pending data) and no packets were drained (`packets_drained == 0`) while `ping_pending` remains true after deadline expiration, the broker is confirmed silent and the session is invalidated fail-closed and released.
+   - **Absolute PINGRESP Ceiling:** To prevent infinite deferral if a peer streams PUBLISH packets indefinitely while ignoring PINGREQ, an absolute ceiling of `keepalive_sec * 1000 * EOS_MQTT_KEEPALIVE_CEILING_FACTOR` (2× keepalive duration, default `EOS_MQTT_KEEPALIVE_CEILING_FACTOR` = 2u) is enforced. If `ping_pending` remains true past this ceiling, the session is released fail-closed.
    - If an orderly TCP EOF or socket error occurs during the drain, the session is released immediately and an error (-1) is returned.
 
 5. **TCP Framing, Fragmentation, and RX Buffer Sizing:**
    - Inbound stream data is framed incrementally using MQTT 3.1.1 fixed-header parsing: the packet type byte is read first, followed by the variable-length Remaining Length multiplier (up to 4 bytes).
    - Bounded static buffers (1024 bytes per client) hold inbound packets without heap allocation.
    - Chunked / fragmented TCP data is accumulated using deadline-bounded reads (`mqtt_recv_exact_deadline`), where the caller's timeout budget is tracked monotonically so partial packets cannot stall indefinitely.
+   - **Framing Timeout Budget:** In `eos_mqtt_loop()`, packet framing is allocated `wait_ms + EOS_MQTT_FRAME_BUDGET_MS` (where `EOS_MQTT_FRAME_BUDGET_MS` = 100 ms by default). This guarantees that a fragmented packet spanning TCP segments has sufficient time to complete, while strictly bounding the worst-case call duration to `timeout_ms + EOS_MQTT_FRAME_BUDGET_MS` if a peer sends an initial fixed-header byte and stalls.
 
 6. **Maximum Inbound Limits:**
    - Inbound control packets larger than the 1024-byte static buffer are rejected and trigger connection teardown.

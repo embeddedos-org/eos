@@ -115,6 +115,10 @@ typedef int eos_mqtt_handle_t;
 
 #define EOS_MQTT_INVALID (-1)
 
+#ifndef EOS_MQTT_FRAME_BUDGET_MS
+#define EOS_MQTT_FRAME_BUDGET_MS 100u
+#endif
+
 eos_mqtt_handle_t eos_mqtt_connect(const eos_mqtt_config_t *cfg);
 int  eos_mqtt_disconnect(eos_mqtt_handle_t handle);
 int  eos_mqtt_publish(eos_mqtt_handle_t handle, const char *topic,
@@ -122,6 +126,19 @@ int  eos_mqtt_publish(eos_mqtt_handle_t handle, const char *topic,
 int  eos_mqtt_subscribe(eos_mqtt_handle_t handle, const char *topic,
                           uint8_t qos, eos_mqtt_msg_callback_t cb, void *ctx);
 int  eos_mqtt_unsubscribe(eos_mqtt_handle_t handle, const char *topic);
+
+/**
+ * Processes inbound MQTT packets and keep-alive events.
+ *
+ * @param handle Valid MQTT client handle.
+ * @param timeout_ms Maximum time (in ms) to poll for incoming packets.
+ *                   If no data arrives, returns 0 within timeout_ms.
+ *                   If a packet fixed-header byte arrives, packet framing is allocated
+ *                   an additional bounding budget of EOS_MQTT_FRAME_BUDGET_MS (100 ms)
+ *                   so worst-case execution time is strictly bounded by
+ *                   timeout_ms + EOS_MQTT_FRAME_BUDGET_MS rather than stalling.
+ * @return 0 on success (including idle timeout), -1 on error or connection loss.
+ */
 int  eos_mqtt_loop(eos_mqtt_handle_t handle, uint32_t timeout_ms);
 
 /* ============================================================
