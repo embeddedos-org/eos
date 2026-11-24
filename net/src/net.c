@@ -178,6 +178,14 @@ void eos_http_response_free(eos_http_response_t *resp)
 #define EOS_MQTT_CONNACK_TIMEOUT_MS 5000u
 #endif
 
+#ifndef EOS_MQTT_DRAIN_BUDGET_MS
+#define EOS_MQTT_DRAIN_BUDGET_MS 100u
+#endif
+
+#ifndef EOS_MQTT_DRAIN_MAX_PACKETS
+#define EOS_MQTT_DRAIN_MAX_PACKETS 64
+#endif
+
 /* DISCONNECTED is 0 so the zero-initialised table starts with every slot
  * free and needs no init call. connect and disconnect are synchronous, so
  * CONNECTING and DISCONNECTING last only for the call; they keep the slot
@@ -474,7 +482,7 @@ static uint16_t mqtt_next_packet_id(mqtt_client_t *c)
     return c->next_packet_id;
 }
 
-static int mqtt_process_one_packet(mqtt_client_t *c, uint32_t timeout_ms,
+static int mqtt_process_one_packet(mqtt_client_t *c, uint32_t poll_timeout_ms, uint32_t pkt_budget_ms,
                                    bool *got_packet, uint8_t *out_type,
                                    uint16_t *out_pid, uint8_t *out_code);
 
@@ -529,30 +537,45 @@ static int mqtt_keepalive_check_deadline(mqtt_client_t *c)
 
     if (elapsed_ms >= keepalive_ms) {
         /* Drain any queued input before declaring PINGRESP missed.
-         * Bounded to 32 iterations so a broker streaming PUBLISH cannot stall indefinitely. */
-        int drain_count = 0;
-        const int max_drain = 32;
-        while (c->ping_pending && drain_count++ < max_drain) {
+         * Bounded by EOS_MQTT_DRAIN_BUDGET_MS (100ms) and EOS_MQTT_DRAIN_MAX_PACKETS (64)
+         * so a streaming broker cannot stall eos_mqtt_loop indefinitely, while ensuring
+         * each packet's framing receives only the remaining time budget. */
+        uint32_t drain_start_ms = mqtt_now_ms();
+        int packets_drained = 0;
+        bool quiet = false;
+
+        while (c->ping_pending) {
+            uint32_t rem = mqtt_time_rem_ms(drain_start_ms, EOS_MQTT_DRAIN_BUDGET_MS);
+            if (rem == 0 || packets_drained >= EOS_MQTT_DRAIN_MAX_PACKETS) {
+                /* Drain safety budget exhausted; broker is actively transmitting.
+                 * Defer remaining input to next loop iteration without releasing session. */
+                break;
+            }
+
             bool got_pkt = false;
             uint8_t pkt_type = 0;
             uint16_t pkt_pid = 0;
             uint8_t code = 0;
-            int rc = mqtt_process_one_packet(c, 0, &got_pkt, &pkt_type, &pkt_pid, &code);
+            int rc = mqtt_process_one_packet(c, rem, rem, &got_pkt, &pkt_type, &pkt_pid, &code);
             if (rc < 0) {
                 /* Error or EOF during drain: socket is closed and session released */
                 return -1;
             }
             if (!got_pkt) {
+                /* Socket went quiet: no more queued packets */
+                quiet = true;
                 break;
             }
+            packets_drained++;
             if (c->pending_ack.active && pkt_type == c->pending_ack.expected_type &&
                 pkt_pid == c->pending_ack.expected_pid) {
                 c->pending_ack.completed = true;
                 c->pending_ack.code = code;
             }
         }
-        if (c->ping_pending) {
-            /* Missed PINGRESP within keepalive window */
+
+        if (c->ping_pending && quiet) {
+            /* Socket is quiet and keepalive deadline has expired without receiving PINGRESP */
             mqtt_release(c);
             return -1;
         }
@@ -560,7 +583,7 @@ static int mqtt_keepalive_check_deadline(mqtt_client_t *c)
     return 0;
 }
 
-static int mqtt_process_one_packet(mqtt_client_t *c, uint32_t timeout_ms,
+static int mqtt_process_one_packet(mqtt_client_t *c, uint32_t poll_timeout_ms, uint32_t pkt_budget_ms,
                                    bool *got_packet, uint8_t *out_type,
                                    uint16_t *out_pid, uint8_t *out_code)
 {
@@ -569,7 +592,7 @@ static int mqtt_process_one_packet(mqtt_client_t *c, uint32_t timeout_ms,
     if (out_pid) *out_pid = 0;
     if (out_code) *out_code = 0;
 
-    int n = eos_net_recv(c->sock, &c->rx_buf[0], 1, timeout_ms);
+    int n = eos_net_recv(c->sock, &c->rx_buf[0], 1, poll_timeout_ms);
     if (n == 0) {
         return 0;
     }
@@ -580,11 +603,11 @@ static int mqtt_process_one_packet(mqtt_client_t *c, uint32_t timeout_ms,
 
     if (got_packet) *got_packet = true;
     uint32_t pkt_start_ms = mqtt_now_ms();
-    uint32_t pkt_budget_ms = (timeout_ms > 0) ? timeout_ms : EOS_MQTT_CONNACK_TIMEOUT_MS;
+    uint32_t effective_budget_ms = (pkt_budget_ms > 0) ? pkt_budget_ms : EOS_MQTT_CONNACK_TIMEOUT_MS;
 
     size_t rl_count = 0;
     while (rl_count < 4) {
-        uint32_t rem = mqtt_time_rem_ms(pkt_start_ms, pkt_budget_ms);
+        uint32_t rem = mqtt_time_rem_ms(pkt_start_ms, effective_budget_ms);
         if (rem == 0) {
             mqtt_release(c);
             return -1;
@@ -617,7 +640,7 @@ static int mqtt_process_one_packet(mqtt_client_t *c, uint32_t timeout_ms,
 
     if (remaining_len > 0) {
         if (mqtt_recv_exact_deadline(c->sock, &c->rx_buf[header_len], remaining_len,
-                                     pkt_start_ms, pkt_budget_ms) != 0) {
+                                     pkt_start_ms, effective_budget_ms) != 0) {
             mqtt_release(c);
             return -1;
         }
@@ -855,7 +878,7 @@ static int mqtt_wait_for_ack(mqtt_client_t *c, uint8_t expected_type,
         uint16_t pkt_pid = 0;
         uint8_t code = 0;
 
-        int rc = mqtt_process_one_packet(c, rem_ms, &got_pkt, &pkt_type, &pkt_pid, &code);
+        int rc = mqtt_process_one_packet(c, rem_ms, rem_ms, &got_pkt, &pkt_type, &pkt_pid, &code);
         if (rc < 0) {
             c->pending_ack.active = false;
             return -1;
@@ -1155,7 +1178,7 @@ int eos_mqtt_loop(eos_mqtt_handle_t handle, uint32_t timeout_ms)
     }
 
     bool got_pkt = false;
-    int rc = mqtt_process_one_packet(c, wait_ms, &got_pkt, NULL, NULL, NULL);
+    int rc = mqtt_process_one_packet(c, wait_ms, EOS_MQTT_CONNACK_TIMEOUT_MS, &got_pkt, NULL, NULL, NULL);
     if (rc < 0) {
         return -1;
     }

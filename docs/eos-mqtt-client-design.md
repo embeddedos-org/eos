@@ -280,10 +280,14 @@ With the completion of Slice 3 (Issue #259), the following protocol behaviors an
    - Outbound traffic activity (`last_send_sec`) is refreshed on every transmitted control packet (PUBLISH, SUBSCRIBE, UNSUBSCRIBE, and PINGREQ).
    - If no control packet has been sent for `keepalive_sec` seconds, `eos_mqtt_loop()` or synchronous wait loops emit a PINGREQ.
 
-4. **PINGRESP Deadline Policy and Window:**
+4. **PINGRESP Deadline Policy and Drain Window:**
    - Upon sending PINGREQ, the client sets `ping_pending = true` and records `ping_sent_ms`.
    - The broker must respond with PINGRESP within `keepalive_sec * 1000` milliseconds.
-   - To prevent false disconnects from network jitter or packet buffering, input is drained and processed before evaluating deadline expiration. If `keepalive_sec` elapses with no PINGRESP, the session is invalidated fail-closed and released.
+   - To prevent false disconnects from network jitter or packet buffering, input is drained and processed when `keepalive_sec * 1000` ms elapses.
+   - **Keep-Alive Drain Policy:** The keep-alive drain is bounded by an elapsed time budget (`EOS_MQTT_DRAIN_BUDGET_MS` = 100 ms) and a safety packet limit (`EOS_MQTT_DRAIN_MAX_PACKETS` = 64 packets). Each packet read during the drain receives the remaining drain budget rather than an unbounded per-packet timeout.
+   - If the socket becomes quiet (no pending data) while `ping_pending` remains true after deadline expiration, the broker is confirmed silent and the session is invalidated fail-closed and released.
+   - Conversely, if the drain budget or packet limit is reached while inbound packets are actively streaming, the session is **not** released, as a full read queue proves the broker connection is alive; the remaining input and PINGRESP evaluation are deferred to subsequent loop iterations.
+   - If an orderly TCP EOF or socket error occurs during the drain, the session is released immediately and an error (-1) is returned.
 
 5. **TCP Framing, Fragmentation, and RX Buffer Sizing:**
    - Inbound stream data is framed incrementally using MQTT 3.1.1 fixed-header parsing: the packet type byte is read first, followed by the variable-length Remaining Length multiplier (up to 4 bytes).
