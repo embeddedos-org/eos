@@ -334,7 +334,7 @@ bool eos_esp32_i2c_slave_addressed(uint8_t port)
 int eos_esp32_i2c_slave_listen(uint8_t slave, uint8_t master)
 {
     if (master > 1U || slave > 1U || master == slave) return -1;
-    i2c_port_t *m = &s_i2c[master], *s = &s_i2c[slave];
+    const i2c_port_t *m = &s_i2c[master], *s = &s_i2c[slave];
     if (!m->ready || m->slave || !s->ready || !s->slave) return -1;
     if (esp32_pin_route_input(m->sda, sig_sda(slave)) != 0 ||
         esp32_pin_route_input(m->scl, sig_scl(slave)) != 0) {

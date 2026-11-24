@@ -179,7 +179,7 @@ void esp32_spi_deinit(uint8_t port)
 int eos_esp32_spi_set_loopback(uint8_t port, bool enable)
 {
     if (!port_ok(port) || !s_spi[port].ready) return -1;
-    spi_port_t *s = &s_spi[port];
+    const spi_port_t *s = &s_spi[port];
     /* MISO reads the MOSI pad instead of its own: the pad's input stays
      * enabled while the matrix drives it. */
     return esp32_pin_route_input(enable ? s->mosi : s->miso, sig_miso(port));
@@ -222,7 +222,7 @@ int esp32_spi_transfer(uint8_t port, const uint8_t *tx, uint8_t *rx, size_t len)
     if (tx == NULL && rx == NULL) return -1;
     if (len == 0U) return 0;
     if (len > INT32_MAX) return -1;
-    spi_port_t *s = &s_spi[port];
+    const spi_port_t *s = &s_spi[port];
     if (s->cs != EOS_ESP32_SPI_NO_CS) esp32_gpio_set(s->cs, false);
     size_t done = 0;
     int rc = 0;

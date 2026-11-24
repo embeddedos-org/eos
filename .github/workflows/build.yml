@@ -63,9 +63,12 @@ jobs:
           cppcheck --enable=warning,style,performance \
             --suppress=missingIncludeSystem \
             --suppress=missingInclude \
-            --error-exitcode=1 \
-            kernel/src/*.c kernel/src/mem/*.c \
-            hal/src/hal_rtos.c 2>&1 || true
+            --inline-suppr --error-exitcode=1 \
+            -D__XTENSA__ -DEOS_HAL_BACKEND_ESP32 \
+            -Ikernel/include -Iinclude -Ihal/include -Iboards/esp32 \
+            -Ikernel/src/arch/xtensa_lx6 -Ihal/src/hal_esp32 \
+            kernel/src/*.c kernel/src/mem/*.c kernel/src/arch \
+            boards/esp32 hal/src/hal_esp32 hal/src/hal_rtos.c
 
   # ──────────────────────────────────────────────
   # ARM Cortex-M4 cross-compile

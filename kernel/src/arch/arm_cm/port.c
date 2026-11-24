@@ -43,6 +43,7 @@
 extern uint32_t **g_current_sp;
 extern uint32_t **g_next_sp;
 
+// cppcheck-suppress constParameterPointer ; signature fixed by the port API header
 uint32_t *eos_port_init_stack(uint32_t *stack_top, void (*entry)(void *), void *arg)
 {
     /* ARM Cortex-M exception stack frame (hardware-saved, pushed last):

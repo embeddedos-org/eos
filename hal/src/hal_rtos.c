@@ -418,6 +418,7 @@ static void rtos_irq_enable(void) {
 
 static void rtos_delay_ms(uint32_t ms) {
     uint32_t start = systick_ms;
+    // cppcheck-suppress duplicateExpression ; systick_ms is volatile, the ISR advances it
     while ((systick_ms - start) < ms) {}
 }
 

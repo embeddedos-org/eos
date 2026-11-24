@@ -65,7 +65,13 @@ void *_sbrk(ptrdiff_t incr)
     uint32_t crit = eos_port_enter_critical();
     if (s_brk == NULL) s_brk = _eos_heap_start;
     char *prev = s_brk;
-    if (incr > _eos_heap_end - s_brk || incr < _eos_heap_start - s_brk) {
+    /* Integer arithmetic: _eos_heap_start/_end are separate linker symbols,
+     * so subtracting them as pointers is undefined in C. */
+    uintptr_t brk = (uintptr_t)s_brk;
+    uintptr_t room_up = (uintptr_t)_eos_heap_end - brk;
+    uintptr_t room_down = brk - (uintptr_t)_eos_heap_start;
+    // cppcheck-suppress knownConditionTrueFalse ; s_brk is static: it moves on every call
+    if (incr >= 0 ? (uintptr_t)incr > room_up : (uintptr_t)0 - (uintptr_t)incr > room_down) {
         eos_port_exit_critical(crit);
         errno = ENOMEM;
         return (void *)-1;
