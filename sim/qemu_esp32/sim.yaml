@@ -36,14 +36,19 @@ cflags:
   # themselves.
   - -fno-tree-loop-distribute-patterns
   - -DEOS_SYS_CLOCK_HZ=40000000U
-  # eos_hal_init() registers hal/src/hal_esp32 (GPIO, UART0).
+  # eos_hal_init() registers hal/src/hal_esp32 (GPIO, UART0-2).
   - -DEOS_HAL_BACKEND_ESP32
+  # Extended HAL parts the ESP32 port implements (hal_esp32_analog.c).
+  - -DEOS_ENABLE_ADC=1
+  - -DEOS_ENABLE_DAC=1
+  - -DEOS_ENABLE_PWM=1
 includes:
   - kernel/include
   - include
   - hal/include
   - boards/esp32
   - kernel/src/arch/xtensa_lx6
+  - hal/src/hal_esp32
 ldflags:
   - -mabi=call0
   - -nostdlib
@@ -71,3 +76,4 @@ sources:
   - kernel/src/mem/heap.c
   - hal/src/hal_common.c
   - hal/src/hal_esp32/hal_esp32_backend.c
+  - hal/src/hal_esp32/hal_esp32_analog.c
