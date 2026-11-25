@@ -224,7 +224,7 @@ jobs:
       - name: Install tools
         run: |
           sudo apt-get update
-          sudo apt-get install -y libsdl2-2.0-0 libslirp0 libpixman-1-0 libgcrypt20 libglib2.0-0
+          sudo apt-get install -y libsdl2-2.0-0 libslirp0 libpixman-1-0 libgcrypt20 libglib2.0-0 ninja-build
           python3 -m pip install --quiet pyyaml esptool==5.6.0
           mkdir -p "$RUNNER_TEMP/esp"
           cd "$RUNNER_TEMP/esp"
@@ -248,6 +248,29 @@ jobs:
             sim/qemu_esp32/build.sh _build_esp32/scheduler.elf sim/qemu_esp32/scheduler_test.c
           xtensa-esp32-elf-size _build_esp32/scheduler.elf
           sim/qemu_esp32/run.sh _build_esp32/scheduler.flash.bin 60
+
+      # toolchains/xtensa-esp32.cmake and sim/qemu_esp32/build.sh are two ways
+      # to build the same image. Both read their flags, sources, linker script
+      # and image parameters from sim.yaml, but nothing proved they stay in
+      # step until this compared the bytes they produce. Both run the same
+      # esptool here, so the comparison does not depend on its version.
+      - name: The CMake toolchain file builds the same image as build.sh
+        run: |
+          cmake -S sim/qemu_esp32 -B _build_esp32/cmake -G Ninja \
+            -DCMAKE_TOOLCHAIN_FILE="$PWD/toolchains/xtensa-esp32.cmake" \
+            -DEOS_ESP32_APP_SOURCES=sim/qemu_esp32/scheduler_test.c \
+            -DEOS_ESP32_EXTRA_CFLAGS=-DEOS_TEST_PAD_READBACK=0
+          cmake --build _build_esp32/cmake
+          for f in bin flash.bin; do
+            a=$(sha256sum "_build_esp32/scheduler.$f" | cut -d' ' -f1)
+            b=$(sha256sum "_build_esp32/cmake/esp32_image.$f" | cut -d' ' -f1)
+            echo "$f: build.sh $a  cmake $b"
+            if [ "$a" != "$b" ]; then
+              echo "::error::build.sh and toolchains/xtensa-esp32.cmake produced different .$f --"\
+                   "one of them has drifted from sim/qemu_esp32/sim.yaml"
+              exit 1
+            fi
+          done
 
       # Secure Boot V2 and flash encryption, with keys made on this runner
       # for this run only: secure_burn.sh (the script a board is burned with)
