@@ -119,6 +119,10 @@ typedef int eos_mqtt_handle_t;
 #define EOS_MQTT_FRAME_BUDGET_MS 100u
 #endif
 
+#ifndef EOS_MQTT_DRAIN_BUDGET_MS
+#define EOS_MQTT_DRAIN_BUDGET_MS 100u
+#endif
+
 eos_mqtt_handle_t eos_mqtt_connect(const eos_mqtt_config_t *cfg);
 int  eos_mqtt_disconnect(eos_mqtt_handle_t handle);
 int  eos_mqtt_publish(eos_mqtt_handle_t handle, const char *topic,
@@ -135,8 +139,12 @@ int  eos_mqtt_unsubscribe(eos_mqtt_handle_t handle, const char *topic);
  *                   If no data arrives, returns 0 within timeout_ms.
  *                   If a packet fixed-header byte arrives, packet framing is allocated
  *                   a dedicated bounding budget of EOS_MQTT_FRAME_BUDGET_MS (100 ms)
- *                   so worst-case socket execution time is strictly bounded by
+ *                   so normal worst-case socket execution time is strictly bounded by
  *                   timeout_ms + EOS_MQTT_FRAME_BUDGET_MS rather than stalling.
+ *                   When a keep-alive response deadline expires, a drain phase runs against
+ *                   an absolute monotonic deadline bounded by EOS_MQTT_DRAIN_BUDGET_MS (100 ms).
+ *                   Total worst-case socket execution time is strictly bounded by
+ *                   timeout_ms + EOS_MQTT_FRAME_BUDGET_MS + EOS_MQTT_DRAIN_BUDGET_MS.
  *                   Application callback execution is synchronous and excluded from
  *                   the socket timeout.
  * @return 0 on success (including idle timeout), -1 on error or connection loss.

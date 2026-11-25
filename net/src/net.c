@@ -491,6 +491,7 @@ static uint16_t mqtt_next_packet_id(mqtt_client_t *c)
 }
 
 static int mqtt_process_one_packet(mqtt_client_t *c, uint32_t poll_timeout_ms, uint32_t pkt_budget_ms,
+                                   uint32_t deadline_start_ms,
                                    bool *got_packet, uint8_t *out_type,
                                    uint16_t *out_pid, uint8_t *out_code);
 
@@ -569,7 +570,8 @@ static int mqtt_keepalive_check_deadline(mqtt_client_t *c, bool packet_received)
             uint8_t pkt_type = 0;
             uint16_t pkt_pid = 0;
             uint8_t code = 0;
-            int rc = mqtt_process_one_packet(c, rem, rem, &got_pkt, &pkt_type, &pkt_pid, &code);
+            int rc = mqtt_process_one_packet(c, rem, EOS_MQTT_DRAIN_BUDGET_MS, drain_start_ms,
+                                            &got_pkt, &pkt_type, &pkt_pid, &code);
             if (rc < 0) {
                 /* Error or EOF during drain: socket is closed and session released */
                 return -1;
@@ -584,9 +586,13 @@ static int mqtt_keepalive_check_deadline(mqtt_client_t *c, bool packet_received)
                 c->pending_ack.completed = true;
                 c->pending_ack.code = code;
             }
+            if (!c->ping_pending) {
+                drain_res = DRAIN_DONE_PINGRESP;
+                break;
+            }
         }
 
-        if (!c->ping_pending) {
+        if (drain_res == DRAIN_DONE_PINGRESP) {
             /* PINGRESP received and cleared during drain */
             return 0;
         }
@@ -621,6 +627,7 @@ static int mqtt_keepalive_check_deadline(mqtt_client_t *c, bool packet_received)
 }
 
 static int mqtt_process_one_packet(mqtt_client_t *c, uint32_t poll_timeout_ms, uint32_t pkt_budget_ms,
+                                   uint32_t deadline_start_ms,
                                    bool *got_packet, uint8_t *out_type,
                                    uint16_t *out_pid, uint8_t *out_code)
 {
@@ -639,7 +646,7 @@ static int mqtt_process_one_packet(mqtt_client_t *c, uint32_t poll_timeout_ms, u
     }
 
     if (got_packet) *got_packet = true;
-    uint32_t pkt_start_ms = mqtt_now_ms();
+    uint32_t pkt_start_ms = (deadline_start_ms > 0) ? deadline_start_ms : mqtt_now_ms();
     uint32_t effective_budget_ms = (pkt_budget_ms > 0) ? pkt_budget_ms : EOS_MQTT_FRAME_BUDGET_MS;
 
     size_t rl_count = 0;
@@ -915,7 +922,8 @@ static int mqtt_wait_for_ack(mqtt_client_t *c, uint8_t expected_type,
         uint16_t pkt_pid = 0;
         uint8_t code = 0;
 
-        int rc = mqtt_process_one_packet(c, rem_ms, rem_ms, &got_pkt, &pkt_type, &pkt_pid, &code);
+        uint32_t framing_budget = (rem_ms < EOS_MQTT_FRAME_BUDGET_MS) ? rem_ms : EOS_MQTT_FRAME_BUDGET_MS;
+        int rc = mqtt_process_one_packet(c, rem_ms, framing_budget, 0, &got_pkt, &pkt_type, &pkt_pid, &code);
         if (rc < 0) {
             c->pending_ack.active = false;
             return -1;
@@ -1215,7 +1223,7 @@ int eos_mqtt_loop(eos_mqtt_handle_t handle, uint32_t timeout_ms)
     }
 
     bool got_pkt = false;
-    int rc = mqtt_process_one_packet(c, wait_ms, EOS_MQTT_FRAME_BUDGET_MS, &got_pkt, NULL, NULL, NULL);
+    int rc = mqtt_process_one_packet(c, wait_ms, EOS_MQTT_FRAME_BUDGET_MS, 0, &got_pkt, NULL, NULL, NULL);
     if (rc < 0) {
         return -1;
     }

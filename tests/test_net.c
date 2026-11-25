@@ -2346,6 +2346,75 @@ static void verify_loop_stall_for_timeout(uint32_t timeout_ms, uint32_t delay_ms
     eos_net_deinit();
 }
 
+static void *broker_drain_bound_sender(void *arg) {
+    stall_broker_ctx_t *ctx = (stall_broker_ctx_t *)arg;
+    eos_socket_t s = broker_listen_ready(ctx->port, &ctx->sync);
+    if (s == EOS_SOCKET_INVALID) return NULL;
+    eos_socket_t c = broker_accept_and_connack(s);
+    if (c == EOS_SOCKET_INVALID) return NULL;
+
+    /* Wait for PINGREQ from client */
+    uint8_t pingreq[2];
+    if (broker_recv_exact(c, pingreq, 2) == 0) {
+        /* Hold connection open and quiet until client closes it */
+        uint8_t dummy[16];
+        (void)eos_net_recv(c, dummy, sizeof(dummy), 3000);
+    }
+    eos_net_close(c);
+    return NULL;
+}
+
+static void verify_loop_drain_bound(uint32_t timeout_ms) {
+    eos_net_init();
+    stall_broker_ctx_t ctx;
+    memset(&ctx, 0, sizeof(ctx));
+    broker_sync_init(&ctx.sync);
+    ctx.port = g_broker_port++;
+    pthread_t t;
+    pthread_create(&t, NULL, broker_drain_bound_sender, &ctx);
+    wait_broker_ready(&ctx.sync);
+
+    eos_mqtt_config_t cfg;
+    mqtt_test_config(&cfg, ctx.port);
+    cfg.keepalive_sec = 1;
+    eos_mqtt_handle_t h = eos_mqtt_connect(&cfg);
+    CHECK(h != EOS_MQTT_INVALID);
+
+    /* Idle past 1 second so loop sends PINGREQ */
+    struct timespec sleep_ts = { .tv_sec = 1, .tv_nsec = 100 * 1000 * 1000 };
+    nanosleep(&sleep_ts, NULL);
+
+    CHECK(eos_mqtt_loop(h, 50) == 0);
+
+    /* Wait for keepalive response deadline to expire (1000 ms from PINGREQ) */
+    struct timespec wait_deadline = { .tv_sec = 1, .tv_nsec = 50 * 1000 * 1000 };
+    nanosleep(&wait_deadline, NULL);
+
+    struct timespec t0, t1;
+    clock_gettime(CLOCK_MONOTONIC, &t0);
+
+    /* Loop encounters expired keepalive, runs drain up to EOS_MQTT_DRAIN_BUDGET_MS,
+     * finds quiet gap with no prior packets, declares broker silent and returns -1. */
+    int rc = eos_mqtt_loop(h, timeout_ms);
+    clock_gettime(CLOCK_MONOTONIC, &t1);
+
+    uint32_t elapsed_ms = (uint32_t)((t1.tv_sec - t0.tv_sec) * 1000 +
+                                     (t1.tv_nsec - t0.tv_nsec) / 1000000);
+
+    CHECK(rc == -1);
+
+    /* Documented worst-case bound:
+     * timeout_ms + EOS_MQTT_FRAME_BUDGET_MS + EOS_MQTT_DRAIN_BUDGET_MS + 60ms OS margin. */
+    uint32_t bound_ms = timeout_ms + EOS_MQTT_FRAME_BUDGET_MS + EOS_MQTT_DRAIN_BUDGET_MS + 60;
+    CHECK(elapsed_ms <= bound_ms);
+
+    CHECK(eos_mqtt_publish(h, "topic", "x", 1, 0) == -1);
+
+    pthread_join(t, NULL);
+    broker_sync_destroy(&ctx.sync);
+    eos_net_deinit();
+}
+
 static void test_mqtt_loop_stall_within_frame_budget(void) {
     /* Test multiple timeout values: 50 ms, 500 ms, 2000 ms.
      * Delayed leading byte to 80-90% of poll window exposes the old 2x overrun bug. */
@@ -2353,6 +2422,8 @@ static void test_mqtt_loop_stall_within_frame_budget(void) {
     verify_loop_stall_for_timeout(50, 40);
     verify_loop_stall_for_timeout(500, 450);
     verify_loop_stall_for_timeout(2000, 1800);
+    /* Verify drain phase timeout bound with small keep-alive (1 sec) */
+    verify_loop_drain_bound(10);
     PASS("mqtt loop stalls within frame budget without multi-second overrun");
 }
 
@@ -2361,7 +2432,7 @@ static void test_mqtt_loop_stall_within_frame_budget(void) {
 typedef struct {
     uint16_t port;
     broker_sync_t sync;
-    broker_sync_t pub_sent;
+    broker_sync_t client_in_loop;
     broker_sync_t loop_drained;
     uint8_t pingreq[2];
 } drain_gap_ctx_t;
@@ -2393,7 +2464,15 @@ static void *broker_drain_gap_sender(void *arg) {
 
     /* Wait for PINGREQ from client */
     if (broker_recv_exact(c, ctx->pingreq, 2) == 0) {
-        /* Send 2 QoS 0 PUBLISH packets */
+        /* Wait until client has entered eos_mqtt_loop on an empty socket */
+        broker_sync_wait(&ctx->client_in_loop);
+
+        /* Delay 10 ms so client's main poll (timeout 0) finishes with got_pkt = false
+         * (packet_received = false) and enters mqtt_keepalive_check_deadline's drain loop */
+        struct timespec d = { .tv_sec = 0, .tv_nsec = 10 * 1000 * 1000 };
+        nanosleep(&d, NULL);
+
+        /* Send 2 QoS 0 PUBLISH packets into the drain */
         uint8_t pub_pkt[] = {
             0x30, 0x0C,
             0x00, 0x07, 'd', 'r', 'a', 'i', 'n', '/', 'g',
@@ -2401,9 +2480,6 @@ static void *broker_drain_gap_sender(void *arg) {
         };
         eos_net_send(c, pub_pkt, sizeof(pub_pkt));
         eos_net_send(c, pub_pkt, sizeof(pub_pkt));
-
-        /* Signal to client that PUBLISH packets have been placed on wire */
-        broker_sync_set(&ctx->pub_sent, 1);
 
         /* Wait until client has drained the PUBLISH packets and encountered the quiet gap */
         broker_sync_wait(&ctx->loop_drained);
@@ -2424,7 +2500,7 @@ static void test_mqtt_drain_packets_with_callback_gap_does_not_disconnect(void) 
     drain_gap_ctx_t ctx;
     memset(&ctx, 0, sizeof(ctx));
     broker_sync_init(&ctx.sync);
-    broker_sync_init(&ctx.pub_sent);
+    broker_sync_init(&ctx.client_in_loop);
     broker_sync_init(&ctx.loop_drained);
     ctx.port = g_broker_port++;
     pthread_t t;
@@ -2446,20 +2522,19 @@ static void test_mqtt_drain_packets_with_callback_gap_does_not_disconnect(void) 
 
     CHECK(eos_mqtt_loop(h, 50) == 0);
 
-    /* Wait for keepalive deadline to expire (1000 ms from PINGREQ) */
+    /* Wait for keepalive response deadline to expire (1000 ms from PINGREQ) */
     struct timespec wait_deadline = { .tv_sec = 1, .tv_nsec = 50 * 1000 * 1000 };
     nanosleep(&wait_deadline, NULL);
 
-    /* Wait for broker to transmit the PUBLISH packets */
-    broker_sync_wait(&ctx.pub_sent);
-
-    /* Call eos_mqtt_loop. During this call:
-     * - The PUBLISH packets are drained.
-     * - Broker has NOT sent PINGRESP yet (waiting on loop_drained).
-     * - Drain encounters quiet gap on socket after PUBLISH packets.
-     * - Because packets were received/drained, broker is recognized as alive,
-     *   deferring PINGRESP without releasing the session. */
-    int rc = eos_mqtt_loop(h, 50);
+    /* Signal broker and immediately call eos_mqtt_loop with timeout 0.
+     * The socket is currently empty, so the main poll finishes immediately with
+     * got_pkt = false (packet_received = false).
+     * The broker waits 10 ms and then sends 2 PUBLISH packets, so they are received
+     * exclusively within the drain (packets_drained > 0).
+     * When the drain hits the quiet gap, packets_drained > 0 proves broker liveness.
+     * If the liveness condition is mutated to ignore packets_drained, this test fails. */
+    broker_sync_set(&ctx.client_in_loop, 1);
+    int rc = eos_mqtt_loop(h, 0);
     CHECK(rc == 0);
 
     /* Signal broker that client has completed its drain and survived the gap */
@@ -2474,7 +2549,7 @@ static void test_mqtt_drain_packets_with_callback_gap_does_not_disconnect(void) 
 
     pthread_join(t, NULL);
     broker_sync_destroy(&ctx.sync);
-    broker_sync_destroy(&ctx.pub_sent);
+    broker_sync_destroy(&ctx.client_in_loop);
     broker_sync_destroy(&ctx.loop_drained);
     eos_net_deinit();
     PASS("mqtt drain with packet activity and residual gap defers without disconnect");
@@ -2505,10 +2580,12 @@ static void *broker_drain_infinite_publish_stream(void *arg) {
             'm', 's', 'g'
         };
         while (!ctx->stop) {
-            if (eos_net_send(c, pub_pkt, sizeof(pub_pkt)) <= 0) {
-                break;
+            for (int k = 0; k < 5 && !ctx->stop; k++) {
+                if (eos_net_send(c, pub_pkt, sizeof(pub_pkt)) <= 0) {
+                    break;
+                }
             }
-            struct timespec pace = { .tv_sec = 0, .tv_nsec = 20 * 1000 * 1000 };
+            struct timespec pace = { .tv_sec = 0, .tv_nsec = 5 * 1000 * 1000 };
             nanosleep(&pace, NULL);
         }
     }
