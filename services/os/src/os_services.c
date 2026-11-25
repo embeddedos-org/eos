@@ -25,6 +25,25 @@ static uint64_t get_timestamp_ms(void) {
 
 /* ---- Watchdog ---- */
 
+/* Milliseconds for the watchdog's kick and expiry times. get_timestamp_ms()
+ * counts whole seconds of time(), so a timeout under a second could not
+ * expire until the second changed, and any timeout was out by up to a
+ * second. CLOCK_MONOTONIC also keeps a wall-clock change from expiring or
+ * extending the watchdog. Where the C library has no CLOCK_MONOTONIC
+ * (Windows), the C11 millisecond clock is used; with neither, time(). */
+static uint64_t watchdog_now_ms(void) {
+#if defined(CLOCK_MONOTONIC) && !defined(_WIN32)
+    struct timespec ts;
+    if (clock_gettime(CLOCK_MONOTONIC, &ts) == 0)
+        return (uint64_t)ts.tv_sec * 1000u + (uint64_t)ts.tv_nsec / 1000000u;
+#elif defined(TIME_UTC)
+    struct timespec ts;
+    if (timespec_get(&ts, TIME_UTC) == TIME_UTC)
+        return (uint64_t)ts.tv_sec * 1000u + (uint64_t)ts.tv_nsec / 1000000u;
+#endif
+    return get_timestamp_ms();
+}
+
 void eos_watchdog_init(EosWatchdog *wd, uint32_t timeout_ms) {
     memset(wd, 0, sizeof(*wd));
     wd->timeout_ms = timeout_ms;
@@ -35,14 +54,14 @@ void eos_watchdog_init(EosWatchdog *wd, uint32_t timeout_ms) {
 
 int eos_watchdog_start(EosWatchdog *wd) {
     wd->state = EOS_WDG_RUNNING;
-    wd->start_time = get_timestamp_ms();
+    wd->start_time = watchdog_now_ms();
     wd->last_kick = wd->start_time;
     return 0;
 }
 
 int eos_watchdog_kick(EosWatchdog *wd) {
     if (wd->state != EOS_WDG_RUNNING) return -1;
-    wd->last_kick = get_timestamp_ms();
+    wd->last_kick = watchdog_now_ms();
     return 0;
 }
 
@@ -53,7 +72,7 @@ int eos_watchdog_stop(EosWatchdog *wd) {
 
 int eos_watchdog_check(EosWatchdog *wd) {
     if (wd->state != EOS_WDG_RUNNING) return 0;
-    uint64_t now = get_timestamp_ms();
+    uint64_t now = watchdog_now_ms();
     if (now - wd->last_kick > wd->timeout_ms) {
         wd->state = EOS_WDG_EXPIRED;
         if (wd->callback) wd->callback(wd->user_data);

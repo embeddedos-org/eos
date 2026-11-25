@@ -11,7 +11,10 @@
 #include <stdio.h>
 #include <string.h>
 #include <stdlib.h>
-#ifndef _WIN32
+#include <time.h>
+#ifdef _WIN32
+#include <windows.h>
+#else
 #include <fcntl.h>
 #include <sys/stat.h>
 #include <unistd.h>
@@ -76,6 +79,50 @@ TEST(test_watchdog_callback) {
     eos_watchdog_init(&wd, 5000);
     eos_watchdog_set_callback(&wd, test_callback, NULL);
     ASSERT(wd.callback == test_callback);
+}
+
+static void sleep_ms(unsigned ms) {
+#ifdef _WIN32
+    Sleep(ms);
+#else
+    struct timespec ts = { (time_t)(ms / 1000u), (long)(ms % 1000u) * 1000000L };
+    while (nanosleep(&ts, &ts) != 0) { }
+#endif
+}
+
+/* Start right after time() moves to a new second, so the 300 ms wait below
+ * stays inside one second of time(): a clock that counts whole seconds sees
+ * no time pass at all. */
+static void wait_for_next_second(void) {
+    time_t t0 = time(NULL);
+    while (time(NULL) == t0) sleep_ms(5);
+}
+
+TEST(test_watchdog_expires_after_a_timeout_under_a_second) {
+    EosWatchdog wd;
+    callback_count = 0;
+    eos_watchdog_init(&wd, 100);
+    eos_watchdog_set_callback(&wd, test_callback, NULL);
+    wait_for_next_second();
+    ASSERT(eos_watchdog_start(&wd) == 0);
+    sleep_ms(300);
+    ASSERT(eos_watchdog_check(&wd) == -1);
+    ASSERT(wd.state == EOS_WDG_EXPIRED);
+    ASSERT(callback_count == 1);
+}
+
+TEST(test_watchdog_kick_restarts_the_timeout) {
+    EosWatchdog wd;
+    callback_count = 0;
+    eos_watchdog_init(&wd, 100);
+    eos_watchdog_set_callback(&wd, test_callback, NULL);
+    wait_for_next_second();
+    ASSERT(eos_watchdog_start(&wd) == 0);
+    sleep_ms(300);
+    ASSERT(eos_watchdog_kick(&wd) == 0);
+    ASSERT(eos_watchdog_check(&wd) == 0);   /* just kicked */
+    ASSERT(wd.state == EOS_WDG_RUNNING);
+    ASSERT(callback_count == 0);
 }
 
 /* ---- Audit ---- */
@@ -499,6 +546,8 @@ int main(void) {
     run_test_watchdog_start_kick();
     run_test_watchdog_stop();
     run_test_watchdog_callback();
+    run_test_watchdog_expires_after_a_timeout_under_a_second();
+    run_test_watchdog_kick_restarts_the_timeout();
     run_test_audit_init();
     run_test_audit_record();
     run_test_audit_multiple();
