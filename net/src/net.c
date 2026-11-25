@@ -535,7 +535,13 @@ static int mqtt_keepalive_prepare(mqtt_client_t *c, uint32_t *wait_ms)
     return 0;
 }
 
-static int mqtt_keepalive_check_deadline(mqtt_client_t *c)
+typedef enum {
+    DRAIN_DONE_PINGRESP,
+    DRAIN_BUDGET_EXHAUSTED,
+    DRAIN_QUIET_GAP
+} drain_result_t;
+
+static int mqtt_keepalive_check_deadline(mqtt_client_t *c, bool packet_received)
 {
     if (c->keepalive_sec == 0 || !c->ping_pending) return 0;
     uint32_t now_ms = mqtt_now_ms();
@@ -550,13 +556,12 @@ static int mqtt_keepalive_check_deadline(mqtt_client_t *c)
          * each packet's framing receives only the remaining time budget. */
         uint32_t drain_start_ms = mqtt_now_ms();
         int packets_drained = 0;
-        bool quiet = false;
+        drain_result_t drain_res = DRAIN_QUIET_GAP;
 
         while (c->ping_pending) {
             uint32_t rem = mqtt_time_rem_ms(drain_start_ms, EOS_MQTT_DRAIN_BUDGET_MS);
             if (rem == 0 || packets_drained >= EOS_MQTT_DRAIN_MAX_PACKETS) {
-                /* Drain safety budget exhausted; broker is actively transmitting.
-                 * Defer remaining input to next loop iteration without releasing session. */
+                drain_res = DRAIN_BUDGET_EXHAUSTED;
                 break;
             }
 
@@ -570,8 +575,7 @@ static int mqtt_keepalive_check_deadline(mqtt_client_t *c)
                 return -1;
             }
             if (!got_pkt) {
-                /* Socket went quiet: no more queued packets */
-                quiet = true;
+                drain_res = DRAIN_QUIET_GAP;
                 break;
             }
             packets_drained++;
@@ -582,15 +586,32 @@ static int mqtt_keepalive_check_deadline(mqtt_client_t *c)
             }
         }
 
-        if (c->ping_pending) {
-            uint32_t ceiling_ms = keepalive_ms * EOS_MQTT_KEEPALIVE_CEILING_FACTOR;
-            if (elapsed_ms >= ceiling_ms) {
-                /* Absolute ceiling reached: broker failed to send PINGRESP within 2x keepalive window */
-                mqtt_release(c);
-                return -1;
-            }
-            if (quiet && packets_drained == 0) {
-                /* Socket is quiet, no traffic arrived during drain, and keepalive deadline has expired without PINGRESP */
+        if (!c->ping_pending) {
+            /* PINGRESP received and cleared during drain */
+            return 0;
+        }
+
+        /* ping_pending remains active */
+        uint32_t ceiling_ms = keepalive_ms * EOS_MQTT_KEEPALIVE_CEILING_FACTOR;
+        if (elapsed_ms >= ceiling_ms) {
+            /* Absolute ceiling reached: broker failed to send PINGRESP within 2x keepalive window */
+            mqtt_release(c);
+            return -1;
+        }
+
+        if (drain_res == DRAIN_BUDGET_EXHAUSTED) {
+            /* Broker is actively transmitting; defer remaining input to next loop iteration */
+            return 0;
+        }
+
+        if (drain_res == DRAIN_QUIET_GAP) {
+            if (packet_received || packets_drained > 0) {
+                /* Broker was active during this call (sent packets), but entered a quiet gap
+                 * before PINGRESP arrived. Defer to next loop iteration without releasing session. */
+                return 0;
+            } else {
+                /* Socket is quiet, no traffic arrived during call or drain, and keepalive deadline
+                 * has expired without PINGRESP. Broker is silent/unresponsive. */
                 mqtt_release(c);
                 return -1;
             }
@@ -903,7 +924,7 @@ static int mqtt_wait_for_ack(mqtt_client_t *c, uint8_t expected_type,
             c->pending_ack.completed = true;
             c->pending_ack.code = code;
         }
-        if (mqtt_keepalive_check_deadline(c) != 0) {
+        if (mqtt_keepalive_check_deadline(c, got_pkt) != 0) {
             c->pending_ack.active = false;
             return -1;
         }
@@ -1193,14 +1214,13 @@ int eos_mqtt_loop(eos_mqtt_handle_t handle, uint32_t timeout_ms)
         return -1;
     }
 
-    uint32_t frame_budget_ms = wait_ms + EOS_MQTT_FRAME_BUDGET_MS;
     bool got_pkt = false;
-    int rc = mqtt_process_one_packet(c, wait_ms, frame_budget_ms, &got_pkt, NULL, NULL, NULL);
+    int rc = mqtt_process_one_packet(c, wait_ms, EOS_MQTT_FRAME_BUDGET_MS, &got_pkt, NULL, NULL, NULL);
     if (rc < 0) {
         return -1;
     }
 
-    if (mqtt_keepalive_check_deadline(c) != 0) {
+    if (mqtt_keepalive_check_deadline(c, got_pkt) != 0) {
         return -1;
     }
 

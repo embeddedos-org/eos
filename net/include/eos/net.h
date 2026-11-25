@@ -134,9 +134,11 @@ int  eos_mqtt_unsubscribe(eos_mqtt_handle_t handle, const char *topic);
  * @param timeout_ms Maximum time (in ms) to poll for incoming packets.
  *                   If no data arrives, returns 0 within timeout_ms.
  *                   If a packet fixed-header byte arrives, packet framing is allocated
- *                   an additional bounding budget of EOS_MQTT_FRAME_BUDGET_MS (100 ms)
- *                   so worst-case execution time is strictly bounded by
+ *                   a dedicated bounding budget of EOS_MQTT_FRAME_BUDGET_MS (100 ms)
+ *                   so worst-case socket execution time is strictly bounded by
  *                   timeout_ms + EOS_MQTT_FRAME_BUDGET_MS rather than stalling.
+ *                   Application callback execution is synchronous and excluded from
+ *                   the socket timeout.
  * @return 0 on success (including idle timeout), -1 on error or connection loss.
  */
 int  eos_mqtt_loop(eos_mqtt_handle_t handle, uint32_t timeout_ms);
