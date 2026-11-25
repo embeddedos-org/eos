@@ -295,7 +295,11 @@ With the completion of Slice 3 (Issue #259), the following protocol behaviors an
    - Inbound stream data is framed incrementally using MQTT 3.1.1 fixed-header parsing: the packet type byte is read first, followed by the variable-length Remaining Length multiplier (up to 4 bytes).
    - Bounded static buffers (1024 bytes per client) hold inbound packets without heap allocation.
    - Chunked / fragmented TCP data is accumulated using deadline-bounded reads (`mqtt_recv_exact_deadline`), where the caller's timeout budget is tracked monotonically so partial packets cannot stall indefinitely.
-   - **Framing Timeout Budget and Worst-Case Timing Model:** In `eos_mqtt_loop()`, the initial poll for a fixed-header type byte is bounded by `wait_ms` (clamped to keep-alive deadline). Once the initial type byte arrives, framing of the packet's remaining bytes (Remaining Length, Variable Header, and Payload) is allocated a dedicated bounding budget of `EOS_MQTT_FRAME_BUDGET_MS` (100 ms by default). Under normal conditions without keep-alive deadline expiry, execution time is strictly bounded by `timeout_ms + EOS_MQTT_FRAME_BUDGET_MS`. When a keep-alive response deadline expires during the call, the subsequent drain is bounded by `EOS_MQTT_DRAIN_BUDGET_MS` (100 ms), giving a total worst-case execution time of `timeout_ms + EOS_MQTT_FRAME_BUDGET_MS + EOS_MQTT_DRAIN_BUDGET_MS`. Synchronous application callback execution is excluded from the socket timeout budget.
+   - **Timeout Domains and Worst-Case Timing Models:**
+     - *Event Loop (`eos_mqtt_loop`):* The initial poll for a fixed-header type byte is bounded by `wait_ms` (clamped to keep-alive deadline). Once the initial type byte arrives, framing of the packet's remaining bytes (Remaining Length, Variable Header, and Payload) is allocated a dedicated bounding budget of `EOS_MQTT_FRAME_BUDGET_MS` (100 ms by default). Under normal conditions without keep-alive deadline expiry, execution time is strictly bounded by `timeout_ms + EOS_MQTT_FRAME_BUDGET_MS`.
+     - *Keep-Alive Drain (`mqtt_keepalive_check_deadline`):* When a keep-alive response deadline expires during `eos_mqtt_loop()`, the subsequent drain runs against a single absolute monotonic deadline bounded by `EOS_MQTT_DRAIN_BUDGET_MS` (100 ms). Total worst-case execution time during keep-alive expiry is `timeout_ms + EOS_MQTT_FRAME_BUDGET_MS + EOS_MQTT_DRAIN_BUDGET_MS`.
+     - *Synchronous Control Acknowledgements (`mqtt_wait_for_ack`):* Synchronous operations (`eos_mqtt_publish` QoS 1, `eos_mqtt_subscribe`, `eos_mqtt_unsubscribe`) wait for broker acknowledgment (PUBACK, SUBACK, UNSUBACK) against an independent absolute ACK deadline (`EOS_MQTT_CONNACK_TIMEOUT_MS` = 5000 ms). In contrast to the event loop's 100 ms per-packet framing budget, synchronous ACK waits allocate the full remaining ACK window for packet framing, ensuring that multi-segment TCP fragmentation arriving across high-latency or cellular links is preserved.
+     - Synchronous application callback execution is excluded from all socket timeout budgets.
 
 6. **Maximum Inbound Limits:**
    - Inbound control packets larger than the 1024-byte static buffer are rejected and trigger connection teardown.
@@ -310,9 +314,10 @@ With the completion of Slice 3 (Issue #259), the following protocol behaviors an
      - *Connect Restrictions:* `eos_mqtt_connect()` mutates the global client handle pool and is rejected with `EOS_MQTT_INVALID` if any client is currently dispatching a callback.
 
 8. **QoS 1 Retransmission and Acknowledgement Policy:**
-   - Outgoing QoS 1 PUBLISH packets wait for PUBACK up to the specified timeout.
-   - If PUBACK is delayed beyond `timeout_ms / 2`, a single retry is attempted with `DUP = 1` using the identical packet identifier.
-   - If PUBACK does not arrive before the total timeout expires, the session is invalidated fail-closed and released.
+   - Outgoing QoS 1 PUBLISH, SUBSCRIBE, and UNSUBSCRIBE operations wait for their respective acknowledgments (PUBACK, SUBACK, UNSUBACK) against an absolute monotonic timeout window.
+   - For QoS 1 PUBLISH, if PUBACK is delayed beyond `timeout_ms / 2`, a single retry is attempted with `DUP = 1` using the identical packet identifier.
+   - Packet framing for incoming acknowledgments uses the entire remaining ACK window (`has_deadline = true`), avoiding false disconnects when fragments span >100 ms gaps.
+   - If the acknowledgment does not arrive before the total timeout expires, or if an acknowledgment framing error or malformed payload occurs, the session is invalidated fail-closed and released immediately, preventing uncertain or stale local subscription/publish state.
    - If a queued PUBACK, SUBACK, or UNSUBACK arrives while keep-alive input is draining before a PINGRESP, it is matched and routed directly to the active waiter rather than being lost.
 
 9. **Inbound Retained Messages Arriving Before SUBACK:**

@@ -125,28 +125,57 @@ typedef int eos_mqtt_handle_t;
 
 eos_mqtt_handle_t eos_mqtt_connect(const eos_mqtt_config_t *cfg);
 int  eos_mqtt_disconnect(eos_mqtt_handle_t handle);
+
+/**
+ * Publishes an MQTT message.
+ *
+ * For QoS 1, blocks waiting for PUBACK against an absolute monotonic ACK timeout
+ * (EOS_MQTT_CONNACK_TIMEOUT_MS = 5000 ms). Packet framing on this synchronous path
+ * uses the full remaining ACK window to accommodate TCP fragmentation across high-latency links.
+ */
 int  eos_mqtt_publish(eos_mqtt_handle_t handle, const char *topic,
                        const void *payload, size_t len, uint8_t qos);
+
+/**
+ * Subscribes to an MQTT topic filter.
+ *
+ * Blocks waiting for SUBACK against an absolute monotonic ACK timeout
+ * (EOS_MQTT_CONNACK_TIMEOUT_MS = 5000 ms). Packet framing uses the full remaining
+ * ACK window to preserve TCP fragmentation across multi-segment network arrivals.
+ */
 int  eos_mqtt_subscribe(eos_mqtt_handle_t handle, const char *topic,
                           uint8_t qos, eos_mqtt_msg_callback_t cb, void *ctx);
+
+/**
+ * Unsubscribes from an MQTT topic filter.
+ *
+ * Blocks waiting for UNSUBACK against an absolute monotonic ACK timeout
+ * (EOS_MQTT_CONNACK_TIMEOUT_MS = 5000 ms).
+ */
 int  eos_mqtt_unsubscribe(eos_mqtt_handle_t handle, const char *topic);
 
 /**
  * Processes inbound MQTT packets and keep-alive events.
  *
+ * Timeout domains:
+ * 1. Event loop poll & frame budget: Initial polling for incoming packet fixed-headers
+ *    is bounded by timeout_ms. Once an initial fixed-header byte arrives, framing of
+ *    the remaining packet bytes is allocated a dedicated bounding budget of
+ *    EOS_MQTT_FRAME_BUDGET_MS (100 ms). Normal worst-case socket execution time is
+ *    strictly bounded by timeout_ms + EOS_MQTT_FRAME_BUDGET_MS.
+ * 2. Keep-alive drain budget: When a keep-alive response deadline expires, a drain phase
+ *    runs against an absolute monotonic deadline bounded by EOS_MQTT_DRAIN_BUDGET_MS (100 ms).
+ *    Total worst-case socket execution time during keep-alive expiry is bounded by
+ *    timeout_ms + EOS_MQTT_FRAME_BUDGET_MS + EOS_MQTT_DRAIN_BUDGET_MS.
+ * 3. Synchronous ACK timeout: Synchronous publish/subscribe/unsubscribe operations use an
+ *    independent absolute ACK deadline (EOS_MQTT_CONNACK_TIMEOUT_MS) rather than the
+ *    event-loop frame budget.
+ *
+ * Application callback execution is synchronous and excluded from socket timeouts.
+ *
  * @param handle Valid MQTT client handle.
  * @param timeout_ms Maximum time (in ms) to poll for incoming packets.
  *                   If no data arrives, returns 0 within timeout_ms.
- *                   If a packet fixed-header byte arrives, packet framing is allocated
- *                   a dedicated bounding budget of EOS_MQTT_FRAME_BUDGET_MS (100 ms)
- *                   so normal worst-case socket execution time is strictly bounded by
- *                   timeout_ms + EOS_MQTT_FRAME_BUDGET_MS rather than stalling.
- *                   When a keep-alive response deadline expires, a drain phase runs against
- *                   an absolute monotonic deadline bounded by EOS_MQTT_DRAIN_BUDGET_MS (100 ms).
- *                   Total worst-case socket execution time is strictly bounded by
- *                   timeout_ms + EOS_MQTT_FRAME_BUDGET_MS + EOS_MQTT_DRAIN_BUDGET_MS.
- *                   Application callback execution is synchronous and excluded from
- *                   the socket timeout.
  * @return 0 on success (including idle timeout), -1 on error or connection loss.
  */
 int  eos_mqtt_loop(eos_mqtt_handle_t handle, uint32_t timeout_ms);

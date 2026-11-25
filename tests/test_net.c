@@ -1526,6 +1526,95 @@ static void test_mqtt_suback_grant_validation(void) {
     PASS("mqtt reject SUBACK granted QoS > requested");
 }
 
+/* ── Regression Test: fragmented SUBACK across delays up to 400ms ─────── */
+
+typedef struct {
+    uint16_t port;
+    broker_sync_t sync;
+    uint32_t gap_ms;
+} frag_ack_ctx_t;
+
+static void *broker_frag_suback_sender(void *arg) {
+    frag_ack_ctx_t *ctx = (frag_ack_ctx_t *)arg;
+    eos_socket_t s = broker_listen_ready(ctx->port, &ctx->sync);
+    if (s == EOS_SOCKET_INVALID) return NULL;
+    eos_socket_t c = broker_accept_and_connack(s);
+    if (c == EOS_SOCKET_INVALID) return NULL;
+
+    /* Receive SUBSCRIBE */
+    uint8_t sub_hdr[2];
+    if (broker_recv_exact(c, sub_hdr, 2) == 0) {
+        uint8_t sub_buf[64];
+        if (broker_recv_exact(c, sub_buf, sub_hdr[1]) == 0) {
+            uint16_t sub_pid = (uint16_t)((sub_buf[0] << 8) | sub_buf[1]);
+            uint8_t frag1 = 0x90; /* SUBACK header byte 1 */
+            uint8_t frag2[4] = {
+                0x03,
+                (uint8_t)(sub_pid >> 8),
+                (uint8_t)(sub_pid & 0xFF),
+                0x00
+            };
+
+            /* Send byte 1 of SUBACK */
+            eos_net_send(c, &frag1, 1);
+
+            /* Inter-fragment delay */
+            if (ctx->gap_ms > 0) {
+                struct timespec d = {
+                    .tv_sec = ctx->gap_ms / 1000,
+                    .tv_nsec = (ctx->gap_ms % 1000) * 1000000
+                };
+                nanosleep(&d, NULL);
+            }
+
+            /* Send remaining bytes of SUBACK */
+            eos_net_send(c, frag2, sizeof(frag2));
+        }
+    }
+
+    uint8_t disc[2];
+    (void)broker_recv_exact(c, disc, 2);
+    eos_net_close(c);
+    return NULL;
+}
+
+static void verify_fragmented_suback(uint32_t gap_ms) {
+    eos_net_init();
+    frag_ack_ctx_t ctx;
+    memset(&ctx, 0, sizeof(ctx));
+    ctx.gap_ms = gap_ms;
+    broker_sync_init(&ctx.sync);
+    ctx.port = g_broker_port++;
+    pthread_t t;
+    pthread_create(&t, NULL, broker_frag_suback_sender, &ctx);
+    wait_broker_ready(&ctx.sync);
+
+    eos_mqtt_config_t cfg;
+    mqtt_test_config(&cfg, ctx.port);
+    eos_mqtt_handle_t h = eos_mqtt_connect(&cfg);
+    CHECK(h != EOS_MQTT_INVALID);
+
+    /* Subscribe must succeed despite TCP fragmentation across gap_ms */
+    int rc = eos_mqtt_subscribe(h, "sensor/temp", 0, dummy_cb, NULL);
+    CHECK(rc == 0);
+
+    /* Verify session remains connected and operational */
+    CHECK(eos_mqtt_publish(h, "sensor/temp", "22", 2, 0) == 0);
+    CHECK(eos_mqtt_disconnect(h) == 0);
+
+    pthread_join(t, NULL);
+    broker_sync_destroy(&ctx.sync);
+    eos_net_deinit();
+}
+
+static void test_mqtt_fragmented_suback(void) {
+    verify_fragmented_suback(0);
+    verify_fragmented_suback(30);
+    verify_fragmented_suback(150);
+    verify_fragmented_suback(400);
+    PASS("mqtt subscribe succeeds with fragmented SUBACK across delays up to 400ms");
+}
+
 typedef struct {
     eos_mqtt_handle_t h;
     int pub_res;
@@ -2346,7 +2435,7 @@ static void verify_loop_stall_for_timeout(uint32_t timeout_ms, uint32_t delay_ms
     eos_net_deinit();
 }
 
-static void *broker_drain_bound_sender(void *arg) {
+static void *broker_drain_bound_quiet_sender(void *arg) {
     stall_broker_ctx_t *ctx = (stall_broker_ctx_t *)arg;
     eos_socket_t s = broker_listen_ready(ctx->port, &ctx->sync);
     if (s == EOS_SOCKET_INVALID) return NULL;
@@ -2364,14 +2453,14 @@ static void *broker_drain_bound_sender(void *arg) {
     return NULL;
 }
 
-static void verify_loop_drain_bound(uint32_t timeout_ms) {
+static void verify_loop_drain_bound_quiet(uint32_t timeout_ms) {
     eos_net_init();
     stall_broker_ctx_t ctx;
     memset(&ctx, 0, sizeof(ctx));
     broker_sync_init(&ctx.sync);
     ctx.port = g_broker_port++;
     pthread_t t;
-    pthread_create(&t, NULL, broker_drain_bound_sender, &ctx);
+    pthread_create(&t, NULL, broker_drain_bound_quiet_sender, &ctx);
     wait_broker_ready(&ctx.sync);
 
     eos_mqtt_config_t cfg;
@@ -2415,6 +2504,98 @@ static void verify_loop_drain_bound(uint32_t timeout_ms) {
     eos_net_deinit();
 }
 
+typedef struct {
+    uint16_t port;
+    broker_sync_t sync;
+    broker_sync_t client_in_loop;
+} drain_framing_stall_ctx_t;
+
+static void *broker_drain_bound_framing_stall_sender(void *arg) {
+    drain_framing_stall_ctx_t *ctx = (drain_framing_stall_ctx_t *)arg;
+    eos_socket_t s = broker_listen_ready(ctx->port, &ctx->sync);
+    if (s == EOS_SOCKET_INVALID) return NULL;
+    eos_socket_t c = broker_accept_and_connack(s);
+    if (c == EOS_SOCKET_INVALID) return NULL;
+
+    /* Wait for PINGREQ from client */
+    uint8_t pingreq[2];
+    if (broker_recv_exact(c, pingreq, 2) == 0) {
+        /* Wait for client to signal it is calling eos_mqtt_loop on empty socket */
+        broker_sync_wait(&ctx->client_in_loop);
+
+        /* Delay 80 ms into the 100 ms drain window */
+        struct timespec d = { .tv_sec = 0, .tv_nsec = 80 * 1000 * 1000 };
+        nanosleep(&d, NULL);
+
+        /* Send fixed-header byte of a PUBLISH packet and stall */
+        uint8_t byte = 0x30;
+        eos_net_send(c, &byte, 1);
+
+        /* Hold connection open and quiet until client closes it */
+        uint8_t dummy[16];
+        (void)eos_net_recv(c, dummy, sizeof(dummy), 3000);
+    }
+    eos_net_close(c);
+    return NULL;
+}
+
+static void verify_loop_drain_bound_framing_stall(uint32_t timeout_ms) {
+    eos_net_init();
+    drain_framing_stall_ctx_t ctx;
+    memset(&ctx, 0, sizeof(ctx));
+    broker_sync_init(&ctx.sync);
+    broker_sync_init(&ctx.client_in_loop);
+    ctx.port = g_broker_port++;
+    pthread_t t;
+    pthread_create(&t, NULL, broker_drain_bound_framing_stall_sender, &ctx);
+    wait_broker_ready(&ctx.sync);
+
+    eos_mqtt_config_t cfg;
+    mqtt_test_config(&cfg, ctx.port);
+    cfg.keepalive_sec = 1;
+    eos_mqtt_handle_t h = eos_mqtt_connect(&cfg);
+    CHECK(h != EOS_MQTT_INVALID);
+
+    /* Idle past 1 second so loop sends PINGREQ */
+    struct timespec sleep_ts = { .tv_sec = 1, .tv_nsec = 100 * 1000 * 1000 };
+    nanosleep(&sleep_ts, NULL);
+
+    CHECK(eos_mqtt_loop(h, 50) == 0);
+
+    /* Wait for keepalive response deadline to expire (1000 ms from PINGREQ) */
+    struct timespec wait_deadline = { .tv_sec = 1, .tv_nsec = 50 * 1000 * 1000 };
+    nanosleep(&wait_deadline, NULL);
+
+    /* Signal broker and immediately call eos_mqtt_loop.
+     * Fixed-header byte arrives ~80 ms into the 100 ms drain window.
+     * The drain's framing read must use the remaining drain budget (~20 ms) rather
+     * than restarting a fresh 100 ms framing budget.
+     * With monotonic drain framing, elapsed time is ~100-115 ms.
+     * If a fresh 100 ms budget were restarted, elapsed time would reach ~180-195 ms. */
+    broker_sync_set(&ctx.client_in_loop, 1);
+
+    struct timespec t0, t1;
+    clock_gettime(CLOCK_MONOTONIC, &t0);
+
+    int rc = eos_mqtt_loop(h, timeout_ms);
+    clock_gettime(CLOCK_MONOTONIC, &t1);
+
+    uint32_t elapsed_ms = (uint32_t)((t1.tv_sec - t0.tv_sec) * 1000 +
+                                     (t1.tv_nsec - t0.tv_nsec) / 1000000);
+
+    CHECK(rc == -1);
+
+    /* Framing must complete within the remaining drain budget, well below 150 ms */
+    CHECK(elapsed_ms <= 150);
+
+    CHECK(eos_mqtt_publish(h, "topic", "x", 1, 0) == -1);
+
+    pthread_join(t, NULL);
+    broker_sync_destroy(&ctx.sync);
+    broker_sync_destroy(&ctx.client_in_loop);
+    eos_net_deinit();
+}
+
 static void test_mqtt_loop_stall_within_frame_budget(void) {
     /* Test multiple timeout values: 50 ms, 500 ms, 2000 ms.
      * Delayed leading byte to 80-90% of poll window exposes the old 2x overrun bug. */
@@ -2422,8 +2603,10 @@ static void test_mqtt_loop_stall_within_frame_budget(void) {
     verify_loop_stall_for_timeout(50, 40);
     verify_loop_stall_for_timeout(500, 450);
     verify_loop_stall_for_timeout(2000, 1800);
-    /* Verify drain phase timeout bound with small keep-alive (1 sec) */
-    verify_loop_drain_bound(10);
+    /* Verify drain phase timeout bound on quiet socket */
+    verify_loop_drain_bound_quiet(10);
+    /* Verify drain phase timeout bound with partial packet framing stall */
+    verify_loop_drain_bound_framing_stall(10);
     PASS("mqtt loop stalls within frame budget without multi-second overrun");
 }
 
@@ -2703,6 +2886,7 @@ int main(void) {
     test_mqtt_keepalive();
     test_mqtt_qos1_retry();
     test_mqtt_suback_grant_validation();
+    test_mqtt_fragmented_suback();
     test_mqtt_nested_callback_rejection();
     test_mqtt_wildcard_empty_level();
     test_mqtt_inbound_oversized_topic_no_puback();
