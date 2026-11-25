@@ -51,6 +51,7 @@ static int      stub_task_create_rc = 0;   /* slot handed back, or negative */
 static int      stub_sem_create_rc  = EOS_KERN_OK;
 static int      stub_sem_wait_rc    = EOS_KERN_OK;
 static int      stub_sem_deletes    = 0;
+static int      stub_sem_posts      = 0;
 static uint8_t  stub_last_priority  = 0;
 static uint32_t stub_last_stack     = 0;
 static eos_task_func_t stub_entry   = NULL;
@@ -79,7 +80,9 @@ int eos_sem_create(eos_sem_handle_t *out, uint32_t initial, uint32_t max) {
 int eos_sem_wait(eos_sem_handle_t handle, uint32_t timeout_ms) {
     (void)handle; (void)timeout_ms; return stub_sem_wait_rc;
 }
-int eos_sem_post(eos_sem_handle_t handle) { (void)handle; return EOS_KERN_OK; }
+int eos_sem_post(eos_sem_handle_t handle) {
+    (void)handle; stub_sem_posts++; return EOS_KERN_OK;
+}
 int eos_sem_delete(eos_sem_handle_t handle) {
     (void)handle; stub_sem_deletes++; return EOS_KERN_OK;
 }
@@ -96,6 +99,7 @@ static void reset(void) {
     stub_sem_create_rc = EOS_KERN_OK;
     stub_sem_wait_rc = EOS_KERN_OK;
     stub_sem_deletes = 0;
+    stub_sem_posts = 0;
     stub_current = 0;
 }
 
@@ -154,15 +158,16 @@ static void test_attr_stacksize_below_minimum(void) {
     PASS("pthread_attr_setstacksize rejects below PTHREAD_STACK_MIN");
 }
 
+static int   routine_arg = 0;
+static void *dummy_routine(void *arg) { return arg; }
+
 static void test_create_null_arguments(void) {
     reset();
     pthread_t th;
-    assert(pthread_create(NULL, NULL, (void *(*)(void *))0x1, NULL) == EINVAL);
+    assert(pthread_create(NULL, NULL, dummy_routine, NULL) == EINVAL);
     assert(pthread_create(&th, NULL, NULL, NULL) == EINVAL);
     PASS("pthread_create rejects NULL thread/start with EINVAL");
 }
-
-static void *dummy_routine(void *arg) { return arg; }
 
 static void test_create_passes_attributes_to_the_kernel(void) {
     reset();
@@ -174,15 +179,55 @@ static void test_create_passes_attributes_to_the_kernel(void) {
 
     pthread_t th = 0xFF;
     stub_task_create_rc = 4;
-    assert(pthread_create(&th, &attr, dummy_routine, (void *)0x1234) == 0);
+    assert(pthread_create(&th, &attr, dummy_routine, &routine_arg) == 0);
     assert(th == 0);                       /* first free slot */
     assert(stub_last_priority == 2);
     assert(stub_last_stack == 2048);
     assert(posix_thread_table[0].active);
     assert(posix_thread_table[0].start_routine == dummy_routine);
-    assert(posix_thread_table[0].arg == (void *)0x1234);
-    assert(stub_entry_arg == (void *)(uintptr_t)0);
-    PASS("pthread_create forwards priority, stack and argument");
+    assert(posix_thread_table[0].arg == &routine_arg);
+    /* The kernel is handed the wrapper, never the user routine: the wrapper
+     * is what records the return value and signals a joiner, so a
+     * pthread_create() that passed `start` straight through would lose both
+     * and still satisfy every other assertion here. */
+    assert(stub_entry == posix_thread_wrapper);
+    assert(stub_entry_arg == (void *)(uintptr_t)0);   /* the slot index */
+    PASS("pthread_create forwards priority, stack, argument and the wrapper");
+}
+
+/* Run the entry the kernel was given, which is what a started task does. */
+static void test_wrapper_records_retval_and_signals_the_joiner(void) {
+    reset();
+    pthread_t th = 0;
+    assert(pthread_create(&th, NULL, dummy_routine, &routine_arg) == 0);
+    assert(stub_entry != NULL);
+
+    stub_entry(stub_entry_arg);
+
+    /* dummy_routine returns its own argument. */
+    assert(posix_thread_table[0].retval == &routine_arg);
+    assert(stub_sem_posts == 1);            /* joiner released */
+    assert(posix_thread_table[0].active);    /* joinable: slot held for join */
+
+    void *rv = NULL;
+    assert(pthread_join(th, &rv) == 0);
+    assert(rv == &routine_arg);
+    PASS("the task entry records the return value and releases a joiner");
+}
+
+/* A detached thread has no joiner, so the wrapper itself frees the slot. */
+static void test_wrapper_frees_a_detached_slot(void) {
+    reset();
+    pthread_attr_t attr;
+    assert(pthread_attr_init(&attr) == 0);
+    attr.detach_state = PTHREAD_CREATE_DETACHED;
+
+    pthread_t th = 0;
+    assert(pthread_create(&th, &attr, dummy_routine, &routine_arg) == 0);
+    stub_entry(stub_entry_arg);
+    assert(!posix_thread_table[0].active);
+    assert(stub_sem_deletes == 1);
+    PASS("the task entry frees a detached thread's slot");
 }
 
 static void test_create_reports_eagain_when_the_kernel_refuses(void) {
@@ -218,10 +263,10 @@ static void test_join_returns_the_retval(void) {
     reset();
     posix_thread_table[1].active = true;
     posix_thread_table[1].detached = false;
-    posix_thread_table[1].retval = (void *)0xBEEF;
+    posix_thread_table[1].retval = &routine_arg;
     void *rv = NULL;
     assert(pthread_join(1, &rv) == 0);
-    assert(rv == (void *)0xBEEF);
+    assert(rv == &routine_arg);
     assert(!posix_thread_table[1].active);
     PASS("pthread_join hands back the thread's return value");
 }
@@ -254,6 +299,8 @@ int main(void) {
     test_attr_stacksize_below_minimum();
     test_create_null_arguments();
     test_create_passes_attributes_to_the_kernel();
+    test_wrapper_records_retval_and_signals_the_joiner();
+    test_wrapper_frees_a_detached_slot();
     test_create_reports_eagain_when_the_kernel_refuses();
     test_join_unknown_thread_is_esrch();
     test_join_detached_thread_is_einval();
