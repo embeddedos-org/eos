@@ -21,7 +21,21 @@
 #include <stdio.h>
 
 static uint32_t fake_efuse[0x100 / 4];
-#define ESP32_REG32(addr) fake_efuse[((addr) - 0x3FF5A000U) / 4U]
+
+/* hal_esp32_internal.h's inline helpers reach registers outside the eFuse
+ * block (DPORT, for one). They index off the end of fake_efuse, which this
+ * test never calls but the compiler and CodeQL still see, so send any
+ * unmodelled address to a scratch word instead. */
+static uint32_t fake_unmodelled_reg;
+
+static uint32_t *fake_reg(uint32_t addr)
+{
+    uint32_t i = (addr - 0x3FF5A000U) / 4U;
+    return i < sizeof fake_efuse / sizeof fake_efuse[0] ? &fake_efuse[i]
+                                                        : &fake_unmodelled_reg;
+}
+
+#define ESP32_REG32(addr) (*fake_reg(addr))
 #include "../hal/src/hal_esp32/hal_esp32_adc_cal.c"
 
 typedef struct {
