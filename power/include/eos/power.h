@@ -144,6 +144,28 @@ typedef struct {
  * members meaning "this part cannot do that". A NULL member is not an error
  * in itself — it is what turns the matching API call into
  * ::EOS_POWER_ENOTSUP instead of a silent no-op.
+ *
+ * ## What a callback must guarantee on failure
+ *
+ * A callback that returns nonzero must leave the hardware as it found it.
+ * The framework does not update its cached state when a callback fails --
+ * eos_power_is_peripheral_enabled() and eos_power_get_cpu_freq() keep
+ * reporting what was last applied successfully -- so a backend that changes
+ * the hardware and *then* reports an error leaves the two disagreeing, and
+ * the framework has no way to detect it.
+ *
+ * Where a change cannot be made atomic, the callback should undo what it
+ * managed before returning the error. If it genuinely cannot, it should
+ * apply what it can and return ::EOS_POWER_OK, so the cached state matches
+ * the hardware; reporting an error is for "nothing changed".
+ *
+ * ## Threading
+ *
+ * None of this is synchronised. The framework holds its state in ordinary
+ * statics and calls backend callbacks without a lock, so registration,
+ * initialisation, teardown and operations must not run concurrently.
+ * Treat power setup as single-threaded and the operations as serialised by
+ * the caller. See issue #305.
  */
 
 typedef struct {

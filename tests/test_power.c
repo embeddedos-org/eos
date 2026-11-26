@@ -399,6 +399,124 @@ static void test_cpu_freq_failure_propagates(void) {
     PASS("failed cpu freq change propagates and records nothing");
 }
 
+/* ============================================================
+ * Review fixes
+ * ============================================================ */
+
+/* Peripheral control went to the backend whatever power_initialized said,
+ * unlike every other entry point. A call before init or after deinit changed
+ * the hardware, and the next init() reset the shadow to "enabled" without
+ * undoing it. */
+static void test_periph_before_init_is_rejected(void) {
+    eos_power_register_backend(&fake_backend);
+    fake_reset();
+    eos_power_deinit();
+    assert(eos_power_enable_peripheral(EOS_PERIPH_UART) == EOS_POWER_EINVAL);
+    assert(eos_power_disable_peripheral(EOS_PERIPH_UART) == EOS_POWER_EINVAL);
+    assert(fake.periph_calls == 0);
+    teardown();
+    PASS("peripheral calls before init -> EINVAL, backend untouched");
+}
+
+/* A failed reading is not an unsupported feature. The voltage was flattened
+ * to 0 and then mapped to ENOTSUP, telling callers the board had no battery
+ * sense when the ADC had simply failed. */
+static void test_battery_info_reports_the_backend_error(void) {
+    with_backend();
+    fake.report_pin_mv = 2100;
+    fake.battery_rc = -42;                  /* the backend's own error */
+    eos_battery_info_t info;
+    assert(eos_power_get_battery_info(&info) == -42);
+    /* The no-reading path still answers 0 where it has no room for an error. */
+    assert(eos_power_get_battery_mv() == 0);
+    teardown();
+    PASS("battery info reports the backend's error, not ENOTSUP");
+}
+
+/* power.h: "0 or 10 means no divider" -- so 5 is a divider, and it scales the
+ * reading down. The guard was `> 10`, which silently ignored every ratio
+ * below 10 and returned the pin voltage unchanged. */
+static void test_battery_divider_below_ten_scales_down(void) {
+    eos_power_config_t cfg = default_cfg;
+    cfg.divider_ratio_x10 = 5;              /* 0.5x */
+    eos_power_register_backend(&fake_backend);
+    fake_reset();
+    assert(eos_power_init(&cfg) == EOS_POWER_OK);
+    fake.report_pin_mv = 4000;
+    assert(eos_power_get_battery_mv() == 2000);
+    teardown();
+    PASS("battery divider ratio below 10 scales the reading down");
+}
+
+/* A ratio of 0 or 10 is "no divider" and must not scale. */
+static void test_battery_divider_of_ten_is_identity(void) {
+    eos_power_config_t cfg = default_cfg;
+    cfg.divider_ratio_x10 = 10;
+    eos_power_register_backend(&fake_backend);
+    fake_reset();
+    assert(eos_power_init(&cfg) == EOS_POWER_OK);
+    fake.report_pin_mv = 3700;
+    assert(eos_power_get_battery_mv() == 3700);
+
+    cfg.divider_ratio_x10 = 0;
+    assert(eos_power_init(&cfg) == EOS_POWER_OK);
+    fake.report_pin_mv = 3700;
+    assert(eos_power_get_battery_mv() == 3700);
+    teardown();
+    PASS("battery divider ratio of 0 or 10 leaves the reading alone");
+}
+
+/* pin_mv * ratio was computed in uint32_t, so a large configured ratio and a
+ * large reading wrapped and produced a plausible-looking wrong voltage. The
+ * multiplication is now 64-bit and an out-of-range result is an error. */
+static void test_battery_divider_does_not_wrap(void) {
+    eos_power_config_t cfg = default_cfg;
+    cfg.divider_ratio_x10 = 1000000u;       /* absurd, but it must not wrap */
+    eos_power_register_backend(&fake_backend);
+    fake_reset();
+    assert(eos_power_init(&cfg) == EOS_POWER_OK);
+    fake.report_pin_mv = 100000u;           /* product is 1e11, past UINT32_MAX */
+    /* 32-bit, this wrapped to a small number and was returned as a voltage. */
+    assert(eos_power_get_battery_mv() == 0);
+    eos_battery_info_t info;
+    assert(eos_power_get_battery_info(&info) == EOS_POWER_EINVAL);
+    teardown();
+    PASS("battery divider maths does not wrap uint32_t");
+}
+
+/* The voltage and the percentage came from two separate backend reads, so a
+ * reading that changed or failed in between produced a percentage that did
+ * not match its own voltage. */
+static void test_battery_info_uses_a_single_reading(void) {
+    with_backend();
+    fake.report_pin_mv = 1800;              /* 3600 mV through the 2.0 divider */
+    eos_battery_info_t info;
+    assert(eos_power_get_battery_info(&info) == EOS_POWER_OK);
+    assert(info.voltage_mv == 3600);
+    /* (3600-3000)*100 / (4200-3000) = 50 */
+    assert(info.percentage == 50);
+    assert(fake.battery_calls == 1);        /* was 2: one per field */
+    teardown();
+    PASS("battery info derives its percentage from one reading");
+}
+
+/* Bits outside eos_wake_source_t are a caller mistake, not an obscure wake
+ * source: forwarding them cached a request the API cannot express and
+ * reported success. */
+static void test_wake_sources_reject_undefined_bits(void) {
+    with_backend();
+    assert(eos_power_set_wake_sources(1u << 7) == EOS_POWER_EINVAL);
+    assert(eos_power_set_wake_sources(EOS_WAKE_RTC | (1u << 31)) == EOS_POWER_EINVAL);
+    assert(fake.wake_calls == 0);
+    /* Every defined bit together is still accepted. */
+    uint32_t all = EOS_WAKE_GPIO | EOS_WAKE_TIMER | EOS_WAKE_RTC | EOS_WAKE_UART |
+                   EOS_WAKE_BLE | EOS_WAKE_USB | EOS_WAKE_INTERRUPT;
+    assert(eos_power_set_wake_sources(all) == EOS_POWER_OK);
+    assert(fake.wake_calls == 1 && fake.last_wake_mask == all);
+    teardown();
+    PASS("wake masks with undefined bits are refused");
+}
+
 int main(void) {
     printf("=== EoS Power Management Tests ===\n");
     test_power_init();
@@ -431,6 +549,14 @@ int main(void) {
     test_periph_failure_does_not_move_shadow();
     test_cpu_freq_records_what_was_reached();
     test_cpu_freq_failure_propagates();
+
+    test_periph_before_init_is_rejected();
+    test_battery_info_reports_the_backend_error();
+    test_battery_divider_below_ten_scales_down();
+    test_battery_divider_of_ten_is_identity();
+    test_battery_divider_does_not_wrap();
+    test_battery_info_uses_a_single_reading();
+    test_wake_sources_reject_undefined_bits();
 
     printf("\n=== ALL %d POWER TESTS PASSED ===\n", passed);
     return 0;

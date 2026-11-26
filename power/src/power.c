@@ -22,10 +22,16 @@
  */
 
 #include <eos/power.h>
+#include <stdint.h>   /* UINT32_MAX, uint64_t: battery divider maths */
 #include <string.h>
 
 #if EOS_ENABLE_POWER
 
+/* None of this state is synchronised: plain statics, and backend callbacks
+ * called without a lock. Power setup and operations must not run
+ * concurrently -- see power.h "Threading" and issue #305, which also
+ * covers making current_mode atomic for the sleeping-mode observation
+ * eos_power_enter_mode() deliberately exposes. */
 static const eos_power_backend_t *s_backend = NULL;
 
 static eos_power_mode_t current_mode = EOS_POWER_RUN;
@@ -103,9 +109,18 @@ eos_power_mode_t eos_power_get_mode(void)
     return current_mode;
 }
 
+/* Every bit eos_wake_source_t defines. A mask outside this is not an
+ * obscure wake source the backend might know about -- it is a caller
+ * mistake, and forwarding it would cache a request the API cannot express
+ * and report success for it. */
+#define EOS_WAKE_ALL (EOS_WAKE_GPIO | EOS_WAKE_TIMER | EOS_WAKE_RTC | \
+                      EOS_WAKE_UART | EOS_WAKE_BLE | EOS_WAKE_USB | \
+                      EOS_WAKE_INTERRUPT)
+
 int eos_power_set_wake_sources(uint32_t wake_mask)
 {
     if (!power_initialized) return EOS_POWER_EINVAL;
+    if ((wake_mask & ~(uint32_t)EOS_WAKE_ALL) != 0u) return EOS_POWER_EINVAL;
     if (!s_backend || !s_backend->set_wake_sources) return EOS_POWER_ENOTSUP;
 
     int rc = s_backend->set_wake_sources(wake_mask);
@@ -120,25 +135,52 @@ uint32_t eos_power_get_wake_source(void)
     return last_wake_source;
 }
 
-uint32_t eos_power_get_battery_mv(void)
+/*
+ * One battery reading, reporting the backend's own result.
+ *
+ * eos_power_get_battery_mv() has to flatten every failure to 0 because its
+ * return type has no room for an error, which loses the difference between
+ * "this backend cannot read the battery" and "the read was attempted and
+ * failed". eos_power_get_battery_info() can tell callers apart, so it uses
+ * this instead.
+ */
+static int power_read_battery_mv(uint32_t *mv_out)
 {
-    if (!power_initialized) return 0;
-    if (!s_backend || !s_backend->read_battery_mv) return 0;
+    if (!power_initialized) return EOS_POWER_EINVAL;
+    if (!s_backend || !s_backend->read_battery_mv) return EOS_POWER_ENOTSUP;
 
     uint32_t pin_mv = 0;
-    if (s_backend->read_battery_mv(power_cfg.adc_channel, &pin_mv) != 0) return 0;
+    int rc = s_backend->read_battery_mv(power_cfg.adc_channel, &pin_mv);
+    if (rc != 0) return rc;                 /* the backend's own error */
 
-    /* The backend reads the divider's output; the battery is upstream of it. */
-    if (power_cfg.divider_ratio_x10 > 10) {
-        return (pin_mv * power_cfg.divider_ratio_x10) / 10u;
+    /* The backend reads the divider's output; the battery is upstream of
+     * it. power.h: "0 or 10 means no divider" -- so every other value is a
+     * divider, including a ratio below 10, which scales the reading down.
+     * In 64-bit: a large configured ratio times a large pin reading
+     * overflows uint32_t, and a wrapped battery voltage is worse than an
+     * error. */
+    uint32_t ratio = power_cfg.divider_ratio_x10;
+    if (ratio != 0u && ratio != 10u) {
+        uint64_t scaled = ((uint64_t)pin_mv * (uint64_t)ratio) / 10u;
+        if (scaled > UINT32_MAX) return EOS_POWER_EINVAL;
+        pin_mv = (uint32_t)scaled;
     }
-    return pin_mv;
+
+    *mv_out = pin_mv;
+    return EOS_POWER_OK;
 }
 
-uint8_t eos_power_get_battery_pct(void)
+uint32_t eos_power_get_battery_mv(void)
 {
-    if (!power_initialized) return 0;
-    uint32_t mv = eos_power_get_battery_mv();
+    uint32_t mv = 0;
+    if (power_read_battery_mv(&mv) != EOS_POWER_OK) return 0;
+    return mv;
+}
+
+/* Percentage for a voltage already read, so a caller that has a sample can
+ * convert it without reading the battery a second time. */
+static uint8_t battery_pct_from_mv(uint32_t mv)
+{
     /* 0 mV is "no reading", not "a flat battery measured at zero volts", and
      * both answer 0% here -- eos_power_get_battery_info() is the call that
      * distinguishes them. */
@@ -148,6 +190,12 @@ uint8_t eos_power_get_battery_pct(void)
     if (mv <= power_cfg.vbat_empty_mv) return 0;
     uint32_t range = power_cfg.vbat_full_mv - power_cfg.vbat_empty_mv;
     return (uint8_t)(((mv - power_cfg.vbat_empty_mv) * 100) / range);
+}
+
+uint8_t eos_power_get_battery_pct(void)
+{
+    if (!power_initialized) return 0;
+    return battery_pct_from_mv(eos_power_get_battery_mv());
 }
 
 int eos_power_get_battery_info(eos_battery_info_t *info)
@@ -160,21 +208,33 @@ int eos_power_get_battery_info(eos_battery_info_t *info)
         return s_backend->read_battery_info(info);
     }
 
-    if (!s_backend->read_battery_mv) return EOS_POWER_ENOTSUP;
-
-    uint32_t mv = eos_power_get_battery_mv();
-    if (mv == 0) return EOS_POWER_ENOTSUP;
+    /* The backend's own error reaches the caller: a failed reading is not
+     * the same as an unsupported one, and returning ENOTSUP for both told
+     * callers this board has no battery sense when the ADC had simply
+     * failed. */
+    uint32_t mv = 0;
+    int rc = power_read_battery_mv(&mv);
+    if (rc != EOS_POWER_OK) return rc;
 
     /* Charge state, current and temperature need a gauge this backend has
      * not got, so they stay zero rather than being invented. */
     memset(info, 0, sizeof(*info));
     info->voltage_mv = mv;
-    info->percentage = eos_power_get_battery_pct();
+    /* Converted from the voltage just stored, not read again: a second
+     * reading could disagree with info->voltage_mv, or fail and report 0%
+     * next to a valid voltage. */
+    info->percentage = battery_pct_from_mv(mv);
     return EOS_POWER_OK;
 }
 
 static int power_set_peripheral(eos_peripheral_id_t periph, bool enable)
 {
+    /* As every other entry point does. Without this, a call before
+     * eos_power_init() or after eos_power_deinit() still reached a
+     * registered backend and changed the hardware, and a later init() reset
+     * the shadow to "enabled" without undoing it -- leaving the framework
+     * certain of a state the board was not in. */
+    if (!power_initialized) return EOS_POWER_EINVAL;
     if ((uintmax_t)periph >= (uintmax_t)EOS_PERIPH_MAX) return EOS_POWER_EINVAL;
     if (!s_backend || !s_backend->set_peripheral) return EOS_POWER_ENOTSUP;
 
