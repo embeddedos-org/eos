@@ -232,7 +232,13 @@ int esp32_i2c_write(uint8_t port, uint16_t addr, const uint8_t *data, size_t len
     size_t done = len < I2C_FIFO_LEN - 1U ? len : I2C_FIFO_LEN - 1U;
     REG32(I2C_FIFO_AHB(p)) = (uint32_t)(addr << 1);
     for (size_t i = 0; i < done; i++) REG32(I2C_FIFO_AHB(p)) = data[i];
-    bool last = done == len;
+    /* Everything fits in this segment, so it ends the transfer. Derived
+     * from len rather than written as `done == len`: the two are equal --
+     * done is len when len < 31 and 31 otherwise, so done == len exactly
+     * when len <= 31 -- but spelling it this way says which quantity
+     * decides, and keeps cppcheck's value flow from mistaking the ternary
+     * for a constant (it reported `last` as always false). */
+    bool last = len <= I2C_FIFO_LEN - 1U;
     REG32(I2C_COMD(p, 0)) = CMD(OP_RESTART, 0, 0, 0);
     REG32(I2C_COMD(p, 1)) = CMD(OP_WRITE, done + 1U, 1, 0);
     REG32(I2C_COMD(p, 2)) = last ? CMD(OP_STOP, 0, 0, 0) : CMD(OP_END, 0, 0, 0);
