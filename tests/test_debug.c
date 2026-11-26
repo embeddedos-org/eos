@@ -246,6 +246,48 @@ static void test_gdb_packet_longer_than_advertised_does_not_desync(void) {
     printf("[PASS] gdb packet longer than advertised does not desync\n");
 }
 
+static int tx_count(const char *needle) {
+    int n = 0;
+    for (const char *p = gdb_tx; (p = strstr(p, needle)) != NULL; p++) n++;
+    return n;
+}
+
+/* Z/z types 2, 3 and 4 are write, read and access watchpoints. The stub
+ * implements none of them, but it ignored the type and stored the address
+ * as a breakpoint, answering OK: GDB then reported the watchpoint set and
+ * it never fired. The protocol's answer for an unsupported type is an empty
+ * reply, which makes GDB report that the watchpoint cannot be inserted. */
+static void test_gdb_watchpoint_types_are_unsupported(void) {
+    static const char *const pkts[] = {
+        "Z2,20000000,4", "Z3,20000000,4", "Z4,20000000,4",
+        "z2,20000000,4", "z3,20000000,4", "z4,20000000,4",
+    };
+    for (size_t i = 0; i < sizeof(pkts) / sizeof(pkts[0]); i++) {
+        gdb_reset();
+        gdb_push(pkts[i]);
+        gdb_push("D");
+        gdb_run();
+        assert(tx_has("$#00"));          /* unsupported */
+        assert(tx_count("$OK#") == 1);   /* only D's */
+    }
+    printf("[PASS] gdb watchpoint Z/z types answered as unsupported\n");
+}
+
+/* Software (0) and hardware (1) breakpoints are still set and removed. */
+static void test_gdb_breakpoint_types_still_supported(void) {
+    gdb_reset();
+    gdb_push("Z0,08000100,2");
+    gdb_push("Z1,08000200,2");
+    gdb_push("z0,08000100,2");
+    gdb_push("z1,08000200,2");
+    gdb_push("D");
+    gdb_run();
+    assert(tx_count("$OK#") == 5);
+    assert(!tx_has("$#00"));
+    assert(!tx_has("E0"));
+    printf("[PASS] gdb Z0/Z1 breakpoints still set and removed\n");
+}
+
 /* A packet whose checksum does not match is answered with '-', and GDB
  * resends it. The session must still be there to receive the resend: it
  * used to end on the first corrupt packet, because the dispatch loop read
@@ -460,6 +502,8 @@ int main(void) {
     test_gdb_query_roundtrip();
     test_gdb_packet_of_the_advertised_size_is_accepted();
     test_gdb_packet_longer_than_advertised_does_not_desync();
+    test_gdb_watchpoint_types_are_unsupported();
+    test_gdb_breakpoint_types_still_supported();
     test_gdb_corrupt_checksum_is_nacked_and_the_session_continues();
     test_gdb_body_that_never_ends_is_abandoned();
     test_gdb_memory_transfer_one_past_the_cap_is_refused();
