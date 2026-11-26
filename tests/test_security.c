@@ -153,6 +153,60 @@ TEST(test_acl_last_match_wins) {
     ASSERT(eos_acl_check(&acl, "user", "/data", "read") == EOS_ACL_DENY);
 }
 
+/* A rule field that does not fit used to be cut short by strncpy() and the
+ * rule stored anyway. eos_acl_check() compares the whole string, so the stored
+ * rule no longer named what the caller wrote: an overlong DENY never matched
+ * (and the caller was told it was added), and an overlong ALLOW granted the
+ * shorter resource its truncated copy happened to spell. */
+TEST(test_acl_rejects_overlong_fields) {
+    EosAcl acl;
+    EosAclRule r;
+    char subject[sizeof(r.subject) + 1];
+    char resource[sizeof(r.resource) + 1];
+    char permission[sizeof(r.permission) + 1];
+
+    eos_acl_init(&acl);
+
+    /* One byte too long for each field in turn. */
+    memset(subject, 's', sizeof(r.subject));
+    subject[sizeof(r.subject)] = '\0';
+    memset(resource, 'r', sizeof(r.resource));
+    resource[sizeof(r.resource)] = '\0';
+    memset(permission, 'p', sizeof(r.permission));
+    permission[sizeof(r.permission)] = '\0';
+
+    ASSERT(eos_acl_add_rule(&acl, subject, "/data", "read", EOS_ACL_DENY) == -1);
+    ASSERT(eos_acl_add_rule(&acl, "user", resource, "read", EOS_ACL_DENY) == -1);
+    ASSERT(eos_acl_add_rule(&acl, "user", "/data", permission, EOS_ACL_DENY) == -1);
+    ASSERT(acl.count == 0);
+
+    /* The longest value that fits is still accepted and matched in full. */
+    subject[sizeof(r.subject) - 1] = '\0';
+    resource[sizeof(r.resource) - 1] = '\0';
+    permission[sizeof(r.permission) - 1] = '\0';
+    ASSERT(eos_acl_add_rule(&acl, subject, resource, permission, EOS_ACL_ALLOW) == 0);
+    ASSERT(acl.count == 1);
+    ASSERT(eos_acl_check(&acl, subject, resource, permission) == EOS_ACL_ALLOW);
+}
+
+TEST(test_acl_overlong_allow_does_not_grant_prefix) {
+    EosAcl acl;
+    EosAclRule r;
+    char longer[sizeof(r.resource) + 1];
+    char prefix[sizeof(r.resource)];
+
+    memset(longer, 'r', sizeof(r.resource));
+    longer[sizeof(r.resource)] = '\0';
+    memcpy(prefix, longer, sizeof(prefix) - 1);
+    prefix[sizeof(prefix) - 1] = '\0';
+
+    eos_acl_init(&acl);
+    eos_acl_add_rule(&acl, "user", longer, "read", EOS_ACL_ALLOW);
+
+    /* Nothing allowed "user" to read the shorter resource. */
+    ASSERT(eos_acl_check(&acl, "user", prefix, "read") == EOS_ACL_DENY);
+}
+
 int main(void) {
     printf("=== EoS: Security Services Unit Tests ===\n\n");
     run_test_secureboot_init();
@@ -166,7 +220,9 @@ int main(void) {
     run_test_acl_default_deny();
     run_test_acl_wildcard();
     run_test_acl_last_match_wins();
-    tests_run = 11;
+    run_test_acl_rejects_overlong_fields();
+    run_test_acl_overlong_allow_does_not_grant_prefix();
+    tests_run = 13;
     printf("\n%d/%d tests passed\n", tests_passed, tests_run);
     return (tests_passed == tests_run) ? 0 : 1;
 }
