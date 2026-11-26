@@ -231,6 +231,73 @@ TEST(test_driver_null_safety) {
     ASSERT(eos_driver_write(NULL, NULL, 0) < 0);
 }
 
+/* deinit releases what init acquired, so it must run once per successful
+ * init. deinit_all() marks each driver UNINIT afterwards but used to call
+ * deinit regardless of state, so a second deinit_all(), or the unregister()
+ * every test above does after one, released the same resources twice, and
+ * a driver that was never initialised was deinitialised anyway. */
+static int deinit_calls = 0;
+
+static void counting_deinit(struct eos_driver *drv) {
+    (void)drv;
+    deinit_calls++;
+}
+
+static const eos_driver_ops_t counting_ops = {
+    .init   = mock_init_ok,
+    .deinit = counting_deinit,
+    .open   = mock_open,
+    .close  = mock_close,
+};
+
+TEST(test_driver_deinit_runs_once) {
+    eos_driver_t drv = {
+        .name = "test-deinit-once",
+        .type = EOS_DRIVER_GPIO,
+        .ops  = &counting_ops,
+        .instance = 0,
+    };
+
+    deinit_calls = 0;
+    ASSERT(eos_driver_register(&drv) == 0);
+    ASSERT(eos_driver_init_all() == 0);
+
+    eos_driver_deinit_all();
+    ASSERT(deinit_calls == 1);
+    ASSERT(drv.state == EOS_DRV_STATE_UNINIT);
+
+    eos_driver_deinit_all();
+    ASSERT(deinit_calls == 1);
+
+    ASSERT(eos_driver_unregister("test-deinit-once") == 0);
+    ASSERT(deinit_calls == 1);
+}
+
+TEST(test_driver_never_initialised_not_deinitialised) {
+    eos_driver_t drv = {
+        .name = "test-never-init",
+        .type = EOS_DRIVER_GPIO,
+        .ops  = &counting_ops,
+        .instance = 0,
+    };
+
+    deinit_calls = 0;
+    ASSERT(eos_driver_register(&drv) == 0);
+
+    eos_driver_deinit_all();
+    ASSERT(deinit_calls == 0);
+
+    ASSERT(eos_driver_unregister("test-never-init") == 0);
+    ASSERT(deinit_calls == 0);
+
+    /* An initialised driver is still deinitialised by unregister(). */
+    deinit_calls = 0;
+    ASSERT(eos_driver_register(&drv) == 0);
+    ASSERT(eos_driver_init_all() == 0);
+    ASSERT(eos_driver_unregister("test-never-init") == 0);
+    ASSERT(deinit_calls == 1);
+}
+
 int main(void) {
     printf("=== EoS: Driver Recovery & Stability Tests ===\n\n");
     run_test_driver_init_success();
@@ -239,7 +306,9 @@ int main(void) {
     run_test_driver_read_write_active();
     run_test_driver_suspend_resume();
     run_test_driver_null_safety();
-    tests_run = 6;
+    run_test_driver_deinit_runs_once();
+    run_test_driver_never_initialised_not_deinitialised();
+    tests_run = 8;
     printf("\n%d/%d tests passed\n", tests_passed, tests_run);
     return (tests_passed == tests_run) ? 0 : 1;
 }

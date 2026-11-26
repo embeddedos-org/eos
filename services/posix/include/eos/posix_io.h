@@ -18,6 +18,7 @@
 #include <stddef.h>
 #include <stdbool.h>
 #include <sys/types.h>  /* ssize_t (read/write) */
+#include <eos/posix_errno.h>
 
 #if defined(_MSC_VER) && !defined(ssize_t)
 /* MSVC's <sys/types.h> has no ssize_t (tests/CMakeLists.txt, test_posix_io);
@@ -51,13 +52,10 @@ extern "C" {
 #define EOS_SEEK_CUR  1
 #define EOS_SEEK_END  2
 
-/* errno values for I/O */
-#define ENOSYS   38
-#define EBADF     9
-#define EINVAL   22
-#define ENOMEM   12
-#define ENOENT    2
-#define EMFILE   24
+/* errno values for I/O — shared with the rest of the layer, and guarded,
+ * because these were unconditional #defines here: ENOSYS is 38 on Linux and
+ * 129 on MSVC, so overriding whatever the libc said was a latent conflict
+ * (#270). */
 
 /* stat structure (minimal) */
 struct eos_stat {
