@@ -10,6 +10,7 @@
 #include <time.h>
 #ifdef _WIN32
 #include <process.h>
+#include <windows.h>
 #else
 #include <fcntl.h>
 #include <spawn.h>
@@ -28,20 +29,29 @@ static uint64_t get_timestamp_ms(void) {
 /* Milliseconds for the watchdog's kick and expiry times. get_timestamp_ms()
  * counts whole seconds of time(), so a timeout under a second could not
  * expire until the second changed, and any timeout was out by up to a
- * second. CLOCK_MONOTONIC also keeps a wall-clock change from expiring or
- * extending the watchdog. Where the C library has no CLOCK_MONOTONIC
- * (Windows), the C11 millisecond clock is used; with neither, time(). */
+ * second.
+ *
+ * Every path here is monotonic. A watchdog measures an interval, so a clock
+ * that can be set -- by NTP, by an operator, by a DST rule -- is the wrong
+ * instrument: moving it forward expires a healthy system, and moving it
+ * back makes a hung one look alive. That rules out timespec_get(TIME_UTC),
+ * which is calendar time, and leaves time() usable only as a last resort on
+ * a target that offers nothing better. */
 static uint64_t watchdog_now_ms(void) {
-#if defined(CLOCK_MONOTONIC) && !defined(_WIN32)
+#if defined(_WIN32)
+    /* Milliseconds since boot, never adjusted. */
+    return (uint64_t)GetTickCount64();
+#elif defined(CLOCK_MONOTONIC)
     struct timespec ts;
     if (clock_gettime(CLOCK_MONOTONIC, &ts) == 0)
         return (uint64_t)ts.tv_sec * 1000u + (uint64_t)ts.tv_nsec / 1000000u;
-#elif defined(TIME_UTC)
-    struct timespec ts;
-    if (timespec_get(&ts, TIME_UTC) == TIME_UTC)
-        return (uint64_t)ts.tv_sec * 1000u + (uint64_t)ts.tv_nsec / 1000000u;
-#endif
     return get_timestamp_ms();
+#else
+    /* No monotonic clock on this target: whole seconds of time(), the
+     * behaviour this fix replaces everywhere else. eos_watchdog_check()
+     * refuses to treat a backwards step as elapsed time. */
+    return get_timestamp_ms();
+#endif
 }
 
 void eos_watchdog_init(EosWatchdog *wd, uint32_t timeout_ms) {
@@ -73,7 +83,15 @@ int eos_watchdog_stop(EosWatchdog *wd) {
 int eos_watchdog_check(EosWatchdog *wd) {
     if (wd->state != EOS_WDG_RUNNING) return 0;
     uint64_t now = watchdog_now_ms();
-    if (now - wd->last_kick > wd->timeout_ms) {
+    /* One read of last_kick, and never a wrapping subtraction. now can sit
+     * below last_kick two ways: a kick landing between these reads, or the
+     * time() fallback being set backwards. Unsigned, that subtraction would
+     * read as some 580 million years elapsed and expire the watchdog
+     * immediately -- exactly when it has just been kicked, or when the
+     * clock moved. Neither is elapsed time, so neither expires anything. */
+    uint64_t last = wd->last_kick;
+    if (now <= last) return 0;
+    if (now - last > wd->timeout_ms) {
         wd->state = EOS_WDG_EXPIRED;
         if (wd->callback) wd->callback(wd->user_data);
         return -1;

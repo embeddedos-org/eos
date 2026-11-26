@@ -90,37 +90,106 @@ static void sleep_ms(unsigned ms) {
 #endif
 }
 
-/* Start right after time() moves to a new second, so the 300 ms wait below
- * stays inside one second of time(): a clock that counts whole seconds sees
- * no time pass at all. */
-static void wait_for_next_second(void) {
-    time_t t0 = time(NULL);
-    while (time(NULL) == t0) sleep_ms(5);
+/*
+ * Does the watchdog's clock actually resolve milliseconds?
+ *
+ * This is the property the fix is about, and it is asserted without
+ * depending on how long the process sleeps or when it is scheduled. A clock
+ * counting whole seconds can only ever produce a multiple of 1000; a
+ * millisecond clock produces a non-multiple 999 times in 1000. Twenty
+ * samples therefore give a false pass with probability about 1e-60, and no
+ * scheduling delay can cause one -- unlike a sleep-and-measure test, which
+ * a descheduled process can pass against the old whole-second clock by
+ * crossing a second boundary.
+ *
+ * start() sets start_time and kick() sets last_kick, so sampling both shows
+ * that each uses the millisecond clock. A kick left on the old clock while
+ * start and check moved to the new one would fail here.
+ */
+TEST(test_watchdog_clock_resolves_milliseconds) {
+    EosWatchdog wd;
+    int start_sub_second = 0, kick_sub_second = 0;
+    eos_watchdog_init(&wd, 100);
+    for (int i = 0; i < 20 && !(start_sub_second && kick_sub_second); i++) {
+        ASSERT(eos_watchdog_start(&wd) == 0);
+        if (wd.start_time % 1000u != 0u) start_sub_second = 1;
+        sleep_ms(7);
+        ASSERT(eos_watchdog_kick(&wd) == 0);
+        if (wd.last_kick % 1000u != 0u) kick_sub_second = 1;
+    }
+    ASSERT(start_sub_second);
+    ASSERT(kick_sub_second);
 }
 
+/*
+ * A timeout under a second expires.
+ *
+ * Deterministic: rather than sleeping and hoping the scheduler cooperates,
+ * last_kick is moved back by a known interval. The field is monotonic
+ * milliseconds (see EosWatchdog), so subtracting 200 states exactly "200 ms
+ * have passed since the last kick" with no dependence on real time. With
+ * the old whole-second clock a 100 ms timeout could not expire at all
+ * inside one second; test_watchdog_clock_resolves_milliseconds pins the
+ * clock, and this pins what check() does with it.
+ */
 TEST(test_watchdog_expires_after_a_timeout_under_a_second) {
     EosWatchdog wd;
     callback_count = 0;
     eos_watchdog_init(&wd, 100);
     eos_watchdog_set_callback(&wd, test_callback, NULL);
-    wait_for_next_second();
     ASSERT(eos_watchdog_start(&wd) == 0);
-    sleep_ms(300);
+    ASSERT(eos_watchdog_check(&wd) == 0);   /* nothing has elapsed yet */
+    wd.last_kick -= 200;                    /* 200 ms since the last kick */
     ASSERT(eos_watchdog_check(&wd) == -1);
     ASSERT(wd.state == EOS_WDG_EXPIRED);
     ASSERT(callback_count == 1);
 }
 
+/*
+ * A kick restarts the timeout, and the restarted timeout still expires.
+ *
+ * The second half matters: a test that only checks immediately after a kick
+ * passes whatever clock the kick used, so it gives no coverage of timeout
+ * measurement after a kick.
+ */
 TEST(test_watchdog_kick_restarts_the_timeout) {
     EosWatchdog wd;
     callback_count = 0;
     eos_watchdog_init(&wd, 100);
     eos_watchdog_set_callback(&wd, test_callback, NULL);
-    wait_for_next_second();
     ASSERT(eos_watchdog_start(&wd) == 0);
-    sleep_ms(300);
-    ASSERT(eos_watchdog_kick(&wd) == 0);
-    ASSERT(eos_watchdog_check(&wd) == 0);   /* just kicked */
+
+    wd.last_kick -= 200;                    /* past the timeout */
+    ASSERT(eos_watchdog_kick(&wd) == 0);    /* but a kick arrives */
+    ASSERT(eos_watchdog_check(&wd) == 0);   /* so it is not expired */
+    ASSERT(wd.state == EOS_WDG_RUNNING);
+    ASSERT(callback_count == 0);
+
+    wd.last_kick -= 200;                    /* 200 ms since *that* kick */
+    ASSERT(eos_watchdog_check(&wd) == -1);  /* the restarted timeout expires */
+    ASSERT(wd.state == EOS_WDG_EXPIRED);
+    ASSERT(callback_count == 1);
+}
+
+/*
+ * A clock that steps backwards, or a kick landing mid-check, must not
+ * expire the watchdog.
+ *
+ * now - last_kick is unsigned: if now is below last_kick the subtraction
+ * wraps to roughly 1.8e19 ms -- some 580 million years -- which is greater
+ * than any timeout, so the watchdog would fire the instant the clock moved
+ * back or a kick was recorded between check()'s two reads. A watchdog that
+ * trips because the clock was adjusted is worse than no watchdog: it
+ * reboots a healthy system.
+ */
+TEST(test_watchdog_does_not_expire_when_time_moves_backwards) {
+    EosWatchdog wd;
+    callback_count = 0;
+    eos_watchdog_init(&wd, 100);
+    eos_watchdog_set_callback(&wd, test_callback, NULL);
+    ASSERT(eos_watchdog_start(&wd) == 0);
+    wd.last_kick += 5000;                   /* as if now stepped 5 s back */
+    ASSERT(eos_watchdog_check(&wd) == 0);
     ASSERT(wd.state == EOS_WDG_RUNNING);
     ASSERT(callback_count == 0);
 }
@@ -546,8 +615,10 @@ int main(void) {
     run_test_watchdog_start_kick();
     run_test_watchdog_stop();
     run_test_watchdog_callback();
+    run_test_watchdog_clock_resolves_milliseconds();
     run_test_watchdog_expires_after_a_timeout_under_a_second();
     run_test_watchdog_kick_restarts_the_timeout();
+    run_test_watchdog_does_not_expire_when_time_moves_backwards();
     run_test_audit_init();
     run_test_audit_record();
     run_test_audit_multiple();
