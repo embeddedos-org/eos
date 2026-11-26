@@ -238,7 +238,10 @@ int eos_audio_record(uint8_t id, uint8_t *buf, size_t len, uint32_t timeout_ms)
             continue;
         }
         for (uint32_t k = 0; k < FIFO_DATA_NUM && w < words; k++, w++) {
-            uint16_t v = (uint16_t)REG32(I2S_FIFO_RD);
+            /* Erratum CPU-3.21: I2S0's FIFO read register (0x3FF4F004) is
+             * one of the five, so this read must not be interrupted. The
+             * surrounding drain loop stays outside the mask. */
+            uint16_t v = (uint16_t)eos_esp32_fifo_read(I2S_FIFO_RD);
             /* Mono keeps the left slot of each frame. */
             if (s_channels == 1U && (w & 1U) != 0U) continue;
             size_t i = s_channels == 1U ? w / 2U : w;

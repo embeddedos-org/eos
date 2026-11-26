@@ -242,7 +242,8 @@ static void uart_rx_drain(uint8_t p)
         uint32_t mem = REG32(UART_MEM_RX_STATUS(p));
         uint32_t rd = (mem >> 2) & 0x7FFU, wr = (mem >> 13) & 0x7FFU;
         if (UART_RXFIFO_CNT(REG32(UART_STATUS(p))) == 0U && rd == wr) break;
-        (void)REG32(UART_FIFO_APB(p));
+        /* Erratum CPU-3.21: this read must not be interrupted. */
+        (void)eos_esp32_fifo_read(UART_FIFO_APB(p));
     }
 }
 
@@ -375,7 +376,9 @@ static int esp32_uart_read(uint8_t port, uint8_t *data, size_t len, uint32_t tim
     size_t got = 0;
     while (got < len) {
         if (UART_RXFIFO_CNT(REG32(status_reg)) != 0U) {
-            data[got++] = (uint8_t)REG32(fifo_reg);
+            /* Erratum CPU-3.21: this read must not be interrupted. The
+             * count check and the timeout loop stay outside the mask. */
+            data[got++] = (uint8_t)eos_esp32_fifo_read(fifo_reg);
             continue;
         }
         uint32_t now = eos_esp32_ccount();
