@@ -76,7 +76,14 @@ void *_sbrk(ptrdiff_t incr)
         errno = ENOMEM;
         return (void *)-1;
     }
-    s_brk += incr;
+    /* Through uintptr_t for the same reason as the bounds check above:
+     * s_brk points into a region delimited by linker symbols, not into a C
+     * array object, so `s_brk += incr` is pointer arithmetic the standard
+     * does not define. Unsigned addition wraps on purpose -- a negative
+     * incr converts to a large uintptr_t whose modular sum is the intended
+     * lower address, and the check above has already proved it is in
+     * range. */
+    s_brk = (char *)(brk + (uintptr_t)incr);
     eos_port_exit_critical(crit);
     return prev;
 }

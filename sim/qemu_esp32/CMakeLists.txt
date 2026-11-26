@@ -63,7 +63,14 @@ set_target_properties(esp32_image PROPERTIES LINK_DEPENDS "${root}/${ld}")
 separate_arguments(esptool UNIX_COMMAND "${EOS_ESP32_ESPTOOL}")
 set(bin "${CMAKE_BINARY_DIR}/esp32_image.bin")
 set(flash "${CMAKE_BINARY_DIR}/esp32_image.flash.bin")
-add_custom_command(TARGET esp32_image POST_BUILD
+# OUTPUT rather than POST_BUILD so the images are dependency-tracked. A
+# POST_BUILD hook runs only when the target itself relinks, so deleting an
+# image, or changing an image setting or pad_flash.py while the ELF stayed
+# up to date, left the .bin and .flash.bin missing or stale while the build
+# reported success. Declaring them as outputs makes CMake rebuild them
+# whenever the ELF, this file or the padding script changes.
+add_custom_command(
+    OUTPUT "${bin}" "${flash}"
     COMMAND ${esptool} --chip ${img_chip} elf2image --flash_mode ${img_flash_mode}
             --flash_freq ${img_flash_freq} --flash_size ${img_flash_size}
             -o "${bin}" "$<TARGET_FILE:esp32_image>"
@@ -71,4 +78,13 @@ add_custom_command(TARGET esp32_image POST_BUILD
     # the same bytes build.sh writes.
     COMMAND python3 "${CMAKE_CURRENT_SOURCE_DIR}/pad_flash.py"
         "${bin}" "${flash}" "${img_offset}" "${img_flash_size}"
+    DEPENDS esp32_image
+            "$<TARGET_FILE:esp32_image>"
+            "${CMAKE_CURRENT_SOURCE_DIR}/pad_flash.py"
+            "${CMAKE_CURRENT_SOURCE_DIR}/sim.yaml"
+            "${CMAKE_CURRENT_LIST_FILE}"
+    COMMENT "Creating ESP32 flash images"
     VERBATIM)
+
+# In ALL so `cmake --build` still produces the images without naming a target.
+add_custom_target(esp32_images ALL DEPENDS "${bin}" "${flash}")
