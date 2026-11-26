@@ -28,7 +28,9 @@ def main() -> int:
     port = sys.argv[1]
     seconds = float(sys.argv[2]) if len(sys.argv) > 2 else 12.0
 
-    ser = serial.Serial(port, 115200, timeout=0.05)
+    # A short read timeout: each line is stamped when a read returns, so the
+    # timeout bounds the timestamp error (50 ms skewed one gap to 0.954 s).
+    ser = serial.Serial(port, 115200, timeout=0.002)
     # Hold EN low with GPIO0 high (normal boot, not download mode), release.
     ser.dtr = False
     ser.rts = True
@@ -39,11 +41,21 @@ def main() -> int:
 
     lines = []
     buf = b""
+    # The USB-serial bridge can still hold bytes from before the reset, which
+    # arrive in the first few ms; record from the boot ROM's banner on.
+    booted = False
     while time.monotonic() - t0 < seconds:
         buf += ser.read(256)
         while b"\n" in buf:
             raw, buf = buf.split(b"\n", 1)
             text = raw.decode("utf-8", "replace").rstrip("\r")
+            if not booted:
+                # "rst:0x1 (POWERON_RESET),boot:0x13 (...)"; stale bytes can
+                # run into the front of it, so match its tail.
+                if "_RESET),boot:" not in text:
+                    continue
+                booted = True
+                text = text[text.rfind("(", 0, text.index("_RESET),boot:")) :]
             stamp = time.monotonic() - t0
             lines.append((stamp, text))
             print(f"[{stamp:7.3f}s] {text}", flush=True)
