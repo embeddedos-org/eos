@@ -8,29 +8,16 @@
  */
 
 #include <eos/posix_ipc.h>
+#include <eos/posix_errno.h>
 #include <eos/kernel.h>
 #include <eos/hal.h>
+#include <stdio.h>   /* snprintf() — eos_pipe() names its queue entry (#270) */
 #include <string.h>
 
 #if defined(EOS_ENABLE_MULTICORE) && EOS_ENABLE_MULTICORE
 #include <eos/multicore.h>
 #endif
 
-#ifndef EINVAL
-#define EINVAL 22
-#endif
-#ifndef ENOMEM
-#define ENOMEM 12
-#endif
-#ifndef ENOENT
-#define ENOENT  2
-#endif
-#ifndef EAGAIN
-#define EAGAIN 11
-#endif
-#ifndef ENOSYS
-#define ENOSYS 38
-#endif
 
 /* ============================================================
  * Named Message Queue Registry

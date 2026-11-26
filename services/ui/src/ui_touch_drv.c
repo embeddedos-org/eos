@@ -79,13 +79,14 @@ void eos_ui_touch_read_cb(lv_indev_t *indev, void *data)
         return;
     }
 
-    /* Rotate first point into screen coordinates */
-    uint16_t px = points[0].x;
-    uint16_t py = points[0].y;
-    rotate_point(&px, &py);
+    /* Rotate every point into screen coordinates: LVGL gets the first,
+     * the gesture recogniser gets them all. */
+    for (uint8_t i = 0; i < count && i < 5; i++) {
+        rotate_point(&points[i].x, &points[i].y);
+    }
 
-    d->point.x = (int16_t)px;
-    d->point.y = (int16_t)py;
+    d->point.x = (int16_t)points[0].x;
+    d->point.y = (int16_t)points[0].y;
     d->state   = points[0].pressed ? LV_INDEV_STATE_PRESSED
                                    : LV_INDEV_STATE_RELEASED;
 

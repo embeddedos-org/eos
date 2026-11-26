@@ -346,6 +346,21 @@ target_include_directories(test_ui_gesture PRIVATE
 )
 add_test(NAME test_ui_gesture COMMAND test_ui_gesture)
 
+# --- test_ui_touch_drv: LVGL touch read callback (rotation) ---
+add_executable(test_ui_touch_drv test_ui_touch_drv.c)
+target_compile_definitions(test_ui_touch_drv PRIVATE
+    EOS_ENABLE_UI=1
+    EOS_ENABLE_TOUCH=1
+    EOS_ENABLE_DISPLAY=1
+)
+target_include_directories(test_ui_touch_drv PRIVATE
+    ${CMAKE_CURRENT_SOURCE_DIR}/../include
+    ${CMAKE_CURRENT_SOURCE_DIR}/../hal/include
+    ${CMAKE_CURRENT_SOURCE_DIR}/../services/ui/include
+    ${CMAKE_CURRENT_SOURCE_DIR}/mocks
+)
+add_test(NAME test_ui_touch_drv COMMAND test_ui_touch_drv)
+
 # --- test_power: Power management framework ---
 add_executable(test_power test_power.c)
 target_link_libraries(test_power PRIVATE eos_power)
@@ -543,6 +558,22 @@ target_include_directories(test_posix_time PRIVATE
     ${EoS_SOURCE_DIR}/kernel/include
     ${EoS_SOURCE_DIR}/hal/include)
 add_test(NAME test_posix_time COMMAND test_posix_time)
+
+# --- test_posix_threads: pthread attributes, create/join error paths (#270) ---
+# #includes services/posix/src/posix_threads.c with its POSIX names renamed
+# (it defines pthread_create/join/exit/self and the pthread_attr_* set, which
+# would otherwise collide with the host libc's), the way test_posix_io.c and
+# test_posix_time.c do; the kernel calls it needs are stubbed in the suite, so
+# eos_posix -- off by default -- is not needed. That is the point: the file
+# could not compile at all (its errno defines sat below their first use) for as
+# long as nothing built it, and building it here does not wait for
+# EOS_ENABLE_POSIX to be switched on. Portable: no UNIX-only header is used.
+add_executable(test_posix_threads test_posix_threads.c)
+target_include_directories(test_posix_threads PRIVATE
+    ${EoS_SOURCE_DIR}/services/posix/include
+    ${EoS_SOURCE_DIR}/kernel/include
+    ${EoS_SOURCE_DIR}/hal/include)
+add_test(NAME test_posix_threads COMMAND test_posix_threads)
 
 # --- example_secure_ota: examples/secure-ota must keep compiling ---
 # It includes eos/ota.h and eos/os_services.h together, which failed while
