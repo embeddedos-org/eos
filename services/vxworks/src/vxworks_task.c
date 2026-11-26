@@ -36,16 +36,17 @@ static vxw_task_entry_t s_task_table[EOS_VXWORKS_MAX_TASKS];
 /* ----------------------------------------------------------------
  * Priority mapping
  *
- * VxWorks: 0 = highest, 255 = lowest
- * EoS kernel uses uint8_t priority where higher numeric values
- * mean higher priority. Invert the scale.
+ * VxWorks: 0 = highest, 255 = lowest. The EoS scheduler uses the same
+ * order (it runs the lowest number; the idle task sits at 255), so the
+ * value passes through. It used to be inverted, which ran a VxWorks
+ * priority-0 task at the idle task's priority.
  * ---------------------------------------------------------------- */
 
 static uint8_t vxw_priority_to_eos(int vxw_prio)
 {
     if (vxw_prio < 0)   vxw_prio = 0;
     if (vxw_prio > 255) vxw_prio = 255;
-    return (uint8_t)(255 - vxw_prio);
+    return (uint8_t)vxw_prio;
 }
 
 /* ----------------------------------------------------------------

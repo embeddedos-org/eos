@@ -67,7 +67,9 @@ static int mq_alloc_slot(void) {
 #include <stdarg.h>
 
 mqd_t mq_open(const char *name, int oflag, ...) {
-    if (!name) return (mqd_t)-1;
+    /* Refused like POSIX ENAMETOOLONG. A longer name was stored truncated,
+     * so no later mq_open() or mq_unlink() could find it again. */
+    if (!name || strlen(name) >= EOS_POSIX_MQ_NAME_MAX) return (mqd_t)-1;
 
     mq_registry_init_once();
 
@@ -125,11 +127,21 @@ int mq_send(mqd_t mqdes, const char *msg_ptr, size_t msg_len,
     if (mqdes < 0 || mqdes >= EOS_POSIX_MQ_MAX) return -1;
     posix_mq_entry_t *e = &mq_registry[mqdes];
     if (!e->active) return -1;
-    if (msg_len > e->msg_size) return -1;
+    if (!msg_ptr || msg_len > e->msg_size) return -1;
 
     uint32_t timeout = (e->flags & EOS_O_NONBLOCK) ? EOS_NO_WAIT
                                                     : EOS_WAIT_FOREVER;
-    int rc = eos_queue_send(e->handle, msg_ptr, timeout);
+    /* The queue copies a whole msg_size item. A shorter message is staged
+     * in a zeroed item first; passed directly, the copy read past the end
+     * of the caller's buffer (as msgQSend() in vxworks_msgq.c avoids). */
+    const char *src = msg_ptr;
+    char staging[msg_len < e->msg_size ? e->msg_size : 1];
+    if (msg_len < e->msg_size) {
+        memset(staging, 0, e->msg_size);
+        memcpy(staging, msg_ptr, msg_len);
+        src = staging;
+    }
+    int rc = eos_queue_send(e->handle, src, timeout);
     if (rc == EOS_KERN_OK)   return 0;
     if (rc == EOS_KERN_FULL) return -1; /* EAGAIN */
     return -1;
@@ -218,7 +230,8 @@ static void shm_table_init_once(void) {
 
 int shm_open(const char *name, int oflag, uint32_t mode) {
     (void)mode;
-    if (!name) return -1;
+    /* Same rule as mq_open(): a truncated name could never match again. */
+    if (!name || strlen(name) >= EOS_POSIX_SHM_NAME_MAX) return -1;
     shm_table_init_once();
 
     /* Check if already open */

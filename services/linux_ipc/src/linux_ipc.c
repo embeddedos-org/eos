@@ -536,7 +536,7 @@ int eos_eventfd_create(unsigned int initval, int flags) {
     e->efd_counter = initval;
     e->efd_flags   = flags;
 
-    if (eos_sem_create(&e->sem, initval, UINT32_MAX) == EOS_KERN_OK) {
+    if (eos_sem_create(&e->sem, initval, (uint32_t)INT32_MAX) == EOS_KERN_OK) {
         e->sem_valid = true;
     } else {
         e->type = FD_TYPE_FREE;

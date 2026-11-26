@@ -119,9 +119,16 @@ EosResult eos_lockfile_load(EosLockfile *lock, const char *path) {
         /* Inside packages section */
         if (key[0] == '-') {
             key = lf_trim(key + 1);
-            if (strcmp(key, "name") == 0 && lock->count < EOS_MAX_PACKAGES) {
-                entry_idx = lock->count++;
-                strncpy(lock->entries[entry_idx].name, val, EOS_MAX_NAME - 1);
+            if (strcmp(key, "name") == 0) {
+                if (lock->count < EOS_MAX_PACKAGES) {
+                    entry_idx = lock->count++;
+                    strncpy(lock->entries[entry_idx].name, val, EOS_MAX_NAME - 1);
+                } else {
+                    /* Over the cap: drop this entry's fields too. Left
+                     * pointing at the last accepted entry, entry_idx sent
+                     * them into it and overwrote its version and hash. */
+                    entry_idx = -1;
+                }
             }
             continue;
         }

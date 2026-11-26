@@ -19,6 +19,7 @@
 #include "eos/linux_sysv_ipc.h"
 #include "eos/kernel.h"
 #include "eos/hal.h"
+#include <stdio.h>   /* snprintf */
 #include <string.h>
 
 #ifdef EOS_PLATFORM_LINUX
@@ -526,7 +527,7 @@ int eos_semget(eos_key_t key, int nsems, int semflg) {
     e->perm  = (uint16_t)(semflg & 0x1FF);
 
     for (int i = 0; i < nsems; i++) {
-        if (eos_sem_create(&e->sems[i], 0, UINT32_MAX) == EOS_KERN_OK) {
+        if (eos_sem_create(&e->sems[i], 0, (uint32_t)INT32_MAX) == EOS_KERN_OK) {
             e->sem_valid[i] = true;
         } else {
             for (int j = 0; j < i; j++) {
@@ -623,7 +624,7 @@ int eos_semctl(int semid, int semnum, int cmd, eos_semun_t arg) {
         eos_sem_delete(e->sems[semnum]);
         e->sem_valid[semnum] = false;
         if (eos_sem_create(&e->sems[semnum], (uint32_t)arg.val,
-                           UINT32_MAX) == EOS_KERN_OK) {
+                           (uint32_t)INT32_MAX) == EOS_KERN_OK) {
             e->sem_valid[semnum] = true;
             return 0;
         }
@@ -649,7 +650,7 @@ int eos_semctl(int semid, int semnum, int cmd, eos_semun_t arg) {
                 e->sem_valid[i] = false;
             }
             if (eos_sem_create(&e->sems[i], (uint32_t)arg.array[i],
-                               UINT32_MAX) == EOS_KERN_OK) {
+                               (uint32_t)INT32_MAX) == EOS_KERN_OK) {
                 e->sem_valid[i] = true;
             } else {
                 return -1;

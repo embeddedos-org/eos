@@ -257,6 +257,39 @@ static void test_lockfile_freshness(void) {
     ASSERT(!eos_lockfile_is_current(&lock, &cfg), "generated checksum change is stale");
 }
 
+static void test_lockfile_load_package_overflow(void) {
+    printf("test_lockfile_load_package_overflow:\n");
+    static EosLockfile lock;
+    const char *path = "test_eos_overflow.lock";
+
+    FILE *fp = create_test_config_file(path);
+    ASSERT(fp != NULL, "lockfile fixture created");
+    if (!fp) return;
+    fprintf(fp, "project: overflow-project\nversion: 1.0.0\npackages:\n");
+    for (int i = 0; i < EOS_MAX_PACKAGES + 1; i++) {
+        fprintf(fp, "  - name: pkg%d\n", i);
+        fprintf(fp, "    version: v%d\n", i);
+        fprintf(fp, "    hash: h%d\n", i);
+    }
+    fclose(fp);
+
+    ASSERT(eos_lockfile_load(&lock, path) == EOS_OK, "oversized lockfile loads");
+    remove(path);
+    ASSERT(lock.count == EOS_MAX_PACKAGES, "entry count capped at EOS_MAX_PACKAGES");
+
+    /* The refused package's fields used to land in the last accepted entry. */
+    char want[16];
+    const EosLockEntry *last = &lock.entries[EOS_MAX_PACKAGES - 1];
+    snprintf(want, sizeof(want), "pkg%d", EOS_MAX_PACKAGES - 1);
+    ASSERT(strcmp(last->name, want) == 0, "last accepted entry keeps its name");
+    snprintf(want, sizeof(want), "v%d", EOS_MAX_PACKAGES - 1);
+    ASSERT(strcmp(last->version, want) == 0,
+           "refused package does not overwrite the last entry's version");
+    snprintf(want, sizeof(want), "h%d", EOS_MAX_PACKAGES - 1);
+    ASSERT(strcmp(last->hash, want) == 0,
+           "refused package does not overwrite the last entry's hash");
+}
+
 static void test_package_after_dependencies(void) {
     printf("test_package_after_dependencies:\n");
 
@@ -578,6 +611,7 @@ int main(void) {
     test_package_option_accessors();
     test_config_load_option_overflow();
     test_lockfile_freshness();
+    test_lockfile_load_package_overflow();
 
     printf("\n=== Results: %d/%d passed ===\n", tests_passed, tests_run);
     return (tests_passed == tests_run) ? 0 : 1;

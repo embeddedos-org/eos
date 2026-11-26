@@ -43,7 +43,8 @@ typedef struct {
 void eos_log_set_level(EosLogLevel level);
 EosLogLevel eos_log_get_level(void);
 
-/* Module-level filtering: eos_log_set_module_level("hal", EOS_LOG_DEBUG) */
+/* Module-level filtering: eos_log_set_module_level("hal", EOS_LOG_DEBUG)
+ * Up to 16 modules. Names are matched on their first 31 characters. */
 void eos_log_set_module_level(const char *module, EosLogLevel level);
 
 /* Output target control — bitwise OR of EosLogOutput */

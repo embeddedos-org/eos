@@ -4,7 +4,7 @@
 
 /**
  * @file test_datacenter.c
- * @brief RAID bookkeeping in the datacenter service.
+ * @brief RAID, load-balancer and failover bookkeeping in the datacenter service.
  */
 
 #include "eos/datacenter.h"
@@ -71,11 +71,83 @@ static void test_raid6_capacity_small_array(void)
     ASSERT(arr.usable_capacity == 2000, "four disks: two disks of data");
 }
 
+/* IP_HASH fell back to backend 0 when the hashed backend was down, whether
+ * or not 0 was healthy; RANDOM ignored health altogether. */
+static void test_lb_skips_unhealthy_backends(void)
+{
+    printf("test_lb_skips_unhealthy_backends:\n");
+    static EosLoadBalancer lb;
+    const char *clients[] = {"192.168.1.1", "192.168.1.2", "192.168.1.3",
+                             "10.0.0.7", "172.16.4.20", NULL};
+
+    eos_lb_init(&lb, EOS_LB_IP_HASH);
+    eos_lb_add_backend(&lb, "b0", 80, 1);
+    eos_lb_add_backend(&lb, "b1", 80, 1);
+    lb.backends[0].healthy = 0;
+    int all_healthy = 1;
+    for (int i = 0; clients[i]; i++)
+        if (eos_lb_select(&lb, clients[i]) != 1) all_healthy = 0;
+    ASSERT(all_healthy, "ip_hash: every client lands on the healthy backend");
+    ASSERT(lb.backends[0].active_conns == 0, "ip_hash: no connection on the unhealthy backend");
+    lb.backends[1].healthy = 0;
+    ASSERT(eos_lb_select(&lb, clients[0]) == -1, "ip_hash: no healthy backend selects none");
+
+    eos_lb_init(&lb, EOS_LB_RANDOM);
+    eos_lb_add_backend(&lb, "b0", 80, 1);
+    eos_lb_add_backend(&lb, "b1", 80, 1);
+    eos_lb_add_backend(&lb, "b2", 80, 1);
+    lb.backends[0].healthy = 0;
+    lb.backends[2].healthy = 0;
+    srand(1);
+    int random_healthy = 1;
+    for (int i = 0; i < 64; i++)
+        if (eos_lb_select(&lb, NULL) != 1) random_healthy = 0;
+    ASSERT(random_healthy, "random: only the healthy backend is selected");
+    lb.backends[1].healthy = 0;
+    ASSERT(eos_lb_select(&lb, NULL) == -1, "random: no healthy backend selects none");
+}
+
+/* Failback demoted whichever node primary_idx named, unconditionally. */
+static void test_failover_failback_states(void)
+{
+    printf("test_failover_failback_states:\n");
+    static EosFailoverCluster fc;
+
+    /* Both nodes fail, then the primary recovers: the stand-in stays FAILED. */
+    eos_failover_init(&fc, EOS_FAILOVER_ACTIVE_STANDBY, 1000);
+    eos_failover_add_node(&fc, "n0", "10.0.0.1", 1);
+    eos_failover_add_node(&fc, "n1", "10.0.0.2", 0);
+    ASSERT(eos_failover_trigger(&fc, 0) == 0, "n1 takes over from n0");
+    ASSERT(eos_failover_trigger(&fc, 1) == -1, "n1 fails with no standby left");
+    eos_failover_failback(&fc, 0);
+    ASSERT(fc.nodes[0].state == EOS_NODE_ACTIVE, "recovered primary is active");
+    ASSERT(fc.nodes[1].state == EOS_NODE_FAILED, "failed stand-in is not made a standby");
+    ASSERT(fc.primary_idx == 0, "primary_idx names the recovered primary");
+
+    /* A lone primary fails and recovers: it must not demote itself. */
+    eos_failover_init(&fc, EOS_FAILOVER_ACTIVE_STANDBY, 1000);
+    eos_failover_add_node(&fc, "n0", "10.0.0.1", 1);
+    ASSERT(eos_failover_trigger(&fc, 0) == -1, "lone primary fails with no standby");
+    eos_failover_failback(&fc, 0);
+    ASSERT(fc.nodes[0].state == EOS_NODE_ACTIVE, "lone primary is active after failback");
+
+    /* The ordinary case still hands back: the active stand-in becomes standby. */
+    eos_failover_init(&fc, EOS_FAILOVER_ACTIVE_STANDBY, 1000);
+    eos_failover_add_node(&fc, "n0", "10.0.0.1", 1);
+    eos_failover_add_node(&fc, "n1", "10.0.0.2", 0);
+    eos_failover_trigger(&fc, 0);
+    eos_failover_failback(&fc, 0);
+    ASSERT(fc.nodes[0].state == EOS_NODE_ACTIVE, "primary active after normal failback");
+    ASSERT(fc.nodes[1].state == EOS_NODE_STANDBY, "stand-in returns to standby");
+}
+
 int main(void)
 {
     printf("=== EoS Datacenter Tests ===\n\n");
     test_raid_rebuild_rejects_bad_ids();
     test_raid6_capacity_small_array();
+    test_lb_skips_unhealthy_backends();
+    test_failover_failback_states();
     printf("\n%d/%d assertions passed\n", tests_passed, tests_run);
     return (tests_passed == tests_run) ? 0 : 1;
 }

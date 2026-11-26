@@ -24,6 +24,14 @@ static void (*g_uart_write)(const char *buf, int len) = NULL;
 static struct { char name[32]; EosLogLevel level; } g_module_levels[EOS_LOG_MAX_MODULES];
 static int g_module_count = 0;
 
+/* Names are stored truncated to 31 characters, so they are compared on the
+ * stored width. With strcmp(), a module name longer than that never matched
+ * its own filter, and each set call appended a duplicate until the table was
+ * full. Two names that share their first 31 characters share one filter. */
+static int module_matches(const char *stored, const char *module) {
+    return strncmp(stored, module, sizeof(g_module_levels[0].name) - 1) == 0;
+}
+
 /* Ring buffer for crash analysis */
 static EosLogEntry g_ring[EOS_LOG_RING_SIZE];
 static int g_ring_head = 0;
@@ -40,7 +48,7 @@ EosLogLevel eos_log_get_level(void) {
 void eos_log_set_module_level(const char *module, EosLogLevel level) {
     if (!module) return;
     for (int i = 0; i < g_module_count; i++) {
-        if (strcmp(g_module_levels[i].name, module) == 0) {
+        if (module_matches(g_module_levels[i].name, module)) {
             g_module_levels[i].level = level;
             return;
         }
@@ -239,7 +247,7 @@ void eos_log_module(EosLogLevel level, const char *module, const char *fmt, ...)
     /* Check module-specific level first */
     if (module) {
         for (int i = 0; i < g_module_count; i++) {
-            if (strcmp(g_module_levels[i].name, module) == 0) {
+            if (module_matches(g_module_levels[i].name, module)) {
                 if (level < g_module_levels[i].level) return;
                 goto emit_log;
             }

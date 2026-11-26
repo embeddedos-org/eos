@@ -67,12 +67,11 @@ int eos_flash_write(uint8_t id, uint32_t addr, const void *data, size_t len) {
 
 int eos_flash_erase_sector(uint8_t id, uint32_t sector_addr) {
     (void)id;
-    uint8_t sector = 0;
-    if (sector_addr >= 0x08060000U) sector = 7;
-    else if (sector_addr >= 0x08040000U) sector = 6;
-    else if (sector_addr >= 0x08020000U) sector = 5;
-    else if (sector_addr >= 0x08010000U) sector = 4;
-    else sector = (uint8_t)((sector_addr - 0x08000000U) / 0x4000U);
+    /* Every address from 0x08060000 up used to map to sector 7, so
+     * erasing in sectors 8-11 erased sector 7 instead. */
+    int sn = eos_flash_stm32f4_sector(sector_addr);
+    if (sn < 0) return -1;
+    uint8_t sector = (uint8_t)sn;
 
     flash_unlock();
     FLASH_CR = FLASH_CR_SER | ((uint32_t)sector << 3);

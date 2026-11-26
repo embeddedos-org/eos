@@ -758,6 +758,138 @@ static void test_mutex_pi_timeout_restores_priority(void) {
     printf("[PASS] mutex PI timeout restores owner priority\n");
 }
 
+/* ---- A waiter woken by a delete does not touch a recreated object ---- */
+
+/* The yield hook plays a higher-priority task that deletes the object the
+ * waiter is blocked on and creates a new one, which takes the same slot.
+ * The waiter used to send into, receive from, or take a token from that
+ * unrelated object and return EOS_KERN_OK. */
+static eos_queue_handle_t dr_q, dr_q2;
+static eos_sem_handle_t   dr_sem, dr_sem2;
+
+static void dr_queue_hook(void)
+{
+    q7_yield_hook = NULL;
+    assert(eos_queue_delete(dr_q) == EOS_KERN_OK);
+    assert(eos_queue_create(&dr_q2, sizeof(int), 4) == EOS_KERN_OK);
+    assert(dr_q2 == dr_q);
+}
+
+static void dr_queue_fill_hook(void)
+{
+    int v = 42;
+    dr_queue_hook();
+    assert(eos_queue_send(dr_q2, &v, EOS_NO_WAIT) == EOS_KERN_OK);
+}
+
+static void dr_sem_hook(void)
+{
+    q7_yield_hook = NULL;
+    assert(eos_sem_delete(dr_sem) == EOS_KERN_OK);
+    assert(eos_sem_create(&dr_sem2, 1, 1) == EOS_KERN_OK);
+    assert(dr_sem2 == dr_sem);
+}
+
+static void test_delete_wakes_waiter_with_invalid(void) {
+    eos_kernel_init();
+    eos_task_handle_t w = (eos_task_handle_t)eos_task_create("w", test_entry, NULL, 5, 512);
+    eos_task_set_current_internal(w);
+
+    /* Blocked sender: queue full. */
+    int v = 1, bad = 0xBAD, out = 0;
+    assert(eos_queue_create(&dr_q, sizeof(int), 1) == EOS_KERN_OK);
+    assert(eos_queue_send(dr_q, &v, EOS_NO_WAIT) == EOS_KERN_OK);
+    q7_yield_hook = dr_queue_hook;
+    assert(eos_queue_send(dr_q, &bad, EOS_WAIT_FOREVER) == EOS_KERN_INVALID);
+    assert(eos_queue_count(dr_q2) == 0);
+    assert(eos_queue_delete(dr_q2) == EOS_KERN_OK);
+
+    /* Blocked receiver: queue empty; the new queue holds an item. */
+    assert(eos_queue_create(&dr_q, sizeof(int), 1) == EOS_KERN_OK);
+    q7_yield_hook = dr_queue_fill_hook;
+    assert(eos_queue_receive(dr_q, &out, EOS_WAIT_FOREVER) == EOS_KERN_INVALID);
+    assert(out == 0);
+    assert(eos_queue_count(dr_q2) == 1);
+    assert(eos_queue_delete(dr_q2) == EOS_KERN_OK);
+
+    /* Blocked semaphore waiter; the new semaphore has a token. */
+    assert(eos_sem_create(&dr_sem, 0, 1) == EOS_KERN_OK);
+    q7_yield_hook = dr_sem_hook;
+    assert(eos_sem_wait(dr_sem, EOS_WAIT_FOREVER) == EOS_KERN_INVALID);
+    assert(eos_sem_get_count(dr_sem2) == 1);
+    assert(eos_sem_delete(dr_sem2) == EOS_KERN_OK);
+    printf("[PASS] delete wakes waiter with EOS_KERN_INVALID\n");
+}
+
+/* ---- Suspending a blocked task ---- */
+
+static eos_sem_handle_t  sb_sem;
+static eos_task_handle_t sb_waiter, sb_other;
+
+/* Suspend + resume while the wait is still open: back to BLOCKED. Then a
+ * real post ends the wait. */
+static void sb_resume_hook(void)
+{
+    q7_yield_hook = NULL;
+    eos_task_set_current_internal(sb_other);
+    assert(eos_task_get_state(sb_waiter) == EOS_TASK_BLOCKED);
+    assert(eos_task_suspend(sb_waiter) == EOS_KERN_OK);
+    assert(eos_task_suspend(sb_waiter) == EOS_KERN_OK);   /* twice */
+    assert(eos_task_resume(sb_waiter) == EOS_KERN_OK);
+    assert(eos_task_get_state(sb_waiter) == EOS_TASK_BLOCKED);
+    assert(eos_sem_post(sb_sem) == EOS_KERN_OK);
+    assert(eos_task_get_state(sb_waiter) == EOS_TASK_READY);
+    eos_task_set_current_internal(sb_waiter);
+}
+
+/* A post while suspended ends the wait but does not resume the task. */
+static void sb_post_hook(void)
+{
+    q7_yield_hook = NULL;
+    eos_task_set_current_internal(sb_other);
+    assert(eos_task_suspend(sb_waiter) == EOS_KERN_OK);
+    assert(eos_sem_post(sb_sem) == EOS_KERN_OK);
+    assert(eos_task_get_state(sb_waiter) == EOS_TASK_SUSPENDED);
+    assert(eos_task_resume(sb_waiter) == EOS_KERN_OK);
+    assert(eos_task_get_state(sb_waiter) == EOS_TASK_READY);
+    eos_task_set_current_internal(sb_waiter);
+}
+
+static void test_suspend_blocked_task(void) {
+    eos_kernel_init();
+    sb_waiter = (eos_task_handle_t)eos_task_create("w", test_entry, NULL, 5, 512);
+    sb_other  = (eos_task_handle_t)eos_task_create("o", test_entry, NULL, 1, 512);
+    assert(eos_sem_create(&sb_sem, 0, 1) == EOS_KERN_OK);
+    eos_task_set_current_internal(sb_waiter);
+
+    q7_yield_hook = sb_resume_hook;
+    assert(eos_sem_wait(sb_sem, EOS_WAIT_FOREVER) == EOS_KERN_OK);
+
+    q7_yield_hook = sb_post_hook;
+    assert(eos_sem_wait(sb_sem, EOS_WAIT_FOREVER) == EOS_KERN_OK);
+    assert(eos_sem_delete(sb_sem) == EOS_KERN_OK);
+
+    /* A delayed task suspended and resumed keeps its deadline. */
+    eos_task_block_with_timeout(sb_waiter, 50);
+    assert(eos_task_suspend(sb_waiter) == EOS_KERN_OK);
+    assert(eos_task_resume(sb_waiter) == EOS_KERN_OK);
+    assert(eos_task_get_state(sb_waiter) == EOS_TASK_BLOCKED);
+    eos_task_unblock(sb_waiter);
+
+    /* A deadline that passed while suspended has timed out: resume READY. */
+    eos_task_block_with_timeout(sb_waiter, 50);
+    assert(eos_task_suspend(sb_waiter) == EOS_KERN_OK);
+    g_tick += 100;
+    assert(eos_task_resume(sb_waiter) == EOS_KERN_OK);
+    assert(eos_task_get_state(sb_waiter) == EOS_TASK_READY);
+
+    /* A plain READY task still resumes READY. */
+    assert(eos_task_suspend(sb_other) == EOS_KERN_OK);
+    assert(eos_task_resume(sb_other) == EOS_KERN_OK);
+    assert(eos_task_get_state(sb_other) == EOS_TASK_READY);
+    printf("[PASS] suspend of a blocked task\n");
+}
+
 static int kernel_tests_run = 0;
 #define RUN(fn) do { fn(); kernel_tests_run++; } while (0)
 
@@ -784,6 +916,8 @@ int main(void) {
     RUN(test_wake_tick_zero);
     RUN(test_swtimer_one_shot_restart_from_callback);
     RUN(test_delete_blocked_task_leaves_wait_lists);
+    RUN(test_delete_wakes_waiter_with_invalid);
+    RUN(test_suspend_blocked_task);
     /* Counted rather than written out: the literal said 12/12 while a
      * thirteenth test sat in this file uncalled, so the number agreed
      * with the omission instead of exposing it. */

@@ -57,6 +57,10 @@ uint32_t eos_get_tick_ms(void) { return stub_tick_ms; }
 
 void eos_task_delay_ms(uint32_t ms) { stub_last_delay_ms = ms; }
 
+/* timer_settime()/timer_delete() mask interrupts around the stop. */
+void eos_irq_disable(void) {}
+void eos_irq_enable(void) {}
+
 int eos_swtimer_create(eos_swtimer_handle_t *out, const char *name,
                        uint32_t period_ms, bool auto_reload,
                        eos_swtimer_callback_t callback, void *ctx) {
@@ -195,8 +199,13 @@ static void test_sleep_and_timer_take_64bit_timespec(void) {
     struct itimerspec spec = { .it_interval = { .tv_sec = 2, .tv_nsec = 0 },
                                .it_value = { .tv_sec = 5, .tv_nsec = 0 } };
     assert(timer_settime(id, 0, &spec, NULL) == 0);
-    assert(stub_last_period_ms == 2000);
-    assert(stub_last_auto_reload);
+    /* The first expiry is at it_value: a one-shot of 5 s, whose callback
+     * then starts the 2 s periodic timer (tests/test_compat_regressions.c
+     * runs that against the real kernel timer). This used to assert a
+     * 2 s periodic timer here, which pinned the first expiry at
+     * it_interval. */
+    assert(stub_last_period_ms == 5000);
+    assert(!stub_last_auto_reload);
     assert(timer_delete(id) == 0);
     printf("[PASS] sleep and timers take the 64-bit timespec\n");
 }

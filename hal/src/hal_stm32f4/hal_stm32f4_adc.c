@@ -96,14 +96,21 @@ uint32_t eos_stm32f4_adc_read(uint8_t channel)
     return ADC1->DR & 0xFFF;
 }
 
+/* Centi-degrees from a 12-bit temperature-sensor sample (3.3 V reference).
+ * V_sense = raw * 3.3 / 4096; T(°C) = (V_sense - 0.76) / 0.0025 + 25.
+ * In microvolts, T(centi-°C) = (uV - 760000) / 25 + 2500. The old form
+ * added whole degrees, (cV - 76) * 100 / 25, to 2500 centi-degrees, so
+ * readings stayed within a few tenths of 25.00 °C, and the centivolt step
+ * lost about 4 °C of resolution. Pure, so tests/test_stm32f4_conv.c
+ * runs it on the host. */
+int32_t eos_stm32f4_adc_temp_from_raw(uint32_t raw)
+{
+    int64_t uv = (int64_t)(raw & 0xFFFU) * 3300000 / 4096;
+    return (int32_t)((uv - 760000) / 25 + 2500);
+}
+
 int32_t eos_stm32f4_adc_read_temperature(void)
 {
     uint32_t raw = eos_stm32f4_adc_read(16); /* Channel 16 = temp sensor */
-    /* V_sense = raw * 3.3 / 4096
-     * T(°C) = ((V_sense - 0.76) / 0.0025) + 25
-     * Simplified integer math: T = ((raw * 330 / 4096) - 76) * 100 / 25 + 2500
-     */
-    int32_t v_100 = (int32_t)(raw * 330 / 4096);
-    int32_t temp_100 = (v_100 - 76) * 100 / 25 + 2500;
-    return temp_100; /* Temperature in centi-degrees (e.g., 2500 = 25.00°C) */
+    return eos_stm32f4_adc_temp_from_raw(raw); /* e.g. 2500 = 25.00 °C */
 }
