@@ -37,7 +37,19 @@ static uint64_t get_timestamp_ms(void) {
  * back makes a hung one look alive. That rules out timespec_get(TIME_UTC),
  * which is calendar time, and leaves time() usable only as a last resort on
  * a target that offers nothing better. */
+/* Test seam; see os_services_test_hook.h. NULL in every build but the
+ * watchdog tests, which need a clock they control: an assertion that the
+ * watchdog has *not* expired is otherwise a race with the scheduler, which
+ * can deschedule the process for longer than the timeout, expire the
+ * watchdog correctly, and fail the test. */
+static uint64_t (*s_watchdog_clock_hook)(void);
+
+void eos_watchdog_set_test_clock(uint64_t (*fn)(void)) {
+    s_watchdog_clock_hook = fn;
+}
+
 static uint64_t watchdog_now_ms(void) {
+    if (s_watchdog_clock_hook != NULL) return s_watchdog_clock_hook();
 #if defined(_WIN32)
     /* Milliseconds since boot, never adjusted. */
     return (uint64_t)GetTickCount64();
