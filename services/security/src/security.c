@@ -242,6 +242,16 @@ void eos_acl_init(EosAcl *acl) {
     memset(acl, 0, sizeof(*acl));
 }
 
+/* Does s terminate within cap bytes? A bounded strlen(): an ACL field may
+ * come from untrusted input, and strlen() would walk a caller-sized string
+ * to its terminator only to reject it. This stops at the destination's
+ * capacity. Plain C11 -- strnlen() is POSIX, and this tree uses none. */
+static int acl_field_fits(const char *s, size_t cap) {
+    for (size_t i = 0; i < cap; i++)
+        if (s[i] == '\0') return 1;
+    return 0;
+}
+
 int eos_acl_add_rule(EosAcl *acl, const char *subject, const char *resource,
                      const char *permission, EosAclAction action) {
     if (!acl || !subject || !resource || !permission) return -1;
@@ -251,9 +261,9 @@ int eos_acl_add_rule(EosAcl *acl, const char *subject, const char *resource,
      * shortened field would name a different subject, resource or permission
      * than the caller asked for -- a DENY that never matches, or an ALLOW for
      * whatever the truncated prefix spells. */
-    if (strlen(subject) >= sizeof(r->subject) ||
-        strlen(resource) >= sizeof(r->resource) ||
-        strlen(permission) >= sizeof(r->permission))
+    if (!acl_field_fits(subject, sizeof(r->subject)) ||
+        !acl_field_fits(resource, sizeof(r->resource)) ||
+        !acl_field_fits(permission, sizeof(r->permission)))
         return -1;
     strncpy(r->subject, subject, sizeof(r->subject) - 1);
     strncpy(r->resource, resource, sizeof(r->resource) - 1);
