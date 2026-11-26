@@ -244,8 +244,17 @@ void eos_acl_init(EosAcl *acl) {
 
 int eos_acl_add_rule(EosAcl *acl, const char *subject, const char *resource,
                      const char *permission, EosAclAction action) {
+    if (!acl || !subject || !resource || !permission) return -1;
     if (acl->count >= EOS_ACL_MAX_RULES) return -1;
     EosAclRule *r = &acl->rules[acl->count];
+    /* Refuse, never truncate: eos_acl_check() compares whole strings, so a
+     * shortened field would name a different subject, resource or permission
+     * than the caller asked for -- a DENY that never matches, or an ALLOW for
+     * whatever the truncated prefix spells. */
+    if (strlen(subject) >= sizeof(r->subject) ||
+        strlen(resource) >= sizeof(r->resource) ||
+        strlen(permission) >= sizeof(r->permission))
+        return -1;
     strncpy(r->subject, subject, sizeof(r->subject) - 1);
     strncpy(r->resource, resource, sizeof(r->resource) - 1);
     strncpy(r->permission, permission, sizeof(r->permission) - 1);
