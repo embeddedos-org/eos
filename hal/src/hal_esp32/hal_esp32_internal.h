@@ -22,6 +22,52 @@
 #define ESP32_REG32(addr) (*(volatile uint32_t *)(uintptr_t)(addr))
 #endif
 
+/*
+ * Read one of the five FIFO registers named by ESP32 erratum CPU-3.21 with
+ * this core's interrupts masked.
+ *
+ * "When a CPU is interrupted while accessing five specific FIFO registers,
+ * subsequent CPU accesses will get halted": if an interrupt arrives while
+ * the CPU is reading UART0 0x3FF40000, UART1 0x3FF50000, UART2 0x3FF6E000,
+ * I2S0 0x3FF4F004 or I2S1 0x3FF6D004, the read request is cut short and the
+ * bus bridge stays waiting for it to end. Every later APB access by *either*
+ * CPU (0x3FF40000-0x3FF7FFFF, 0x60000000-0x6003FFFF) is then rejected and
+ * halted -- the chip stops talking to its peripherals. Affects revisions
+ * v0.0 through v3.1; Espressif lists no fix scheduled. Writing to these
+ * registers is unaffected, so only reads need this.
+ *
+ * Espressif's stated workaround is to disable CPU interrupts before the read
+ * and enable them after, which is what this does.
+ *
+ * Only the local core is masked. The erratum is about an interrupt cutting
+ * short *this* CPU's read, so no inter-core lock is required; taking the
+ * kernel's would put a scheduler lock underneath the console UART. Callers
+ * keep their polling loops outside this helper -- the mask covers a single
+ * load, not a wait.
+ *
+ * Level 3 is XCHAL_EXCM_LEVEL on the ESP32 and masks every line this port
+ * uses, matching eos_port_enter_critical() in
+ * kernel/src/arch/xtensa_lx6/port.c. The level is only raised, never
+ * lowered, so a caller already above 3 keeps its own level.
+ */
+static inline uint32_t eos_esp32_fifo_read(uint32_t fifo_reg)
+{
+#ifdef __XTENSA__
+    uint32_t ps, v;
+    __asm volatile ("rsr.ps %0" : "=a" (ps) :: "memory");
+    if ((ps & 0xFU) < 3U) {
+        __asm volatile ("rsil %0, 3" : "=a" (ps) :: "memory");
+    }
+    v = ESP32_REG32(fifo_reg);
+    __asm volatile ("wsr.ps %0\n\trsync" :: "a" (ps) : "memory");
+    return v;
+#else
+    /* Host builds read the test's fake registers; there is no erratum and
+     * no PS register to touch. */
+    return ESP32_REG32(fifo_reg);
+#endif
+}
+
 /* CPU clock (CCOUNT rate) and APB clock. On the PLL, APB is 80 MHz whatever
  * the CPU runs at; on the 40 MHz crystal both run at 40 MHz (ESP32 TRM,
  * "Reset and Clock"). board_esp32.c sets the clock. */

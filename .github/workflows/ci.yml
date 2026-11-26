@@ -140,6 +140,55 @@ jobs:
             cmake --build "build/$product" --parallel $(nproc)
           done
 
+  # ── Optional feature options ──────────────────────────────────────────────
+  #
+  # An option nothing ever turns on is not optional, it is dead. eos_posix is
+  # gated by EOS_ENABLE_POSIX, which defaults OFF, and no job in any workflow
+  # built with it ON -- so services/posix/src/posix_threads.c sat in the tree
+  # unable to compile (its errno defines were below their first use) and
+  # posix_ipc.c called snprintf() with no <stdio.h>, and CI stayed green
+  # through all of it (#270; #269 was the same rot in posix_time.c).
+  #
+  # This builds the host configuration again with each such option on, and runs
+  # the suite, so the next source that only compiles in someone's head fails
+  # here instead of three releases later.
+  optional-features:
+    name: Optional features (EOS_ENABLE_POSIX=ON)
+    runs-on: ubuntu-22.04
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - option: EOS_ENABLE_POSIX
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          submodules: recursive
+
+      - name: Install dependencies
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y --no-install-recommends \
+            cmake ninja-build gcc-12 g++-12
+
+      - name: Configure (host, ${{ matrix.option }}=ON)
+        run: |
+          cmake -B build/opt -G Ninja \
+            -DCMAKE_BUILD_TYPE=$BUILD_TYPE \
+            -DCMAKE_C_COMPILER=gcc-12 \
+            -DCMAKE_CXX_COMPILER=g++-12 \
+            -DEOS_BUILD_TESTS=ON \
+            -DEOS_PRODUCT=vbox_test \
+            -D${{ matrix.option }}=ON
+
+      - name: Build (host, ${{ matrix.option }}=ON)
+        run: cmake --build build/opt --parallel $(nproc)
+
+      - name: Run C unit tests
+        run: |
+          cd build/opt
+          ctest --output-on-failure --no-tests=error --timeout 120 --parallel $(nproc)
+
   # ── Cross-compile ARM Cortex-M4 ───────────────────────────────────────────
   build-arm:
     name: Cross-compile ARM Cortex-M4
@@ -257,7 +306,7 @@ jobs:
   ci-gate:
     name: CI Gate
     runs-on: ubuntu-22.04
-    needs: [test, windows-test, default-config, build-arm, static-analysis]
+    needs: [test, windows-test, default-config, optional-features, build-arm, static-analysis]
     if: always()
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1

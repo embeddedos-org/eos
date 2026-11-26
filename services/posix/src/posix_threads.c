@@ -8,6 +8,7 @@
  */
 
 #include <eos/posix_threads.h>
+#include <eos/posix_errno.h>
 #include <eos/kernel.h>
 #include <eos/hal.h>
 #include <string.h>
@@ -109,19 +110,6 @@ int pthread_attr_getstacksize(const pthread_attr_t *attr, size_t *stacksize) {
 /* ============================================================
  * pthread_create / join / exit / self / yield
  * ============================================================ */
-
-#ifndef EAGAIN
-#define EAGAIN  11
-#endif
-#ifndef EINVAL
-#define EINVAL  22
-#endif
-#ifndef ESRCH
-#define ESRCH    3
-#endif
-#ifndef EDEADLK
-#define EDEADLK 35
-#endif
 
 int pthread_create(pthread_t *thread, const pthread_attr_t *attr,
                    void *(*start)(void *), void *arg) {

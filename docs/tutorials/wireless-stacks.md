@@ -1,326 +1,294 @@
 # Wireless Protocols Tutorial
 
-Configure and use BLE, WiFi, and LoRa wireless stacks on EoS. Each section
-includes EoS API code snippets and expected UART output.
+Configure and use BLE and WiFi wireless stacks on EoS, and know where
+LoRa/LoRaWAN stand. Each section uses only APIs that are actually declared
+in the tree, and says plainly what is not implemented yet.
 
 > **Prerequisites:** Build EoS with a product profile that enables wireless
 > (e.g., `iot`, `gateway`, `smart_home`). See
 > [Configuration Examples](configuration-examples.md).
 
+## Status at a glance
+
+| Stack | Header | API status | Backend ships in this tree? |
+|-------|--------|------------|------------------------------|
+| BLE | `<eos/hal_extended.h>` | Declared: config + 9 functions, **no GATT** | **No** — the only definitions are stubs that return `-1` |
+| WiFi | `<eos/hal_extended.h>` | Declared: config + 9 functions | **No** — the only definitions are stubs that return `-1` |
+| LoRa / LoRaWAN | *(none — no header exists)* | **No API in EoS** | **No** |
+
+BLE and WiFi are declared in `hal/include/eos/hal_extended.h` and gated on
+`EOS_ENABLE_BLE` / `EOS_ENABLE_WIFI`, which both default to `0` in
+`include/eos/eos_config.h` — set them to `1` in your product profile to
+compile the declarations in. The function definitions in this tree are the
+stubs in `hal/src/hal_extended_stubs.c`: every call returns `-1` (or
+`false`) until a vendor backend registers through
+`eos_hal_register_ext_backend()` with the `ble_*` / `wifi_*` vtable
+entries. No such backend ships in this tree. So the samples below compile
+against the real headers, but on a stock checkout they fail at run time
+with `-1` — check every return code, as the samples do, instead of
+assuming the radio is up.
+
+There is no `eos/ble.h`, `eos/wifi.h`, `eos/lora.h`, or `eos/lorawan.h`
+in the tree. Do not include them.
+
 ---
 
 ## Bluetooth Low Energy (BLE)
 
-EoS provides a GAP/GATT abstraction over the BLE radio. Enable with
-`EOS_ENABLE_BLE 1` in your product profile.
+BLE is a thin HAL: a config struct, advertising on/off, connect/disconnect,
+raw send/receive, and an RX callback. There is **no GAP/GATT abstraction**
+in EoS — no advertising parameters, no GATT services or characteristics,
+and no pairing/bonding API. Those identifiers do not exist in the tree.
 
-### GAP — Advertising
+That gap matters beyond this tutorial: Matter commissioning happens over
+BLE (GATT), so the missing GATT API is the unmet prerequisite for Thread
+commissioning. It is recorded as such in eNet's
+[BLE commissioning audit](https://github.com/embeddedos-org/eNet/blob/master/docs/ble-commissioning-audit.md)
+(decision record SH1, 2026-11-08). A GATT API is a separate, larger piece
+of work, not something this tutorial can paper over.
 
-GAP (Generic Access Profile) controls device discovery and connection
-establishment.
+### What exists
+
+Declared in `hal/include/eos/hal_extended.h` (under `#if EOS_ENABLE_BLE`):
 
 ```c
-#include <eos/ble.h>
+typedef struct {
+    char     device_name[32];
+    uint8_t  tx_power_dbm;
+    uint16_t adv_interval_ms;
+} eos_ble_config_t;
 
-static const eos_ble_adv_params_t adv_params = {
-    .interval_min_ms = 100,
-    .interval_max_ms = 200,
-    .type            = EOS_BLE_ADV_CONNECTABLE_UNDIRECTED,
-    .channel_map     = EOS_BLE_ADV_CH_ALL,  // channels 37, 38, 39
-    .filter_policy   = EOS_BLE_ADV_FILTER_NONE,
-};
+typedef void (*eos_ble_rx_callback_t)(const uint8_t *data, size_t len, void *ctx);
 
-static const uint8_t adv_data[] = {
-    0x02, 0x01, 0x06,                   // flags: LE General Discoverable
-    0x0B, 0x09, 'E','o','S','-','S','e','n','s','o','r',  // complete local name
-    0x03, 0x03, 0x1A, 0x18,             // 16-bit UUID: Environmental Sensing
-};
+int  eos_ble_init(const eos_ble_config_t *cfg);
+void eos_ble_deinit(void);
+int  eos_ble_advertise_start(void);
+int  eos_ble_advertise_stop(void);
+int  eos_ble_connect(const uint8_t addr[6]);
+int  eos_ble_disconnect(void);
+bool eos_ble_is_connected(void);
+int  eos_ble_send(const uint8_t *data, size_t len);
+int  eos_ble_set_rx_callback(eos_ble_rx_callback_t cb, void *ctx);
+```
 
-int ble_start_advertising(void) {
-    int rc = eos_ble_init();
+### Init, advertise, send, receive
+
+This follows the in-tree example `examples/ble-sensor/main.c`, which uses
+the same calls. With no backend registered, `eos_ble_init()` returns
+`-1` — the sample reports that instead of continuing as if the radio
+were up.
+
+```c
+#include <eos/hal_extended.h>
+#include <stdio.h>
+
+static void ble_rx_handler(const uint8_t *data, size_t len, void *ctx)
+{
+    (void)ctx;
+    printf("[ble] RX %zu bytes: ", len);
+    for (size_t i = 0; i < len && i < 16; i++) {
+        printf("%02x ", data[i]);
+    }
+    printf("\n");
+}
+
+int ble_start_advertising(void)
+{
+    eos_ble_config_t ble_cfg = {
+        .device_name     = "EoS-Sensor",
+        .tx_power_dbm    = 0,
+        .adv_interval_ms = 100,
+    };
+
+    int rc = eos_ble_init(&ble_cfg);
     if (rc != 0) {
-        eos_log(EOS_LOG_ERROR, "BLE", "Init failed: %d", rc);
+        /* -1 with no backend registered (see "Status at a glance"). */
+        printf("[ble] init failed: %d\n", rc);
         return rc;
     }
 
-    rc = eos_ble_gap_set_adv_data(adv_data, sizeof(adv_data));
-    if (rc != 0) return rc;
-
-    rc = eos_ble_gap_start_adv(&adv_params);
-    eos_log(EOS_LOG_INFO, "BLE", "Advertising started (100–200 ms interval)");
-    return rc;
-}
-```
-
-Expected UART output:
-
-```
-[  0.050] BLE  : BLE stack initialized (SoftDevice / HCI)
-[  0.051] BLE  : Advertising started (100–200 ms interval)
-[  5.320] BLE  : GAP event: CONNECTED (peer=AA:BB:CC:DD:EE:FF, conn_handle=0)
-```
-
-### GATT — Service & Characteristics
-
-GATT (Generic Attribute Profile) defines the data model exposed over BLE.
-
-```c
-// Define a custom Environmental Sensing service
-static eos_ble_gatt_service_t env_service;
-static eos_ble_gatt_char_t temp_char;
-static eos_ble_gatt_char_t humidity_char;
-
-static uint8_t temp_value[2]     = {0};  // int16, 0.01 °C resolution
-static uint8_t humidity_value[2] = {0};  // uint16, 0.01 % resolution
-
-void gatt_setup(void) {
-    // Register service (UUID 0x181A = Environmental Sensing)
-    eos_ble_gatt_service_init(&env_service, EOS_BLE_UUID16(0x181A),
-                               EOS_BLE_GATT_PRIMARY);
-
-    // Temperature characteristic (UUID 0x2A6E)
-    eos_ble_gatt_char_init(&temp_char, EOS_BLE_UUID16(0x2A6E),
-                            EOS_BLE_GATT_PROP_READ | EOS_BLE_GATT_PROP_NOTIFY,
-                            temp_value, sizeof(temp_value));
-
-    // Humidity characteristic (UUID 0x2A6F)
-    eos_ble_gatt_char_init(&humidity_char, EOS_BLE_UUID16(0x2A6F),
-                            EOS_BLE_GATT_PROP_READ | EOS_BLE_GATT_PROP_NOTIFY,
-                            humidity_value, sizeof(humidity_value));
-
-    eos_ble_gatt_service_add_char(&env_service, &temp_char);
-    eos_ble_gatt_service_add_char(&env_service, &humidity_char);
-    eos_ble_gatt_register(&env_service);
-
-    eos_log(EOS_LOG_INFO, "BLE", "GATT Environmental Sensing service registered");
-}
-```
-
-### Characteristic Read & Write
-
-```c
-// Update and notify connected client
-void update_ble_sensor_data(float temp_c, float humidity_pct) {
-    int16_t temp_raw = (int16_t)(temp_c * 100);
-    uint16_t hum_raw = (uint16_t)(humidity_pct * 100);
-
-    temp_value[0] = temp_raw & 0xFF;
-    temp_value[1] = (temp_raw >> 8) & 0xFF;
-    humidity_value[0] = hum_raw & 0xFF;
-    humidity_value[1] = (hum_raw >> 8) & 0xFF;
-
-    eos_ble_gatt_notify(&temp_char);
-    eos_ble_gatt_notify(&humidity_char);
-}
-
-// Handle write from client (e.g., configuration characteristic)
-static void on_write(eos_ble_gatt_char_t *ch, const uint8_t *data,
-                     uint16_t len, void *ctx) {
-    eos_log(EOS_LOG_INFO, "BLE", "Write to char 0x%04X: %d bytes",
-            ch->uuid.uuid16, len);
-    if (ch == &config_char && len == 1) {
-        uint8_t interval = data[0];
-        set_sensor_interval_sec(interval);
-        eos_log(EOS_LOG_INFO, "BLE", "Sensor interval set to %d s", interval);
+    rc = eos_ble_set_rx_callback(ble_rx_handler, NULL);
+    if (rc != 0) {
+        printf("[ble] RX callback failed: %d\n", rc);
+        return rc;
     }
-}
-```
 
-### Notifications
-
-```c
-// Enable notifications by writing 0x0001 to the CCCD
-// (Client does this; firmware handles it automatically via GATT stack)
-
-// Periodic notification from a task:
-void sensor_ble_task(void *arg) {
-    while (1) {
-        float t, h;
-        read_bme280(&t, &h);
-        update_ble_sensor_data(t, h);
-        eos_log(EOS_LOG_DEBUG, "BLE", "Notified: temp=%.1f°C, hum=%.1f%%", t, h);
-        eos_sleep_ms(1000);
+    rc = eos_ble_advertise_start();
+    if (rc != 0) {
+        printf("[ble] advertise failed: %d\n", rc);
+        return rc;
     }
+
+    printf("[ble] advertising as '%s'\n", ble_cfg.device_name);
+    return 0;
+}
+
+int ble_send_packet(const uint8_t *data, size_t len)
+{
+    if (!eos_ble_is_connected()) {
+        printf("[ble] not connected, dropping %zu bytes\n", len);
+        return -1;
+    }
+    return eos_ble_send(data, len);
+}
+
+void ble_stop(void)
+{
+    eos_ble_advertise_stop();
+    eos_ble_disconnect();
+    eos_ble_deinit();
 }
 ```
 
-Expected output:
+Notes on the sample:
 
-```
-[  1.000] BLE  : Notified: temp=23.4°C, hum=48.2%
-[  2.000] BLE  : Notified: temp=23.5°C, hum=48.0%
-[  3.000] BLE  : Notified: temp=23.4°C, hum=48.3%
-```
-
-### Pairing & Bonding
-
-```c
-static const eos_ble_security_params_t sec_params = {
-    .bond         = true,
-    .mitm         = true,       // man-in-the-middle protection
-    .io_caps      = EOS_BLE_IO_DISPLAY_YESNO,
-    .oob          = false,
-    .min_key_size = 16,
-    .max_key_size = 16,
-};
-
-void ble_enable_security(void) {
-    eos_ble_gap_set_security(&sec_params);
-    eos_log(EOS_LOG_INFO, "BLE", "Security: bonding + MITM (display yes/no)");
-}
-
-// Pairing event callback
-static void on_passkey_display(uint32_t passkey, void *ctx) {
-    eos_log(EOS_LOG_INFO, "BLE", "Passkey: %06lu", passkey);
-    // Display passkey on OLED/LCD or UART for user confirmation
-}
-```
-
-Expected output during pairing:
-
-```
-[  6.100] BLE  : Security request from AA:BB:CC:DD:EE:FF
-[  6.101] BLE  : Passkey: 482193
-[  8.500] BLE  : Pairing complete — bonded, encrypted (AES-128-CCM)
-```
+- Advertising is on/off only (`eos_ble_advertise_start()` /
+  `eos_ble_advertise_stop()`). There is no API to set advertising
+  parameters, data, intervals, or channels — the only interval that
+  exists is `adv_interval_ms` in `eos_ble_config_t`.
+- `eos_ble_send()` sends raw bytes. There is no GATT service,
+  characteristic, notification, or write-callback API, so there is no
+  "Environmental Sensing service" to register and no characteristic to
+  notify. Sensor data goes out as a raw payload; the peer must know
+  its layout.
+- `eos_ble_connect()` takes a 6-byte peer address for a central-role
+  connection. There is no security/pairing API: no bonding, no MITM
+  flag, no passkey callback.
 
 ---
 
 ## WiFi
 
-EoS supports WiFi station mode over ESP32 or similar radios. Enable with
-`EOS_ENABLE_WIFI 1`.
+WiFi is station connect/disconnect, scanning, and raw send/receive over
+the link. There is **no event-callback API, no station/AP mode
+selection, and no static-IP / DHCP / DNS configuration API** in the
+declared surface — poll `eos_wifi_is_connected()` for link state
+instead of waiting for events.
+
+### What exists
+
+Declared in `hal/include/eos/hal_extended.h` (under `#if EOS_ENABLE_WIFI`):
+
+```c
+typedef enum {
+    EOS_WIFI_SEC_OPEN = 0,
+    EOS_WIFI_SEC_WPA2 = 1,
+    EOS_WIFI_SEC_WPA3 = 2,
+} eos_wifi_security_t;
+
+typedef struct {
+    char                ssid[33];
+    char                password[65];
+    eos_wifi_security_t security;
+} eos_wifi_config_t;
+
+typedef struct {
+    char    ssid[33];
+    int8_t  rssi;
+    uint8_t channel;
+    eos_wifi_security_t security;
+} eos_wifi_scan_result_t;
+
+int  eos_wifi_init(void);
+void eos_wifi_deinit(void);
+int  eos_wifi_connect(const eos_wifi_config_t *cfg);
+int  eos_wifi_disconnect(void);
+bool eos_wifi_is_connected(void);
+int  eos_wifi_scan(eos_wifi_scan_result_t *results, size_t max_results,
+                    size_t *found);
+int  eos_wifi_get_ip(uint32_t *ip);
+int  eos_wifi_send(const uint8_t *data, size_t len);
+int  eos_wifi_receive(uint8_t *data, size_t max_len, uint32_t timeout_ms);
+```
 
 ### Station Mode — Connect to AP
 
 ```c
-#include <eos/wifi.h>
+#include <eos/hal_extended.h>
+#include <stdio.h>
 
 static const eos_wifi_config_t wifi_cfg = {
     .ssid     = "MyNetwork",
     .password = "s3cur3p@ss",
-    .security = EOS_WIFI_WPA2_PSK,
-    .channel  = 0,              // auto-select
+    .security = EOS_WIFI_SEC_WPA2,
 };
 
-static void wifi_event_handler(eos_wifi_event_t event, void *ctx) {
-    switch (event) {
-    case EOS_WIFI_EVENT_CONNECTED:
-        eos_log(EOS_LOG_INFO, "WIFI", "Connected to '%s'", wifi_cfg.ssid);
-        break;
-    case EOS_WIFI_EVENT_GOT_IP: {
-        eos_wifi_ip_info_t ip;
-        eos_wifi_get_ip(&ip);
-        eos_log(EOS_LOG_INFO, "WIFI", "IP: %d.%d.%d.%d",
-                (ip.addr >> 0) & 0xFF, (ip.addr >> 8) & 0xFF,
-                (ip.addr >> 16) & 0xFF, (ip.addr >> 24) & 0xFF);
-        break;
-    }
-    case EOS_WIFI_EVENT_DISCONNECTED:
-        eos_log(EOS_LOG_WARN, "WIFI", "Disconnected — reconnecting...");
-        eos_wifi_connect(&wifi_cfg);
-        break;
-    default:
-        break;
-    }
-}
-
-int wifi_init_station(void) {
+int wifi_init_station(void)
+{
     int rc = eos_wifi_init();
-    if (rc != 0) return rc;
+    if (rc != 0) {
+        /* -1 with no backend registered (see "Status at a glance"). */
+        printf("[wifi] init failed: %d\n", rc);
+        return rc;
+    }
 
-    eos_wifi_set_event_handler(wifi_event_handler, NULL);
-    eos_wifi_set_mode(EOS_WIFI_MODE_STA);
-    return eos_wifi_connect(&wifi_cfg);
+    rc = eos_wifi_connect(&wifi_cfg);
+    if (rc != 0) {
+        printf("[wifi] connect failed: %d\n", rc);
+        return rc;
+    }
+
+    if (eos_wifi_is_connected()) {
+        uint32_t ip = 0;
+        if (eos_wifi_get_ip(&ip) == 0) {
+            printf("[wifi] IP: %u.%u.%u.%u\n",
+                   (ip >> 0) & 0xFF, (ip >> 8) & 0xFF,
+                   (ip >> 16) & 0xFF, (ip >> 24) & 0xFF);
+        }
+    }
+    return 0;
 }
-```
-
-Expected output:
-
-```
-[  0.100] WIFI : WiFi stack initialized
-[  0.101] WIFI : Scanning for 'MyNetwork'...
-[  1.450] WIFI : Connected to 'MyNetwork' (ch 6, RSSI -52 dBm)
-[  2.100] WIFI : DHCP lease obtained
-[  2.101] WIFI : IP: 192.168.1.42
 ```
 
 ### AP Scanning
 
 ```c
-void wifi_scan_networks(void) {
+void wifi_scan_networks(void)
+{
     eos_wifi_scan_result_t results[16];
-    int count = eos_wifi_scan(results, 16, 5000);
+    size_t found = 0;
 
-    eos_log(EOS_LOG_INFO, "WIFI", "Found %d networks:", count);
-    for (int i = 0; i < count; i++) {
-        eos_log(EOS_LOG_INFO, "WIFI", "  [%d] %-32s  ch=%2d  rssi=%d dBm  %s",
-                i, results[i].ssid, results[i].channel, results[i].rssi,
-                results[i].security == EOS_WIFI_OPEN ? "OPEN" :
-                results[i].security == EOS_WIFI_WPA2_PSK ? "WPA2" : "WPA3");
+    int rc = eos_wifi_scan(results, 16, &found);
+    if (rc != 0) {
+        printf("[wifi] scan failed: %d\n", rc);
+        return;
+    }
+
+    printf("[wifi] Found %zu networks:\n", found);
+    for (size_t i = 0; i < found; i++) {
+        printf("[wifi]   [%zu] %-32s  ch=%2d  rssi=%d dBm  %s\n",
+               i, results[i].ssid, results[i].channel, results[i].rssi,
+               results[i].security == EOS_WIFI_SEC_OPEN ? "OPEN" :
+               results[i].security == EOS_WIFI_SEC_WPA2 ? "WPA2" : "WPA3");
     }
 }
 ```
 
-Expected output:
+### Reconnection
 
-```
-[  3.000] WIFI : Found 4 networks:
-[  3.001] WIFI :   [0] MyNetwork                         ch= 6  rssi=-52 dBm  WPA2
-[  3.001] WIFI :   [1] NeighborNet                       ch= 1  rssi=-78 dBm  WPA2
-[  3.001] WIFI :   [2] CoffeeShop_Free                   ch=11  rssi=-85 dBm  OPEN
-[  3.001] WIFI :   [3] 5G_Home                           ch=36  rssi=-70 dBm  WPA3
-```
+There is no disconnect event, so reconnection is a poll: if
+`eos_wifi_is_connected()` is false, call `eos_wifi_connect(&wifi_cfg)`
+again. Apply your own retry limit and backoff between attempts — the
+HAL declares no timer for it.
 
-### DHCP Configuration
+### After the link is up
 
-DHCP is enabled by default in station mode. For static IP:
-
-```c
-eos_wifi_ip_info_t static_ip = {
-    .addr    = EOS_IP4(192, 168, 1, 100),
-    .netmask = EOS_IP4(255, 255, 255, 0),
-    .gateway = EOS_IP4(192, 168, 1, 1),
-};
-
-eos_wifi_set_ip(&static_ip);
-eos_wifi_set_dns(EOS_IP4(8, 8, 8, 8));
-```
-
-### Reconnection Strategy
-
-```c
-static int reconnect_attempts = 0;
-#define MAX_RECONNECT_ATTEMPTS 10
-
-static void wifi_event_handler(eos_wifi_event_t event, void *ctx) {
-    if (event == EOS_WIFI_EVENT_DISCONNECTED) {
-        if (reconnect_attempts < MAX_RECONNECT_ATTEMPTS) {
-            uint32_t backoff = (1 << reconnect_attempts) * 1000;
-            if (backoff > 30000) backoff = 30000;
-            eos_log(EOS_LOG_WARN, "WIFI",
-                    "Reconnect attempt %d/%d in %lu ms",
-                    reconnect_attempts + 1, MAX_RECONNECT_ATTEMPTS, backoff);
-            eos_sleep_ms(backoff);
-            eos_wifi_connect(&wifi_cfg);
-            reconnect_attempts++;
-        } else {
-            eos_log(EOS_LOG_ERROR, "WIFI", "Max reconnect attempts exceeded");
-        }
-    } else if (event == EOS_WIFI_EVENT_GOT_IP) {
-        reconnect_attempts = 0;
-    }
-}
-```
+MQTT, HTTP, and mDNS run over the link through `<eos/net.h>` — see
+[Networking Protocols](networking-protocols.md). That tutorial needs
+`EOS_ENABLE_NET 1` plus an established WiFi or Ethernet link.
 
 ---
 
-## LoRa / LoRaWAN
+## LoRa / LoRaWAN — unimplemented in EoS
 
-EoS supports LoRa PHY and LoRaWAN MAC via SPI-connected radios (SX1276/SX1262).
-Enable with `EOS_ENABLE_LORA 1`.
+LoRa and LoRaWAN have **no API in EoS**: no `eos/lora.h`, no
+`eos/lorawan.h`, no `EOS_ENABLE_LORA` flag, and no LoRa declarations in
+`hal/include/eos/hal_extended.h` or `net/include/eos/net.h`. The code
+samples that used to be in this section — raw LoRa transmit/receive,
+LoRaWAN ABP/OTAA join, duty-cycle checks — called functions that do not
+exist, so they are removed, not rewritten.
 
-### LoRa PHY Parameters
+Background only (generic LoRa concepts, not EoS parameters):
 
 | Parameter | Description | Typical Values |
 |-----------|-------------|----------------|
@@ -331,142 +299,11 @@ Enable with `EOS_ENABLE_LORA 1`.
 
 Higher SF = longer range, lower data rate, higher airtime.
 
-### Raw LoRa (Point-to-Point)
-
-```c
-#include <eos/lora.h>
-
-static const eos_lora_config_t lora_cfg = {
-    .frequency_hz  = 915000000,   // 915 MHz (US ISM band)
-    .spreading_factor = 7,
-    .bandwidth     = EOS_LORA_BW_125K,
-    .coding_rate   = EOS_LORA_CR_4_5,
-    .tx_power_dbm  = 14,
-    .preamble_len  = 8,
-    .sync_word     = 0x12,        // private network
-    .crc_on        = true,
-};
-
-int lora_send_sensor_data(void) {
-    int rc = eos_lora_init(&lora_cfg);
-    if (rc != 0) return rc;
-
-    uint8_t payload[16];
-    int len = encode_sensor_payload(payload, sizeof(payload));
-
-    rc = eos_lora_transmit(payload, len, 5000);
-    eos_log(EOS_LOG_INFO, "LORA", "TX %d bytes @ SF%d BW125 (airtime=%lu ms)",
-            len, lora_cfg.spreading_factor, eos_lora_airtime_ms(len));
-    return rc;
-}
-
-static void lora_rx_callback(const uint8_t *data, uint8_t len,
-                              int16_t rssi, int8_t snr, void *ctx) {
-    eos_log(EOS_LOG_INFO, "LORA", "RX %d bytes, RSSI=%d dBm, SNR=%d dB",
-            len, rssi, snr);
-}
-
-void lora_start_receive(void) {
-    eos_lora_set_rx_callback(lora_rx_callback, NULL);
-    eos_lora_receive_continuous();
-}
-```
-
-Expected output:
-
-```
-[  0.100] LORA : SX1276 initialized @ 915.000 MHz
-[  0.101] LORA : TX 12 bytes @ SF7 BW125 (airtime=36 ms)
-[  1.500] LORA : RX 12 bytes, RSSI=-87 dBm, SNR=9 dB
-```
-
-### LoRaWAN — ABP (Activation by Personalization)
-
-ABP uses pre-provisioned session keys — no join procedure required.
-
-```c
-#include <eos/lorawan.h>
-
-static const eos_lorawan_abp_config_t abp_cfg = {
-    .dev_addr  = 0x26011234,
-    .nwk_s_key = {0x2B,0x7E,0x15,0x16,0x28,0xAE,0xD2,0xA6,
-                  0xAB,0xF7,0x15,0x88,0x09,0xCF,0x4F,0x3C},
-    .app_s_key = {0x3C,0x4F,0xCF,0x09,0x88,0x15,0xF7,0xAB,
-                  0xA6,0xD2,0xAE,0x28,0x16,0x15,0x7E,0x2B},
-};
-
-int lorawan_abp_init(void) {
-    int rc = eos_lorawan_init();
-    if (rc != 0) return rc;
-
-    rc = eos_lorawan_join_abp(&abp_cfg);
-    eos_log(EOS_LOG_INFO, "LWAN", "ABP session activated (DevAddr=0x%08X)",
-            abp_cfg.dev_addr);
-    return rc;
-}
-
-int lorawan_send_uplink(uint8_t port, const uint8_t *data, uint8_t len) {
-    int rc = eos_lorawan_send(port, data, len, EOS_LORAWAN_UNCONFIRMED);
-    eos_log(EOS_LOG_INFO, "LWAN", "Uplink port=%d, %d bytes, unconfirmed", port, len);
-    return rc;
-}
-```
-
-### LoRaWAN — OTAA (Over-the-Air Activation)
-
-OTAA is preferred for production — derives session keys via a join procedure.
-
-```c
-static const eos_lorawan_otaa_config_t otaa_cfg = {
-    .dev_eui  = {0x00,0x11,0x22,0x33,0x44,0x55,0x66,0x77},
-    .app_eui  = {0x70,0xB3,0xD5,0x7E,0xD0,0x00,0x00,0x01},
-    .app_key  = {0x2B,0x7E,0x15,0x16,0x28,0xAE,0xD2,0xA6,
-                 0xAB,0xF7,0x15,0x88,0x09,0xCF,0x4F,0x3C},
-};
-
-int lorawan_otaa_join(void) {
-    int rc = eos_lorawan_init();
-    if (rc != 0) return rc;
-
-    eos_log(EOS_LOG_INFO, "LWAN", "Sending Join Request (OTAA)...");
-    rc = eos_lorawan_join_otaa(&otaa_cfg, 30000);  // 30 s timeout
-
-    if (rc == 0) {
-        eos_log(EOS_LOG_INFO, "LWAN", "Join Accept received — session active");
-    } else {
-        eos_log(EOS_LOG_ERROR, "LWAN", "Join failed: %d (timeout or rejected)", rc);
-    }
-    return rc;
-}
-```
-
-Expected OTAA output:
-
-```
-[  0.100] LWAN : LoRaWAN MAC initialized (EU868 / US915)
-[  0.200] LWAN : Sending Join Request (OTAA)...
-[  5.300] LWAN : Join Accept received — session active
-[  5.301] LWAN : DevAddr=0x260B1A2F (assigned by network server)
-```
-
-### Duty Cycle Compliance
-
-LoRaWAN enforces duty cycle limits (e.g., 1% in EU868):
-
-```c
-// Check remaining airtime budget before sending
-uint32_t available_ms = eos_lorawan_duty_cycle_remaining_ms();
-uint32_t needed_ms = eos_lora_airtime_ms(payload_len);
-
-if (needed_ms > available_ms) {
-    eos_log(EOS_LOG_WARN, "LWAN",
-            "Duty cycle limit — need %lu ms, available %lu ms. "
-            "Next TX in %lu s",
-            needed_ms, available_ms,
-            (needed_ms - available_ms) / 1000);
-    return EOS_ERR_DUTY_CYCLE;
-}
-```
+The owning track is eNet: its
+[LoRaWAN study](https://github.com/embeddedos-org/eNet/blob/master/docs/lorawan-study.md)
+is a research note (no code yet) on what a LoRaWAN story for eNet could
+look like. Until that lands, do not write code against a LoRa API in eos
+— there is nothing to link against.
 
 ---
 
@@ -474,14 +311,13 @@ if (needed_ms > available_ms) {
 
 | Issue | Protocol | Fix |
 |-------|----------|-----|
-| BLE not advertising | BLE | Check `EOS_ENABLE_BLE 1` in product profile |
-| No scan results | WiFi | Verify antenna connected, check frequency band |
-| DHCP timeout | WiFi | Confirm router is on same channel, check password |
-| Join rejected | LoRaWAN | Verify DevEUI/AppKey match gateway server config |
-| Duty cycle limit | LoRaWAN | Increase SF interval or reduce payload size |
-| Pairing fails | BLE | Ensure both devices support the same IO capability |
-| WiFi reconnect loop | WiFi | Add exponential backoff (see Reconnection Strategy) |
-| LoRa CRC error | LoRa | Match sync word and modulation params on both ends |
+| Including `eos/ble.h` / `eos/wifi.h` fails to compile | BLE / WiFi | Those headers do not exist. Include `<eos/hal_extended.h>` instead |
+| `eos_ble_init()` / `eos_wifi_init()` returns `-1` | BLE / WiFi | No backend is registered — the in-tree definitions are stubs. A vendor backend must register via `eos_hal_register_ext_backend()` |
+| BLE / WiFi functions are not declared at all | BLE / WiFi | `EOS_ENABLE_BLE` / `EOS_ENABLE_WIFI` default to `0` in `include/eos/eos_config.h`. Set the flag to `1` in your product profile |
+| No scan results (`eos_wifi_scan()` returns `-1`) | WiFi | Same as above: no backend, so the stub reports `*found = 0` and `-1` |
+| Need a GATT service, pairing, or Matter commissioning over BLE | BLE | No GATT API exists in EoS. See eNet's [BLE commissioning audit](https://github.com/embeddedos-org/eNet/blob/master/docs/ble-commissioning-audit.md) — that work is a separate, larger piece |
+| LoRa / LoRaWAN code does not compile | LoRa | No LoRa API exists in EoS. See eNet's [LoRaWAN study](https://github.com/embeddedos-org/eNet/blob/master/docs/lorawan-study.md) |
+| MQTT / HTTP over WiFi | WiFi | Use `<eos/net.h>` once the link is up — see [Networking Protocols](networking-protocols.md) |
 
 ---
 
