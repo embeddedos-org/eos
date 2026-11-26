@@ -289,6 +289,10 @@ add_test(NAME test_security COMMAND test_security)
 
 # --- test_os_services: Watchdog, audit ---
 add_executable(test_os_services test_os_services.c)
+# For os_services_test_hook.h, the internal seam that substitutes the
+# watchdog clock. Deliberately not in services/os/include: it is not API.
+target_include_directories(test_os_services PRIVATE
+    ${CMAKE_SOURCE_DIR}/services/os/src)
 target_link_libraries(test_os_services PRIVATE eos_os_services eos_crypto)
 add_test(NAME test_os_services COMMAND test_os_services)
 
