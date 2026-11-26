@@ -1,4 +1,19 @@
 // SPDX-License-Identifier: MIT
+/*
+ * Power management framework tests.
+ *
+ * Two halves, because the framework has two honest answers (#288):
+ *
+ *   - With no board backend registered, every call that needs hardware
+ *     returns EOS_POWER_ENOTSUP and changes nothing. The earlier version of
+ *     power.c returned 0 from eos_power_enter_mode(EOS_POWER_DEEP_SLEEP) with
+ *     the core still running, and this suite asserted that 0 -- so the lie
+ *     was green. The no-backend cases below are what makes it red.
+ *
+ *   - With a backend registered, each call reaches exactly the backend
+ *     operation it names, with the arguments it was given, and the framework
+ *     keeps only state the backend confirmed.
+ */
 #include <stdio.h>
 #include <string.h>
 #include <assert.h>
@@ -9,143 +24,540 @@
 static int passed = 0;
 #define PASS(name) do { printf("[PASS] %s\n", name); passed++; } while(0)
 
+static const eos_power_config_t default_cfg = {
+    .adc_channel = 3, .vbat_full_mv = 4200, .vbat_empty_mv = 3000,
+    .divider_ratio_x10 = 20
+};
+
+/* ============================================================
+ * Fake board backend — records what the framework asked it to do
+ * ============================================================ */
+
+static struct {
+    int              enter_calls;
+    eos_power_mode_t last_mode;
+    int              enter_rc;
+    uint32_t         report_wake_source;
+
+    int      wake_calls;
+    uint32_t last_wake_mask;
+    int      wake_rc;
+
+    int      battery_calls;
+    uint8_t  last_adc_channel;
+    uint32_t report_pin_mv;
+    int      battery_rc;
+
+    int                 periph_calls;
+    eos_peripheral_id_t last_periph;
+    bool                last_periph_enable;
+    int                 periph_rc;
+
+    int      freq_calls;
+    uint32_t last_freq_hz;
+    uint32_t report_actual_hz;
+    int      freq_rc;
+} fake;
+
+static void fake_reset(void)
+{
+    memset(&fake, 0, sizeof(fake));
+    fake.report_actual_hz = 1;  /* distinguishable from "untouched" */
+}
+
+static int fake_enter_mode(eos_power_mode_t mode, uint32_t *wake_source_out)
+{
+    fake.enter_calls++;
+    fake.last_mode = mode;
+    /* A real backend is inside the sleep right here; the framework must have
+     * published the mode before calling, for an interrupt to observe. */
+    assert(eos_power_get_mode() == mode);
+    if (wake_source_out) *wake_source_out = fake.report_wake_source;
+    return fake.enter_rc;
+}
+
+static int fake_set_wake_sources(uint32_t wake_mask)
+{
+    fake.wake_calls++;
+    fake.last_wake_mask = wake_mask;
+    return fake.wake_rc;
+}
+
+static int fake_read_battery_mv(uint8_t adc_channel, uint32_t *mv_out)
+{
+    fake.battery_calls++;
+    fake.last_adc_channel = adc_channel;
+    if (mv_out) *mv_out = fake.report_pin_mv;
+    return fake.battery_rc;
+}
+
+static int fake_set_peripheral(eos_peripheral_id_t periph, bool enable)
+{
+    fake.periph_calls++;
+    fake.last_periph = periph;
+    fake.last_periph_enable = enable;
+    return fake.periph_rc;
+}
+
+static int fake_set_cpu_freq(uint32_t freq_hz, uint32_t *actual_hz_out)
+{
+    fake.freq_calls++;
+    fake.last_freq_hz = freq_hz;
+    if (actual_hz_out) *actual_hz_out = fake.report_actual_hz;
+    return fake.freq_rc;
+}
+
+static const eos_power_backend_t fake_backend = {
+    .name              = "fake",
+    .enter_mode        = fake_enter_mode,
+    .set_wake_sources  = fake_set_wake_sources,
+    .read_battery_mv   = fake_read_battery_mv,
+    .read_battery_info = NULL,   /* no fuel gauge on this fake board */
+    .set_peripheral    = fake_set_peripheral,
+    .set_cpu_freq      = fake_set_cpu_freq,
+};
+
+static void with_backend(void)
+{
+    fake_reset();
+    eos_power_register_backend(&fake_backend);
+    assert(eos_power_get_backend() == &fake_backend);
+    assert(eos_power_init(&default_cfg) == EOS_POWER_OK);
+}
+
+static void no_backend(void)
+{
+    fake_reset();
+    eos_power_register_backend(NULL);
+    assert(eos_power_get_backend() == NULL);
+    assert(eos_power_init(&default_cfg) == EOS_POWER_OK);
+}
+
+static void teardown(void)
+{
+    eos_power_deinit();
+    eos_power_register_backend(NULL);
+}
+
+/* ============================================================
+ * Lifecycle
+ * ============================================================ */
+
 static void test_power_init(void) {
-    eos_power_config_t cfg = { .adc_channel = 0, .vbat_full_mv = 4200, .vbat_empty_mv = 3000, .divider_ratio_x10 = 20 };
-    assert(eos_power_init(&cfg) == 0);
+    assert(eos_power_init(&default_cfg) == EOS_POWER_OK);
     eos_power_deinit();
     PASS("power init/deinit");
 }
 static void test_power_init_null(void) {
-    assert(eos_power_init(NULL) != 0);
+    assert(eos_power_init(NULL) == EOS_POWER_EINVAL);
     PASS("power init null");
 }
 static void test_power_mode_default(void) {
-    eos_power_config_t cfg = { .adc_channel = 0, .vbat_full_mv = 4200, .vbat_empty_mv = 3000, .divider_ratio_x10 = 20 };
-    eos_power_init(&cfg);
+    no_backend();
     assert(eos_power_get_mode() == EOS_POWER_RUN);
-    eos_power_deinit();
+    teardown();
     PASS("power default mode RUN");
 }
-static void test_power_enter_sleep(void) {
-    eos_power_config_t cfg = { .adc_channel = 0, .vbat_full_mv = 4200, .vbat_empty_mv = 3000, .divider_ratio_x10 = 20 };
-    eos_power_init(&cfg);
-    assert(eos_power_enter_mode(EOS_POWER_SLEEP) == 0);
-    assert(eos_power_get_mode() == EOS_POWER_SLEEP);
-    eos_power_deinit();
-    PASS("power enter sleep");
-}
-static void test_power_enter_deep_sleep(void) {
-    eos_power_config_t cfg = { .adc_channel = 0, .vbat_full_mv = 4200, .vbat_empty_mv = 3000, .divider_ratio_x10 = 20 };
-    eos_power_init(&cfg);
-    assert(eos_power_enter_mode(EOS_POWER_DEEP_SLEEP) == 0);
-    assert(eos_power_get_mode() == EOS_POWER_DEEP_SLEEP);
-    eos_power_deinit();
-    PASS("power enter deep sleep");
-}
-static void test_power_enter_invalid_mode(void) {
-    eos_power_config_t cfg = { .adc_channel = 0, .vbat_full_mv = 4200, .vbat_empty_mv = 3000, .divider_ratio_x10 = 20 };
-    eos_power_init(&cfg);
-    assert(eos_power_enter_mode((eos_power_mode_t)(EOS_POWER_SHUTDOWN + 1)) != 0);
+
+/* ============================================================
+ * No backend: ENOTSUP, and no state moves (#288)
+ * ============================================================ */
+
+static void test_sleep_without_backend_is_not_supported(void) {
+    no_backend();
+    assert(eos_power_enter_mode(EOS_POWER_SLEEP) == EOS_POWER_ENOTSUP);
     assert(eos_power_get_mode() == EOS_POWER_RUN);
-    eos_power_deinit();
+    teardown();
+    PASS("enter sleep without backend -> ENOTSUP, still RUN");
+}
+static void test_deep_sleep_without_backend_is_not_supported(void) {
+    no_backend();
+    assert(eos_power_enter_mode(EOS_POWER_DEEP_SLEEP) == EOS_POWER_ENOTSUP);
+    assert(eos_power_get_mode() == EOS_POWER_RUN);
+    teardown();
+    PASS("enter deep sleep without backend -> ENOTSUP, still RUN");
+}
+static void test_shutdown_without_backend_is_not_supported(void) {
+    no_backend();
+    assert(eos_power_enter_mode(EOS_POWER_SHUTDOWN) == EOS_POWER_ENOTSUP);
+    assert(eos_power_get_mode() == EOS_POWER_RUN);
+    teardown();
+    PASS("enter shutdown without backend -> ENOTSUP, still RUN");
+}
+static void test_run_mode_needs_no_backend(void) {
+    no_backend();
+    assert(eos_power_enter_mode(EOS_POWER_RUN) == EOS_POWER_OK);
+    assert(eos_power_get_mode() == EOS_POWER_RUN);
+    teardown();
+    PASS("enter RUN without backend -> OK");
+}
+static void test_wake_sources_without_backend(void) {
+    no_backend();
+    assert(eos_power_set_wake_sources(EOS_WAKE_RTC) == EOS_POWER_ENOTSUP);
+    assert(eos_power_get_wake_source() == 0);
+    teardown();
+    PASS("set wake sources without backend -> ENOTSUP");
+}
+static void test_battery_without_backend_is_unknown(void) {
+    no_backend();
+    /* Was vbat_full_mv / 100% on every board with no battery sense. */
+    assert(eos_power_get_battery_mv() == 0);
+    assert(eos_power_get_battery_pct() == 0);
+    eos_battery_info_t info;
+    assert(eos_power_get_battery_info(&info) == EOS_POWER_ENOTSUP);
+    teardown();
+    PASS("battery without backend -> unknown, ENOTSUP");
+}
+static void test_periph_without_backend(void) {
+    no_backend();
+    assert(eos_power_disable_peripheral(EOS_PERIPH_UART) == EOS_POWER_ENOTSUP);
+    /* Nothing was gated, so the shadow must not claim it was. */
+    assert(eos_power_is_peripheral_enabled(EOS_PERIPH_UART) == true);
+    assert(eos_power_enable_peripheral(EOS_PERIPH_UART) == EOS_POWER_ENOTSUP);
+    teardown();
+    PASS("peripheral gating without backend -> ENOTSUP");
+}
+static void test_cpu_freq_without_backend(void) {
+    no_backend();
+    assert(eos_power_set_cpu_freq(168000000) == EOS_POWER_ENOTSUP);
+    assert(eos_power_get_cpu_freq() == 0);
+    teardown();
+    PASS("set cpu freq without backend -> ENOTSUP");
+}
+
+/* ============================================================
+ * Argument validation
+ * ============================================================ */
+
+static void test_power_enter_invalid_mode(void) {
+    with_backend();
+    assert(eos_power_enter_mode((eos_power_mode_t)(EOS_POWER_SHUTDOWN + 1))
+           == EOS_POWER_EINVAL);
+    assert(fake.enter_calls == 0);
+    assert(eos_power_get_mode() == EOS_POWER_RUN);
+    teardown();
     PASS("power enter invalid mode");
 }
-static void test_power_wake_sources(void) {
-    eos_power_config_t cfg = { .adc_channel = 0, .vbat_full_mv = 4200, .vbat_empty_mv = 3000, .divider_ratio_x10 = 20 };
-    eos_power_init(&cfg);
-    uint32_t mask = EOS_WAKE_GPIO | EOS_WAKE_TIMER | EOS_WAKE_RTC;
-    assert(eos_power_set_wake_sources(mask) == 0);
+static void test_power_calls_before_init(void) {
+    eos_power_register_backend(&fake_backend);
+    fake_reset();
     eos_power_deinit();
-    PASS("power set wake sources");
-}
-static void test_power_battery_mv(void) {
-    eos_power_config_t cfg = { .adc_channel = 0, .vbat_full_mv = 4200, .vbat_empty_mv = 3000, .divider_ratio_x10 = 20 };
-    eos_power_init(&cfg);
-    uint32_t mv = eos_power_get_battery_mv();
-    (void)mv;
-    PASS("power battery mv");
-}
-static void test_power_battery_pct(void) {
-    eos_power_config_t cfg = { .adc_channel = 0, .vbat_full_mv = 4200, .vbat_empty_mv = 3000, .divider_ratio_x10 = 20 };
-    eos_power_init(&cfg);
-    uint8_t pct = eos_power_get_battery_pct();
-    assert(pct <= 100);
-    eos_power_deinit();
-    PASS("power battery pct <= 100");
-}
-static void test_power_battery_info(void) {
-    eos_power_config_t cfg = { .adc_channel = 0, .vbat_full_mv = 4200, .vbat_empty_mv = 3000, .divider_ratio_x10 = 20 };
-    eos_power_init(&cfg);
-    eos_battery_info_t info;
-    int r = eos_power_get_battery_info(&info);
-    assert(r == 0);
-    assert(info.percentage <= 100);
-    eos_power_deinit();
-    PASS("power battery info");
-}
-static void test_power_battery_info_null(void) {
-    eos_power_config_t cfg = { .adc_channel = 0, .vbat_full_mv = 4200, .vbat_empty_mv = 3000, .divider_ratio_x10 = 20 };
-    eos_power_init(&cfg);
-    assert(eos_power_get_battery_info(NULL) != 0);
-    eos_power_deinit();
-    PASS("power battery info null");
-}
-static void test_power_periph_enable(void) {
-    eos_power_config_t cfg = { .adc_channel = 0, .vbat_full_mv = 4200, .vbat_empty_mv = 3000, .divider_ratio_x10 = 20 };
-    eos_power_init(&cfg);
-    assert(eos_power_enable_peripheral(EOS_PERIPH_UART) == 0);
-    assert(eos_power_is_peripheral_enabled(EOS_PERIPH_UART) == true);
-    eos_power_deinit();
-    PASS("power periph enable");
-}
-static void test_power_periph_disable(void) {
-    eos_power_config_t cfg = { .adc_channel = 0, .vbat_full_mv = 4200, .vbat_empty_mv = 3000, .divider_ratio_x10 = 20 };
-    eos_power_init(&cfg);
-    eos_power_enable_peripheral(EOS_PERIPH_SPI);
-    assert(eos_power_disable_peripheral(EOS_PERIPH_SPI) == 0);
-    assert(eos_power_is_peripheral_enabled(EOS_PERIPH_SPI) == false);
-    eos_power_deinit();
-    PASS("power periph disable");
+    assert(eos_power_enter_mode(EOS_POWER_SLEEP) == EOS_POWER_EINVAL);
+    assert(eos_power_set_wake_sources(EOS_WAKE_RTC) == EOS_POWER_EINVAL);
+    assert(eos_power_set_cpu_freq(1000000) == EOS_POWER_EINVAL);
+    assert(eos_power_get_battery_mv() == 0);
+    assert(fake.enter_calls == 0 && fake.wake_calls == 0 && fake.freq_calls == 0);
+    teardown();
+    PASS("power calls before init -> EINVAL, backend untouched");
 }
 static void test_power_periph_invalid(void) {
-    eos_power_config_t cfg = { .adc_channel = 0, .vbat_full_mv = 4200, .vbat_empty_mv = 3000, .divider_ratio_x10 = 20 };
-    eos_power_init(&cfg);
-    assert(eos_power_enable_peripheral(EOS_PERIPH_MAX) != 0);
-    assert(eos_power_disable_peripheral(EOS_PERIPH_MAX) != 0);
+    with_backend();
+    assert(eos_power_enable_peripheral(EOS_PERIPH_MAX) == EOS_POWER_EINVAL);
+    assert(eos_power_disable_peripheral(EOS_PERIPH_MAX) == EOS_POWER_EINVAL);
     assert(eos_power_is_peripheral_enabled(EOS_PERIPH_MAX) == false);
 
     eos_peripheral_id_t negative_id = (eos_peripheral_id_t)-1;
-    assert(eos_power_enable_peripheral(negative_id) != 0);
-    assert(eos_power_disable_peripheral(negative_id) != 0);
+    assert(eos_power_enable_peripheral(negative_id) == EOS_POWER_EINVAL);
+    assert(eos_power_disable_peripheral(negative_id) == EOS_POWER_EINVAL);
     assert(eos_power_is_peripheral_enabled(negative_id) == false);
-    eos_power_deinit();
+    assert(fake.periph_calls == 0);
+    teardown();
     PASS("power periph invalid id");
 }
-static void test_power_cpu_freq(void) {
-    eos_power_config_t cfg = { .adc_channel = 0, .vbat_full_mv = 4200, .vbat_empty_mv = 3000, .divider_ratio_x10 = 20 };
-    eos_power_init(&cfg);
-    assert(eos_power_set_cpu_freq(168000000) == 0);
-    assert(eos_power_get_cpu_freq() == 168000000);
-    eos_power_deinit();
-    PASS("power cpu freq");
+static void test_power_battery_info_null(void) {
+    with_backend();
+    assert(eos_power_get_battery_info(NULL) == EOS_POWER_EINVAL);
+    teardown();
+    PASS("power battery info null");
 }
+
+/* ============================================================
+ * With a backend: the work is delegated and the result is kept
+ * ============================================================ */
+
+static void test_enter_sleep_delegates(void) {
+    with_backend();
+    fake.report_wake_source = EOS_WAKE_RTC;
+    assert(eos_power_enter_mode(EOS_POWER_DEEP_SLEEP) == EOS_POWER_OK);
+    assert(fake.enter_calls == 1);
+    assert(fake.last_mode == EOS_POWER_DEEP_SLEEP);
+    /* The call returned, so the core is running again. */
+    assert(eos_power_get_mode() == EOS_POWER_RUN);
+    assert(eos_power_get_wake_source() == EOS_WAKE_RTC);
+    teardown();
+    PASS("enter deep sleep delegates and reports wake source");
+}
+static void test_enter_sleep_backend_failure_propagates(void) {
+    with_backend();
+    fake.enter_rc = -5;
+    fake.report_wake_source = EOS_WAKE_GPIO;
+    assert(eos_power_enter_mode(EOS_POWER_SLEEP) == -5);
+    assert(eos_power_get_mode() == EOS_POWER_RUN);
+    /* No sleep happened, so nothing woke the part. */
+    assert(eos_power_get_wake_source() == 0);
+    teardown();
+    PASS("backend sleep failure propagates, no wake source invented");
+}
+static void test_wake_sources_delegate(void) {
+    with_backend();
+    uint32_t mask = EOS_WAKE_GPIO | EOS_WAKE_TIMER | EOS_WAKE_RTC;
+    assert(eos_power_set_wake_sources(mask) == EOS_POWER_OK);
+    assert(fake.wake_calls == 1);
+    assert(fake.last_wake_mask == mask);
+    teardown();
+    PASS("set wake sources delegates the exact mask");
+}
+static void test_wake_sources_failure_propagates(void) {
+    with_backend();
+    fake.wake_rc = -7;
+    assert(eos_power_set_wake_sources(EOS_WAKE_BLE) == -7);
+    teardown();
+    PASS("set wake sources failure propagates");
+}
+static void test_battery_mv_applies_divider(void) {
+    with_backend();
+    fake.report_pin_mv = 2100;   /* half of 4200 through a 2.0:1 divider */
+    assert(eos_power_get_battery_mv() == 4200);
+    assert(fake.battery_calls == 1);
+    assert(fake.last_adc_channel == default_cfg.adc_channel);
+    teardown();
+    PASS("battery mv reads the configured channel and applies the divider");
+}
+static void test_battery_pct_tracks_voltage(void) {
+    with_backend();
+    fake.report_pin_mv = 1800;              /* 3600 mV battery */
+    assert(eos_power_get_battery_mv() == 3600);
+    uint8_t pct = eos_power_get_battery_pct();
+    assert(pct == 50);                       /* (3600-3000)/1200 */
+    assert(pct <= 100);
+    teardown();
+    PASS("battery pct tracks a mid-scale reading");
+}
+static void test_battery_read_failure_is_unknown(void) {
+    with_backend();
+    fake.report_pin_mv = 2100;
+    fake.battery_rc = -1;
+    assert(eos_power_get_battery_mv() == 0);
+    assert(eos_power_get_battery_pct() == 0);
+    teardown();
+    PASS("failed battery read reports unknown, not full");
+}
+static void test_battery_info_derived_from_voltage(void) {
+    with_backend();
+    fake.report_pin_mv = 2100;
+    eos_battery_info_t info;
+    assert(eos_power_get_battery_info(&info) == EOS_POWER_OK);
+    assert(info.voltage_mv == 4200);
+    assert(info.percentage == 100);
+    /* No gauge on this backend: these stay zero instead of being made up. */
+    assert(info.charging == false);
+    assert(info.charger_connected == false);
+    assert(info.current_ma == 0);
+    assert(info.temperature_c == 0);
+    teardown();
+    PASS("battery info derived from voltage leaves gauge fields zero");
+}
+static void test_periph_enable_disable_delegate(void) {
+    with_backend();
+    assert(eos_power_disable_peripheral(EOS_PERIPH_SPI) == EOS_POWER_OK);
+    assert(fake.periph_calls == 1);
+    assert(fake.last_periph == EOS_PERIPH_SPI);
+    assert(fake.last_periph_enable == false);
+    assert(eos_power_is_peripheral_enabled(EOS_PERIPH_SPI) == false);
+
+    assert(eos_power_enable_peripheral(EOS_PERIPH_SPI) == EOS_POWER_OK);
+    assert(fake.last_periph_enable == true);
+    assert(eos_power_is_peripheral_enabled(EOS_PERIPH_SPI) == true);
+    teardown();
+    PASS("peripheral gating delegates and tracks applied state");
+}
+static void test_periph_failure_does_not_move_shadow(void) {
+    with_backend();
+    fake.periph_rc = -3;
+    assert(eos_power_disable_peripheral(EOS_PERIPH_WIFI) == -3);
+    assert(eos_power_is_peripheral_enabled(EOS_PERIPH_WIFI) == true);
+    teardown();
+    PASS("failed peripheral gating leaves the recorded state alone");
+}
+static void test_cpu_freq_records_what_was_reached(void) {
+    with_backend();
+    fake.report_actual_hz = 160000000;   /* PLL could not hit 168 MHz */
+    assert(eos_power_set_cpu_freq(168000000) == EOS_POWER_OK);
+    assert(fake.freq_calls == 1);
+    assert(fake.last_freq_hz == 168000000);
+    assert(eos_power_get_cpu_freq() == 160000000);
+    teardown();
+    PASS("cpu freq records the frequency the backend reached");
+}
+static void test_cpu_freq_failure_propagates(void) {
+    with_backend();
+    fake.report_actual_hz = 160000000;
+    fake.freq_rc = -9;
+    assert(eos_power_set_cpu_freq(168000000) == -9);
+    assert(eos_power_get_cpu_freq() == 0);
+    teardown();
+    PASS("failed cpu freq change propagates and records nothing");
+}
+
+/* ============================================================
+ * Review fixes
+ * ============================================================ */
+
+/* Peripheral control went to the backend whatever power_initialized said,
+ * unlike every other entry point. A call before init or after deinit changed
+ * the hardware, and the next init() reset the shadow to "enabled" without
+ * undoing it. */
+static void test_periph_before_init_is_rejected(void) {
+    eos_power_register_backend(&fake_backend);
+    fake_reset();
+    eos_power_deinit();
+    assert(eos_power_enable_peripheral(EOS_PERIPH_UART) == EOS_POWER_EINVAL);
+    assert(eos_power_disable_peripheral(EOS_PERIPH_UART) == EOS_POWER_EINVAL);
+    assert(fake.periph_calls == 0);
+    teardown();
+    PASS("peripheral calls before init -> EINVAL, backend untouched");
+}
+
+/* A failed reading is not an unsupported feature. The voltage was flattened
+ * to 0 and then mapped to ENOTSUP, telling callers the board had no battery
+ * sense when the ADC had simply failed. */
+static void test_battery_info_reports_the_backend_error(void) {
+    with_backend();
+    fake.report_pin_mv = 2100;
+    fake.battery_rc = -42;                  /* the backend's own error */
+    eos_battery_info_t info;
+    assert(eos_power_get_battery_info(&info) == -42);
+    /* The no-reading path still answers 0 where it has no room for an error. */
+    assert(eos_power_get_battery_mv() == 0);
+    teardown();
+    PASS("battery info reports the backend's error, not ENOTSUP");
+}
+
+/* power.h: "0 or 10 means no divider" -- so 5 is a divider, and it scales the
+ * reading down. The guard was `> 10`, which silently ignored every ratio
+ * below 10 and returned the pin voltage unchanged. */
+static void test_battery_divider_below_ten_scales_down(void) {
+    eos_power_config_t cfg = default_cfg;
+    cfg.divider_ratio_x10 = 5;              /* 0.5x */
+    eos_power_register_backend(&fake_backend);
+    fake_reset();
+    assert(eos_power_init(&cfg) == EOS_POWER_OK);
+    fake.report_pin_mv = 4000;
+    assert(eos_power_get_battery_mv() == 2000);
+    teardown();
+    PASS("battery divider ratio below 10 scales the reading down");
+}
+
+/* A ratio of 0 or 10 is "no divider" and must not scale. */
+static void test_battery_divider_of_ten_is_identity(void) {
+    eos_power_config_t cfg = default_cfg;
+    cfg.divider_ratio_x10 = 10;
+    eos_power_register_backend(&fake_backend);
+    fake_reset();
+    assert(eos_power_init(&cfg) == EOS_POWER_OK);
+    fake.report_pin_mv = 3700;
+    assert(eos_power_get_battery_mv() == 3700);
+
+    cfg.divider_ratio_x10 = 0;
+    assert(eos_power_init(&cfg) == EOS_POWER_OK);
+    fake.report_pin_mv = 3700;
+    assert(eos_power_get_battery_mv() == 3700);
+    teardown();
+    PASS("battery divider ratio of 0 or 10 leaves the reading alone");
+}
+
+/* pin_mv * ratio was computed in uint32_t, so a large configured ratio and a
+ * large reading wrapped and produced a plausible-looking wrong voltage. The
+ * multiplication is now 64-bit and an out-of-range result is an error. */
+static void test_battery_divider_does_not_wrap(void) {
+    eos_power_config_t cfg = default_cfg;
+    cfg.divider_ratio_x10 = 1000000u;       /* absurd, but it must not wrap */
+    eos_power_register_backend(&fake_backend);
+    fake_reset();
+    assert(eos_power_init(&cfg) == EOS_POWER_OK);
+    fake.report_pin_mv = 100000u;           /* product is 1e11, past UINT32_MAX */
+    /* 32-bit, this wrapped to a small number and was returned as a voltage. */
+    assert(eos_power_get_battery_mv() == 0);
+    eos_battery_info_t info;
+    assert(eos_power_get_battery_info(&info) == EOS_POWER_EINVAL);
+    teardown();
+    PASS("battery divider maths does not wrap uint32_t");
+}
+
+/* The voltage and the percentage came from two separate backend reads, so a
+ * reading that changed or failed in between produced a percentage that did
+ * not match its own voltage. */
+static void test_battery_info_uses_a_single_reading(void) {
+    with_backend();
+    fake.report_pin_mv = 1800;              /* 3600 mV through the 2.0 divider */
+    eos_battery_info_t info;
+    assert(eos_power_get_battery_info(&info) == EOS_POWER_OK);
+    assert(info.voltage_mv == 3600);
+    /* (3600-3000)*100 / (4200-3000) = 50 */
+    assert(info.percentage == 50);
+    assert(fake.battery_calls == 1);        /* was 2: one per field */
+    teardown();
+    PASS("battery info derives its percentage from one reading");
+}
+
+/* Bits outside eos_wake_source_t are a caller mistake, not an obscure wake
+ * source: forwarding them cached a request the API cannot express and
+ * reported success. */
+static void test_wake_sources_reject_undefined_bits(void) {
+    with_backend();
+    assert(eos_power_set_wake_sources(1u << 7) == EOS_POWER_EINVAL);
+    assert(eos_power_set_wake_sources(EOS_WAKE_RTC | (1u << 31)) == EOS_POWER_EINVAL);
+    assert(fake.wake_calls == 0);
+    /* Every defined bit together is still accepted. */
+    uint32_t all = EOS_WAKE_GPIO | EOS_WAKE_TIMER | EOS_WAKE_RTC | EOS_WAKE_UART |
+                   EOS_WAKE_BLE | EOS_WAKE_USB | EOS_WAKE_INTERRUPT;
+    assert(eos_power_set_wake_sources(all) == EOS_POWER_OK);
+    assert(fake.wake_calls == 1 && fake.last_wake_mask == all);
+    teardown();
+    PASS("wake masks with undefined bits are refused");
+}
+
 int main(void) {
     printf("=== EoS Power Management Tests ===\n");
     test_power_init();
     test_power_init_null();
     test_power_mode_default();
-    test_power_enter_sleep();
-    test_power_enter_deep_sleep();
+
+    test_sleep_without_backend_is_not_supported();
+    test_deep_sleep_without_backend_is_not_supported();
+    test_shutdown_without_backend_is_not_supported();
+    test_run_mode_needs_no_backend();
+    test_wake_sources_without_backend();
+    test_battery_without_backend_is_unknown();
+    test_periph_without_backend();
+    test_cpu_freq_without_backend();
+
     test_power_enter_invalid_mode();
-    test_power_wake_sources();
-    test_power_battery_mv();
-    test_power_battery_pct();
-    test_power_battery_info();
-    test_power_battery_info_null();
-    test_power_periph_enable();
-    test_power_periph_disable();
+    test_power_calls_before_init();
     test_power_periph_invalid();
-    test_power_cpu_freq();
+    test_power_battery_info_null();
+
+    test_enter_sleep_delegates();
+    test_enter_sleep_backend_failure_propagates();
+    test_wake_sources_delegate();
+    test_wake_sources_failure_propagates();
+    test_battery_mv_applies_divider();
+    test_battery_pct_tracks_voltage();
+    test_battery_read_failure_is_unknown();
+    test_battery_info_derived_from_voltage();
+    test_periph_enable_disable_delegate();
+    test_periph_failure_does_not_move_shadow();
+    test_cpu_freq_records_what_was_reached();
+    test_cpu_freq_failure_propagates();
+
+    test_periph_before_init_is_rejected();
+    test_battery_info_reports_the_backend_error();
+    test_battery_divider_below_ten_scales_down();
+    test_battery_divider_of_ten_is_identity();
+    test_battery_divider_does_not_wrap();
+    test_battery_info_uses_a_single_reading();
+    test_wake_sources_reject_undefined_bits();
+
     printf("\n=== ALL %d POWER TESTS PASSED ===\n", passed);
     return 0;
 }
