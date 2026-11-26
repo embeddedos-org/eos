@@ -8,18 +8,10 @@
  */
 
 #include <eos/posix_time.h>
+#include <eos/posix_errno.h>
 #include <eos/kernel.h>
 #include <eos/hal.h>
 
-#ifndef EINVAL
-#define EINVAL 22
-#endif
-#ifndef ENOMEM
-#define ENOMEM 12
-#endif
-#ifndef ENOSYS
-#define ENOSYS 38
-#endif
 
 /* ============================================================
  * Helpers

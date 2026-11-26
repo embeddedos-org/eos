@@ -1,0 +1,89 @@
+# EoS on the ESP32 (Xtensa LX6): Espressif's QEMU "esp32" machine, and real
+# ESP-WROOM-32 boards through the same image.
+#
+# Consumed by sim/qemu_esp32/build.sh and by the "QEMU ESP32 Boot Test" job in
+# .github/workflows/build.yml. Paths are relative to the eos repository root.
+# Application sources are added by the caller.
+schema: 1
+qemu:
+  # Espressif's fork (github.com/espressif/qemu); upstream QEMU has no esp32
+  # machine.
+  binary: qemu-system-xtensa
+  machine: esp32
+  args: ["-nographic", "-no-reboot"]
+  # The machine boots the ROM, which loads the image from this flash file.
+  flash_arg: "-drive file={flash},if=mtd,format=raw"
+cpu: esp32
+# boards/esp32/board_esp32.c moves the CPU from the 40 MHz crystal the boot
+# ROM leaves it on to 240 MHz from the PLL; CCOUNT, and so the tick, runs at
+# this rate. EOS_ESP32_CPU_MHZ and EOS_SYS_CLOCK_HZ below must agree.
+sys_clock_hz: 240000000
+cflags:
+  # The windowed ABI, GCC's default for the ESP32 and the one the toolchain's
+  # newlib and libgcc, the boot ROM and Espressif's binary libraries use
+  # (kernel/src/arch/xtensa_lx6/vectors.S spills windows on a task switch).
+  - -std=c11
+  - -Os
+  - -g
+  - -Wall
+  - -Wextra
+  - -ffreestanding
+  - -ffunction-sections
+  - -fdata-sections
+  - -fno-common
+  - -DEOS_ESP32_CPU_MHZ=240U
+  - -DEOS_SYS_CLOCK_HZ=240000000U
+  # eos_hal_init() registers hal/src/hal_esp32 (GPIO, UART0-2).
+  - -DEOS_HAL_BACKEND_ESP32
+  # Extended HAL parts the ESP32 port implements (hal_esp32_analog.c,
+  # hal_esp32_i2s.c).
+  - -DEOS_ENABLE_ADC=1
+  - -DEOS_ENABLE_DAC=1
+  - -DEOS_ENABLE_PWM=1
+  - -DEOS_ENABLE_AUDIO=1
+includes:
+  - kernel/include
+  - include
+  - hal/include
+  - boards/esp32
+  - kernel/src/arch/xtensa_lx6
+  - hal/src/hal_esp32
+ldflags:
+  # No C runtime start files: boards/esp32/startup_esp32.S is the entry.
+  - -nostdlib
+  - -nostartfiles
+  - -Wl,--gc-sections
+# The toolchain's newlib-nano and libgcc; boards/esp32/syscalls_esp32.c
+# gives newlib its system calls (printf to the UART0 console, malloc's heap).
+# nano, as on the Cortex-M targets: full newlib's printf overflowed the
+# rtos-app template's 1024-byte task stack (a double exception in a window
+# spill), nano's runs in it.
+libs: ["-lc_nano", "-lgcc"]
+linker_script: boards/esp32/esp32.ld
+# esptool turns the ELF into the image format the boot ROM loads, written at
+# flash offset 0x1000.
+image:
+  chip: esp32
+  flash_mode: dio
+  flash_freq: 40m
+  flash_size: 4MB
+  offset: 0x1000
+sources:
+  - boards/esp32/startup_esp32.S
+  - boards/esp32/board_esp32.c
+  - boards/esp32/syscalls_esp32.c
+  - kernel/src/arch/xtensa_lx6/vectors.S
+  - kernel/src/arch/xtensa_lx6/port.c
+  - kernel/src/task.c
+  - kernel/src/sync.c
+  - kernel/src/ipc.c
+  - kernel/src/mem/heap.c
+  - hal/src/hal_common.c
+  - hal/src/hal_esp32/hal_esp32_backend.c
+  - hal/src/hal_esp32/hal_esp32_analog.c
+  - hal/src/hal_esp32/hal_esp32_adc_cal.c
+  - hal/src/hal_esp32/hal_esp32_spi.c
+  - hal/src/hal_esp32/hal_esp32_i2c.c
+  - hal/src/hal_esp32/hal_esp32_i2s.c
+  - hal/src/hal_esp32/hal_esp32_touch.c
+  - hal/src/hal_esp32/hal_esp32_sleep.c

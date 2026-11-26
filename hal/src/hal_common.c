@@ -48,6 +48,8 @@ int eos_hal_init(void)
         eos_hal_linux_register();
 #elif defined(EOS_HAL_BACKEND_WIN32)
         eos_hal_win32_register();
+#elif defined(EOS_HAL_BACKEND_ESP32)
+        eos_hal_esp32_register();
 #else
         eos_hal_rtos_register();
 #endif

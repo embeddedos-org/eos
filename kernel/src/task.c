@@ -8,6 +8,14 @@
  *
  * Priority-based preemptive scheduler with SysTick-driven tick,
  * PendSV context switching, software timers, and stack canary detection.
+ *
+ * With EOS_SMP_CORES > 1 the same scheduler runs on every CPU: each CPU has
+ * its own current task and idle task, and picks the best READY task that it
+ * may run (core_mask) and that no other CPU is still executing. A task that
+ * blocks or yields is marked before its CPU has switched away from it, so
+ * "READY" alone does not mean its context is saved; the per-CPU current
+ * slots do. Every change to scheduler state happens inside the port's
+ * critical section, which on SMP is also the kernel lock.
  */
 
 #include "eos/kernel.h"
@@ -50,8 +58,32 @@ static inline bool tick_expired(uint32_t current, uint32_t deadline)
 
 eos_task_t g_tasks[EOS_MAX_TASKS];
 static int g_task_count = 0;
-static int g_current = -1;
 static int g_running = 0;
+
+/* The task each CPU is executing (-1 before the kernel starts). */
+#if EOS_SMP_CORES > 1
+static int g_cur[EOS_SMP_CORES] = { [0 ... EOS_SMP_CORES - 1] = -1 };
+#else
+static int g_cur[1] = { -1 };
+#endif
+#if EOS_SMP_CORES > 1
+#define THIS_CPU() ((int)eos_port_cpu_id())
+#else
+#define THIS_CPU() 0
+#endif
+#define g_current (g_cur[THIS_CPU()])
+
+/* Slots 0 .. EOS_SMP_CORES-1 are the idle tasks, one per CPU. */
+#define FIRST_USER_SLOT EOS_SMP_CORES
+
+/* Index of the CPU executing task @p i, or -1. */
+static int task_cpu(int i)
+{
+    for (int c = 0; c < EOS_SMP_CORES; c++) {
+        if (g_cur[c] == i) return c;
+    }
+    return -1;
+}
 
 /* Tick counter — updated by SysTick_Handler */
 volatile uint32_t g_tick = 0;
@@ -60,8 +92,12 @@ volatile uint32_t g_tick = 0;
 volatile uint8_t g_needs_reschedule = 0;
 
 /* Pointers used by the PendSV assembly handler */
+#if EOS_SMP_CORES > 1
+uint32_t **g_cpu_sp[EOS_SMP_CORES];
+#else
 uint32_t **g_current_sp = NULL;
 uint32_t **g_next_sp = NULL;
+#endif
 
 /* Static heap for task stacks (used when eos_malloc is not available) */
 #ifndef EOS_TASK_STACK_POOL_SIZE
@@ -69,8 +105,8 @@ uint32_t **g_next_sp = NULL;
 #endif
 static uint32_t g_stack_pool[EOS_TASK_STACK_POOL_SIZE / sizeof(uint32_t)];
 
-/* Idle task stack */
-static uint32_t g_idle_stack[IDLE_STACK_SIZE / sizeof(uint32_t)];
+/* Idle task stacks, one per CPU */
+static uint32_t g_idle_stack[EOS_SMP_CORES][IDLE_STACK_SIZE / sizeof(uint32_t)];
 
 /* ============================================================
  * Software Timers
@@ -104,7 +140,7 @@ static bool task_stack_in_use(int i)
 {
     const eos_task_t *t = &g_tasks[i];
     if (t->stack_base == NULL) return false;
-    if (i == g_current) return true;
+    if (task_cpu(i) >= 0) return true;
     return t->entry != NULL && t->state != EOS_TASK_DELETED;
 }
 
@@ -115,11 +151,11 @@ static uint32_t *alloc_task_stack(uint32_t size_bytes)
     uint32_t start = 0;
 
     /* First fit. On overlap with a live stack, retry just past its end;
-     * `start` strictly increases, so the search terminates. Slot 0 is the
-     * idle task, whose stack is not in the pool. */
+     * `start` strictly increases, so the search terminates. The idle tasks'
+     * stacks are not in the pool. */
     while (words <= pool_words && start <= pool_words - words) {
         uint32_t next = start;
-        for (int i = 1; i < EOS_MAX_TASKS; i++) {
+        for (int i = FIRST_USER_SLOT; i < EOS_MAX_TASKS; i++) {
             if (!task_stack_in_use(i)) continue;
             uint32_t s = (uint32_t)(g_tasks[i].stack_base - g_stack_pool);
             uint32_t e = s + g_tasks[i].stack_size / sizeof(uint32_t);
@@ -144,18 +180,26 @@ static uint32_t *alloc_task_stack(uint32_t size_bytes)
  * ============================================================ */
 
 /**
- * @brief Find the highest-priority ready task.
+ * @brief Find the highest-priority ready task this CPU may run.
  */
 static int find_next_task(void)
 {
     int best = -1;
     uint8_t best_prio = 255;
-    int start = (g_current + 1) % EOS_MAX_TASKS;
+    int cpu = THIS_CPU();
+    int start = (g_cur[cpu] + 1) % EOS_MAX_TASKS;
 
     for (int i = 0; i < EOS_MAX_TASKS; i++) {
         int idx = (start + i) % EOS_MAX_TASKS;
         eos_task_t *t = &g_tasks[idx];
         if (t->entry == NULL || t->state != EOS_TASK_READY) continue;
+#if EOS_SMP_CORES > 1
+        /* Not one another CPU still executes (its context is not saved),
+         * and not one barred from this CPU. */
+        int on = task_cpu(idx);
+        if (on >= 0 && on != cpu) continue;
+        if ((t->core_mask & (1U << cpu)) == 0U) continue;
+#endif
         if (best < 0 || t->priority < best_prio) {
             best_prio = t->priority;
             best = idx;
@@ -184,10 +228,14 @@ void eos_schedule(void)
     if (g_current >= 0 && g_tasks[g_current].state == EOS_TASK_RUNNING) {
         g_tasks[g_current].state = EOS_TASK_READY;
     }
+#if EOS_SMP_CORES > 1
+    int outgoing = g_current;
+#endif
 
     int next = find_next_task();
     /*
-     * Unreachable by construction. Slot 0 is the idle task, which
+     * Unreachable by construction. Each CPU's idle task (slot = CPU number) is
+     * one, which
      * eos_task_delete() and eos_task_suspend() refuse, and idle_task_func()
      * only spins or waits for an interrupt, so it never blocks: the idle
      * task is always READY (or was RUNNING and was made READY just above),
@@ -211,7 +259,17 @@ void eos_schedule(void)
     g_tasks[next].state = EOS_TASK_RUNNING;
     g_tasks[next].run_count++;
     g_current_sp = &g_tasks[next].stack_ptr;
+#if EOS_SMP_CORES == 1
     g_next_sp = g_current_sp;
+#else
+    /* A task this CPU just let go of while it is still READY may be what
+     * another CPU should run; until now no CPU could take it (it was still
+     * executing here), so tell the others to look again. */
+    if (outgoing >= 0 && outgoing != next && g_tasks[outgoing].state == EOS_TASK_READY &&
+        (g_tasks[outgoing].core_mask & ~(1U << THIS_CPU())) != 0U) {
+        eos_port_kick_other_cpus();
+    }
+#endif
 }
 
 /**
@@ -220,6 +278,9 @@ void eos_schedule(void)
  */
 void eos_task_wake_check(uint32_t current_tick)
 {
+#if EOS_SMP_CORES > 1
+    bool woke = false;
+#endif
     for (int i = 0; i < EOS_MAX_TASKS; i++) {
         eos_task_t *t = &g_tasks[i];
         /* wake_armed, not wake_tick > 0: a deadline of 0 is valid when
@@ -229,8 +290,15 @@ void eos_task_wake_check(uint32_t current_tick)
             t->state = EOS_TASK_READY;
             t->wake_armed = 0;
             t->wake_tick = 0;
+#if EOS_SMP_CORES > 1
+            woke = true;
+#endif
         }
     }
+#if EOS_SMP_CORES > 1
+    /* Only CPU 0 runs this; the others learn of woken tasks now. */
+    if (woke) eos_port_yield();
+#endif
 }
 
 /* ============================================================
@@ -246,6 +314,9 @@ static void idle_task_func(void *arg)
         __asm volatile ("wfi");
 #elif defined(__riscv)
         __asm volatile ("wfi");
+#elif defined(__XTENSA__)
+        /* Sleep at interrupt level 0 until the next interrupt. */
+        __asm volatile ("waiti 0");
 #elif (defined(__x86_64__) || defined(_M_X64)) && !defined(_WIN32) && \
       !defined(__STDC_HOSTED__)
         __asm volatile ("hlt");
@@ -266,29 +337,41 @@ int eos_kernel_init(void)
     memset(g_tasks, 0, sizeof(g_tasks));
     memset(g_timers, 0, sizeof(g_timers));
     g_task_count = 0;
-    g_current = -1;
     g_running = 0;
     g_tick = 0;
+#if EOS_SMP_CORES > 1
+    for (int c = 0; c < EOS_SMP_CORES; c++) {
+        g_cur[c] = -1;
+        g_cpu_sp[c] = NULL;
+    }
+#else
+    g_cur[0] = -1;
     g_current_sp = NULL;
     g_next_sp = NULL;
+#endif
 
-    /* Create idle task at lowest priority */
-    eos_task_t *idle = &g_tasks[0];
-    idle->id = 0;
-    idle->name = "idle";
-    idle->entry = idle_task_func;
-    idle->arg = NULL;
-    idle->priority = 255;  /* Lowest priority */
-    idle->base_priority = 255;
-    idle->stack_size = IDLE_STACK_SIZE;
-    idle->stack_base = g_idle_stack;
-    idle->stack_base[0] = EOS_STACK_CANARY;
-    idle->stack_ptr = eos_port_init_stack(
-        g_idle_stack + IDLE_STACK_SIZE / sizeof(uint32_t),
-        idle_task_func, NULL
-    );
-    idle->state = EOS_TASK_READY;
-    g_task_count = 1;
+    /* Create the idle task(s) at lowest priority, one per CPU */
+    for (int c = 0; c < EOS_SMP_CORES; c++) {
+        eos_task_t *idle = &g_tasks[c];
+        idle->id = (uint8_t)c;
+        idle->name = "idle";
+        idle->entry = idle_task_func;
+        idle->arg = NULL;
+        idle->priority = 255;  /* Lowest priority */
+        idle->base_priority = 255;
+        idle->stack_size = IDLE_STACK_SIZE;
+        idle->stack_base = g_idle_stack[c];
+        idle->stack_base[0] = EOS_STACK_CANARY;
+        idle->stack_ptr = eos_port_init_stack(
+            g_idle_stack[c] + IDLE_STACK_SIZE / sizeof(uint32_t),
+            idle_task_func, NULL
+        );
+#if EOS_SMP_CORES > 1
+        idle->core_mask = 1U << c;   /* each CPU always has its own */
+#endif
+        idle->state = EOS_TASK_READY;
+    }
+    g_task_count = EOS_SMP_CORES;
 
     return EOS_KERN_OK;
 }
@@ -298,14 +381,22 @@ void eos_kernel_start(void)
     g_running = 1;
 
     /* Find highest-priority task to start */
+    uint32_t crit = eos_port_enter_critical();
     int first = find_next_task();
-    if (first < 0) first = 0;  /* Fall back to idle */
+    if (first < 0) first = THIS_CPU();  /* Fall back to this CPU's idle */
 
     g_current = first;
     g_tasks[first].state = EOS_TASK_RUNNING;
     g_tasks[first].run_count++;
-    g_next_sp = &g_tasks[first].stack_ptr;
-    g_current_sp = g_next_sp;
+    g_current_sp = &g_tasks[first].stack_ptr;
+#if EOS_SMP_CORES == 1
+    g_next_sp = g_current_sp;
+#endif
+    eos_port_exit_critical(crit);
+
+#if EOS_SMP_CORES > 1
+    eos_port_start_secondary_cpus();
+#endif
 
     /* Start the first task — this never returns */
     eos_port_start_first_task();
@@ -313,6 +404,53 @@ void eos_kernel_start(void)
     /* Should never reach here */
     while (1) {}
 }
+
+#if EOS_SMP_CORES > 1
+void eos_kernel_start_secondary(void)
+{
+    uint32_t crit = eos_port_enter_critical();
+    int first = find_next_task();
+    if (first < 0) first = THIS_CPU();
+    g_current = first;
+    g_tasks[first].state = EOS_TASK_RUNNING;
+    g_tasks[first].run_count++;
+    g_current_sp = &g_tasks[first].stack_ptr;
+    eos_port_exit_critical(crit);
+    eos_port_start_first_task();
+    while (1) {}
+}
+
+uint32_t eos_kernel_cpu_id(void)
+{
+    return eos_port_cpu_id();
+}
+
+int eos_task_set_core_mask(eos_task_handle_t h, uint32_t mask)
+{
+    if (h < FIRST_USER_SLOT || h >= EOS_MAX_TASKS) return EOS_KERN_INVALID;
+    mask &= (1U << EOS_SMP_CORES) - 1U;
+    if (mask == 0U) return EOS_KERN_INVALID;
+    uint32_t crit = eos_port_enter_critical();
+    if (g_tasks[h].entry == NULL || g_tasks[h].state == EOS_TASK_DELETED) {
+        eos_port_exit_critical(crit);
+        return EOS_KERN_INVALID;
+    }
+    g_tasks[h].core_mask = mask;
+    bool move = task_cpu(h) >= 0;
+    eos_port_exit_critical(crit);
+    if (move) eos_port_yield();   /* reschedules every CPU */
+    return EOS_KERN_OK;
+}
+
+int eos_task_get_cpu(eos_task_handle_t h)
+{
+    if (h >= EOS_MAX_TASKS) return -1;
+    uint32_t crit = eos_port_enter_critical();
+    int c = task_cpu(h);
+    eos_port_exit_critical(crit);
+    return c;
+}
+#endif
 
 bool eos_kernel_is_running(void)
 {
@@ -333,9 +471,14 @@ int eos_task_create(const char *name, eos_task_func_t entry, void *arg,
 
     uint32_t crit = eos_port_enter_critical();
 
-    /* Find free slot (skip slot 0 = idle) */
+    /* Find free slot (skip the idle tasks' slots) */
     int slot = -1;
-    for (int i = 1; i < EOS_MAX_TASKS; i++) {
+    for (int i = FIRST_USER_SLOT; i < EOS_MAX_TASKS; i++) {
+        /* Not a slot a CPU is still executing: a task that deleted itself
+         * runs on until its CPU switches away, and that switch stores its
+         * stack pointer into the slot (on SMP another CPU can create a task
+         * in between). */
+        if (task_cpu(i) >= 0) continue;
         if (g_tasks[i].entry == NULL ||
             g_tasks[i].state == EOS_TASK_DELETED) {
             slot = i;
@@ -366,15 +509,23 @@ int eos_task_create(const char *name, eos_task_func_t entry, void *arg,
     g_tasks[slot].stack_size = stack_size;
     g_tasks[slot].stack_base = stack_base;
     g_tasks[slot].stack_ptr = eos_port_init_stack(stack_top, entry, arg);
+#if EOS_SMP_CORES > 1
+    g_tasks[slot].core_mask = (1U << EOS_SMP_CORES) - 1U;
+#endif
 
     /* Publish the entry and READY state only after the TCB is complete. */
     g_tasks[slot].entry = entry;
     g_tasks[slot].state = EOS_TASK_READY;
     g_task_count++;
 
-    /* If kernel is running and new task has higher priority, yield */
+    /* If kernel is running and new task has higher priority, yield. On SMP
+     * any CPU may be the one to run it, so every CPU reschedules. */
+#if EOS_SMP_CORES > 1
+    bool should_preempt = g_running != 0;
+#else
     bool should_preempt = g_running && g_current >= 0 &&
                           priority < g_tasks[g_current].priority;
+#endif
     eos_port_exit_critical(crit);
     if (should_preempt) {
         eos_port_yield();
@@ -385,11 +536,13 @@ int eos_task_create(const char *name, eos_task_func_t entry, void *arg,
 
 int eos_task_delete(eos_task_handle_t h)
 {
-    if (h == 0 || h >= EOS_MAX_TASKS) return EOS_KERN_INVALID;
-    if (g_tasks[h].state == EOS_TASK_DELETED || g_tasks[h].entry == NULL)
-        return EOS_KERN_INVALID;
+    if (h < FIRST_USER_SLOT || h >= EOS_MAX_TASKS) return EOS_KERN_INVALID;
 
     uint32_t crit = eos_port_enter_critical();
+    if (g_tasks[h].state == EOS_TASK_DELETED || g_tasks[h].entry == NULL) {
+        eos_port_exit_critical(crit);
+        return EOS_KERN_INVALID;
+    }
     g_tasks[h].state = EOS_TASK_DELETED;
     g_tasks[h].entry = NULL;
     g_tasks[h].wake_armed = 0;
@@ -399,9 +552,11 @@ int eos_task_delete(eos_task_handle_t h)
      * instead of a live waiter. */
     eos_sync_forget_task(h);
     eos_ipc_forget_task(h);
+    /* Running here or on another CPU: that CPU must switch away. */
+    bool running = task_cpu(h) >= 0;
     eos_port_exit_critical(crit);
 
-    if (h == (eos_task_handle_t)g_current) {
+    if (running) {
         eos_port_yield();
     }
     return EOS_KERN_OK;
@@ -409,9 +564,12 @@ int eos_task_delete(eos_task_handle_t h)
 
 int eos_task_suspend(eos_task_handle_t h)
 {
-    if (h == 0 || h >= EOS_MAX_TASKS || g_tasks[h].entry == NULL)
-        return EOS_KERN_INVALID;
+    if (h < FIRST_USER_SLOT || h >= EOS_MAX_TASKS) return EOS_KERN_INVALID;
     uint32_t crit = eos_port_enter_critical();
+    if (g_tasks[h].entry == NULL) {
+        eos_port_exit_critical(crit);
+        return EOS_KERN_INVALID;
+    }
     /* A task suspended mid-wait is still on its wait list (or its delay is
      * still pending). Remember that, so resume puts it back to BLOCKED
      * instead of READY: made READY, it ran while still queued and its wait
@@ -422,8 +580,9 @@ int eos_task_suspend(eos_task_handle_t h)
     else if (g_tasks[h].state != EOS_TASK_SUSPENDED)
         g_tasks[h].suspended_blocked = 0;
     g_tasks[h].state = EOS_TASK_SUSPENDED;
+    bool running = task_cpu(h) >= 0;
     eos_port_exit_critical(crit);
-    if (h == (eos_task_handle_t)g_current) {
+    if (running) {
         eos_port_yield();
     }
     return EOS_KERN_OK;
@@ -431,8 +590,13 @@ int eos_task_suspend(eos_task_handle_t h)
 
 int eos_task_resume(eos_task_handle_t h)
 {
-    if (h >= EOS_MAX_TASKS || g_tasks[h].entry == NULL) return EOS_KERN_INVALID;
+    if (h >= EOS_MAX_TASKS) return EOS_KERN_INVALID;
     uint32_t crit = eos_port_enter_critical();
+    if (g_tasks[h].entry == NULL) {
+        eos_port_exit_critical(crit);
+        return EOS_KERN_INVALID;
+    }
+    bool woke = false;
     if (g_tasks[h].state == EOS_TASK_SUSPENDED) {
         /* Still waiting: back to BLOCKED with its deadline intact. A
          * deadline that passed while suspended has timed out: READY, and
@@ -444,16 +608,26 @@ int eos_task_resume(eos_task_handle_t h)
         g_tasks[h].state = reblock ? EOS_TASK_BLOCKED : EOS_TASK_READY;
         if (!reblock) g_tasks[h].wake_armed = 0;
         g_tasks[h].suspended_blocked = 0;
+        /* Only a task that actually became READY is worth another CPU. */
+        woke = !reblock;
     }
     eos_port_exit_critical(crit);
+#if EOS_SMP_CORES > 1
+    /* Another CPU may be idle and able to run it now. */
+    if (woke && g_running) eos_port_yield();
+#else
+    (void)woke;
+#endif
     return EOS_KERN_OK;
 }
 
 void eos_task_yield(void)
 {
+    uint32_t crit = eos_port_enter_critical();
     if (g_current >= 0) {
         g_tasks[g_current].state = EOS_TASK_READY;
     }
+    eos_port_exit_critical(crit);
     eos_port_yield();
 }
 
@@ -471,7 +645,12 @@ void eos_task_delay_ms(uint32_t ms)
 
 eos_task_handle_t eos_task_get_current(void)
 {
-    return (g_current >= 0) ? (eos_task_handle_t)g_current : 0xFF;
+    /* Masked, so the caller cannot move to another CPU between reading
+     * the CPU number and its slot. */
+    uint32_t crit = eos_port_enter_critical();
+    int cur = g_current;
+    eos_port_exit_critical(crit);
+    return (cur >= 0) ? (eos_task_handle_t)cur : 0xFF;
 }
 
 void eos_task_set_current_internal(eos_task_handle_t h)
@@ -635,6 +814,11 @@ void eos_task_unblock(eos_task_handle_t h)
         g_tasks[h].state = EOS_TASK_READY;
     g_tasks[h].wake_tick = 0;
     g_tasks[h].wake_armed = 0;
+#if EOS_SMP_CORES > 1
+    /* Another CPU may be idle and able to run it now, instead of at its
+     * next tick: ping-pong across CPUs took one tick per round trip. */
+    if (g_running) eos_port_yield();
+#endif
 }
 
 /* ============================================================

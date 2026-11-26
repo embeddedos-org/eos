@@ -8,24 +8,10 @@
  */
 
 #include <eos/posix_sync.h>
+#include <eos/posix_errno.h>
 #include <eos/kernel.h>
 #include <eos/hal.h>
 
-#ifndef EINVAL
-#define EINVAL  22
-#endif
-#ifndef EAGAIN
-#define EAGAIN  11
-#endif
-#ifndef ENOMEM
-#define ENOMEM  12
-#endif
-#ifndef EBUSY
-#define EBUSY   16
-#endif
-#ifndef EPERM
-#define EPERM    1
-#endif
 
 /* ============================================================
  * Mutex

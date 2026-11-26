@@ -54,6 +54,13 @@ target_include_directories(test_toolchain_path_overflow PRIVATE
 target_link_libraries(test_toolchain_path_overflow PRIVATE eos_toolchains)
 add_test(NAME test_toolchain_path_overflow COMMAND test_toolchain_path_overflow)
 
+# --- test_esp32_adc_cal: ESP32 ADC eFuse calibration against ESP-IDF's values ---
+add_executable(test_esp32_adc_cal test_esp32_adc_cal.c)
+target_include_directories(test_esp32_adc_cal PRIVATE
+    ${CMAKE_SOURCE_DIR}/boards/esp32 ${CMAKE_SOURCE_DIR}/hal/src/hal_esp32
+    ${CMAKE_SOURCE_DIR}/hal/include)
+add_test(NAME test_esp32_adc_cal COMMAND test_esp32_adc_cal)
+
 # --- test_board_configs: Board YAML schema shape ---
 add_executable(test_board_configs test_board_configs.c)
 add_test(NAME test_board_configs COMMAND test_board_configs boards)
@@ -292,6 +299,10 @@ add_test(NAME test_security COMMAND test_security)
 
 # --- test_os_services: Watchdog, audit ---
 add_executable(test_os_services test_os_services.c)
+# For os_services_test_hook.h, the internal seam that substitutes the
+# watchdog clock. Deliberately not in services/os/include: it is not API.
+target_include_directories(test_os_services PRIVATE
+    ${CMAKE_SOURCE_DIR}/services/os/src)
 target_link_libraries(test_os_services PRIVATE eos_os_services eos_crypto)
 add_test(NAME test_os_services COMMAND test_os_services)
 
@@ -348,6 +359,21 @@ target_include_directories(test_ui_gesture PRIVATE
     ${CMAKE_CURRENT_SOURCE_DIR}/mocks
 )
 add_test(NAME test_ui_gesture COMMAND test_ui_gesture)
+
+# --- test_ui_touch_drv: LVGL touch read callback (rotation) ---
+add_executable(test_ui_touch_drv test_ui_touch_drv.c)
+target_compile_definitions(test_ui_touch_drv PRIVATE
+    EOS_ENABLE_UI=1
+    EOS_ENABLE_TOUCH=1
+    EOS_ENABLE_DISPLAY=1
+)
+target_include_directories(test_ui_touch_drv PRIVATE
+    ${CMAKE_CURRENT_SOURCE_DIR}/../include
+    ${CMAKE_CURRENT_SOURCE_DIR}/../hal/include
+    ${CMAKE_CURRENT_SOURCE_DIR}/../services/ui/include
+    ${CMAKE_CURRENT_SOURCE_DIR}/mocks
+)
+add_test(NAME test_ui_touch_drv COMMAND test_ui_touch_drv)
 
 # --- test_power: Power management framework ---
 add_executable(test_power test_power.c)
@@ -568,6 +594,22 @@ if(UNIX)
     target_link_libraries(test_compat_regressions PRIVATE eos_kernel eos_hal)
     add_test(NAME test_compat_regressions COMMAND test_compat_regressions)
 endif()
+
+# --- test_posix_threads: pthread attributes, create/join error paths (#270) ---
+# #includes services/posix/src/posix_threads.c with its POSIX names renamed
+# (it defines pthread_create/join/exit/self and the pthread_attr_* set, which
+# would otherwise collide with the host libc's), the way test_posix_io.c and
+# test_posix_time.c do; the kernel calls it needs are stubbed in the suite, so
+# eos_posix -- off by default -- is not needed. That is the point: the file
+# could not compile at all (its errno defines sat below their first use) for as
+# long as nothing built it, and building it here does not wait for
+# EOS_ENABLE_POSIX to be switched on. Portable: no UNIX-only header is used.
+add_executable(test_posix_threads test_posix_threads.c)
+target_include_directories(test_posix_threads PRIVATE
+    ${EoS_SOURCE_DIR}/services/posix/include
+    ${EoS_SOURCE_DIR}/kernel/include
+    ${EoS_SOURCE_DIR}/hal/include)
+add_test(NAME test_posix_threads COMMAND test_posix_threads)
 
 # --- example_secure_ota: examples/secure-ota must keep compiling ---
 # It includes eos/ota.h and eos/os_services.h together, which failed while

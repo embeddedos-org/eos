@@ -208,6 +208,14 @@ static void handle_set_breakpoint(EosGdbStub *stub, const char *pkt) {
         send_packet(stub, "E01");
         return;
     }
+    /* Only breakpoints (0 software, 1 hardware) are implemented. Types 2-4
+     * are watchpoints: storing their address as a breakpoint and answering
+     * OK told GDB a watchpoint was armed that could never fire. An empty
+     * reply is the protocol's "type not supported". */
+    if (type != 0 && type != 1) {
+        send_packet(stub, "");
+        return;
+    }
     if (eos_gdb_add_breakpoint(stub, addr) == 0)
         send_packet(stub, "OK");
     else
@@ -218,6 +226,10 @@ static void handle_remove_breakpoint(EosGdbStub *stub, const char *pkt) {
     int type; uint32_t addr, kind;
     if (sscanf(pkt, "z%d,%x,%x", &type, &addr, &kind) != 3) {
         send_packet(stub, "E01");
+        return;
+    }
+    if (type != 0 && type != 1) {     /* as in handle_set_breakpoint() */
+        send_packet(stub, "");
         return;
     }
     if (eos_gdb_remove_breakpoint(stub, addr) == 0)

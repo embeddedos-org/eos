@@ -65,6 +65,7 @@ int eos_hal_init(void);
 void eos_hal_linux_register(void);
 void eos_hal_win32_register(void);
 void eos_hal_rtos_register(void);
+void eos_hal_esp32_register(void);
 
 /**
  * Deinitialize the HAL subsystem, releasing all resources.

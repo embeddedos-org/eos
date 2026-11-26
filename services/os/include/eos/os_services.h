@@ -30,6 +30,11 @@ typedef struct {
     uint32_t timeout_ms;
     uint32_t kick_interval_ms;
     EosWatchdogState state;
+    /* last_kick and start_time are milliseconds from a monotonic clock with
+     * an unspecified origin -- not Unix epoch milliseconds, and not a date.
+     * Only differences between them are meaningful. Do not format either as
+     * a time or compare it with a wall-clock timestamp; the origin is the
+     * boot or process start of whichever clock the platform provides. */
     uint64_t last_kick;
     uint64_t start_time;
     int auto_reboot;

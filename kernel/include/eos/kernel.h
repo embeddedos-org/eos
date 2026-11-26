@@ -34,6 +34,18 @@ extern "C" {
  * context frame (17 words on Cortex-M), 8-byte alignment slack and the
  * canary word, with headroom. A smaller stack had its initial frame written
  * over the previous task's stack. */
+/*
+ * CPUs the scheduler runs tasks on. 1 (the default) is the single-CPU
+ * kernel, unchanged. More needs a port that implements the SMP hooks in
+ * eos/arch.h (the Xtensa LX6 port does, for the ESP32's two cores): each
+ * CPU gets an idle task (handles 0 .. EOS_SMP_CORES-1), the kernel's
+ * critical section becomes a lock shared by all CPUs, and a task may be
+ * limited to some CPUs with eos_task_set_core_mask().
+ */
+#ifndef EOS_SMP_CORES
+#define EOS_SMP_CORES 1
+#endif
+
 #ifndef EOS_MIN_STACK_SIZE
 #define EOS_MIN_STACK_SIZE  128
 #endif
@@ -98,6 +110,9 @@ typedef struct {
     uint8_t  wake_armed;   /* 1 when wake_tick holds a real deadline */
     uint8_t  suspended_blocked; /* suspended while BLOCKED: resume re-blocks */
     uint32_t run_count;
+#if EOS_SMP_CORES > 1
+    uint32_t core_mask;    /* CPUs the task may run on: bit n is CPU n */
+#endif
 } eos_task_t;
 
 typedef uint8_t eos_task_handle_t;
@@ -114,23 +129,24 @@ int eos_task_create(const char *name, eos_task_func_t entry, void *arg,
 /**
  * @brief Delete a task; its slot becomes available to eos_task_create().
  * @param handle  Task handle (slot index) returned by eos_task_create().
- * @return EOS_KERN_OK on success; EOS_KERN_INVALID for handle 0, an
- *         out-of-range handle, or a slot that holds no task.
+ * @return EOS_KERN_OK on success; EOS_KERN_INVALID for an idle task's
+ *         handle, an out-of-range handle, or a slot that holds no task.
  *
- * Handle 0 is the idle task, and it is permanent: it is the task the
- * scheduler falls back to when nothing else is runnable, so it can be
- * neither deleted nor suspended.
+ * Handle 0 is the idle task (handles 0 .. EOS_SMP_CORES-1 on SMP, one per
+ * CPU), and it is permanent: it is the task the scheduler falls back to
+ * when nothing else is runnable, so it can be neither deleted nor
+ * suspended.
  */
 int  eos_task_delete(eos_task_handle_t handle);
 
 /**
  * @brief Suspend a task until eos_task_resume() is called on it.
  * @param handle  Task handle (slot index) returned by eos_task_create().
- * @return EOS_KERN_OK on success; EOS_KERN_INVALID for handle 0, an
- *         out-of-range handle, or a slot whose entry is NULL (never
- *         created, or deleted through eos_task_delete()).
+ * @return EOS_KERN_OK on success; EOS_KERN_INVALID for an idle task's
+ *         handle, an out-of-range handle, or a slot whose entry is NULL
+ *         (never created, or deleted through eos_task_delete()).
  *
- * Handle 0 is the idle task and is permanent; see eos_task_delete().
+ * The idle task(s) are permanent; see eos_task_delete().
  *
  * A task suspended while blocked (waiting on a mutex, semaphore or queue,
  * or in eos_task_delay_ms()) stays on its wait. If the wait ends while it
@@ -143,6 +159,24 @@ int  eos_task_resume(eos_task_handle_t handle);
 void eos_task_yield(void);
 void eos_task_delay_ms(uint32_t ms);
 eos_task_handle_t eos_task_get_current(void);
+
+#if EOS_SMP_CORES > 1
+/**
+ * @brief Limit a task to some CPUs (bit n = CPU n). A running task moves at
+ *        its next reschedule. The idle tasks keep one CPU each.
+ * @return EOS_KERN_OK; EOS_KERN_INVALID for an idle task, a handle with no
+ *         task, or a mask naming no existing CPU.
+ */
+int eos_task_set_core_mask(eos_task_handle_t handle, uint32_t mask);
+/** @brief The CPU running @p handle now, or -1 if no CPU is. */
+int eos_task_get_cpu(eos_task_handle_t handle);
+/** @brief The CPU executing the caller. */
+uint32_t eos_kernel_cpu_id(void);
+/** @brief Run the scheduler on a secondary CPU (called by the port on CPUs
+ *         1 .. EOS_SMP_CORES-1 once eos_kernel_start() has started them);
+ *         does not return. */
+void eos_kernel_start_secondary(void);
+#endif
 eos_task_state_t  eos_task_get_state(eos_task_handle_t handle);
 const char       *eos_task_get_name(eos_task_handle_t handle);
 

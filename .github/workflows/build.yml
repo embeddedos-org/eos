@@ -193,6 +193,112 @@ jobs:
           timeout 30 qemu-system-arm -M mps2-an505 -nographic -semihosting \
             -kernel _build_qemu/scheduler_m33.elf
 
+  # ──────────────────────────────────────────────
+  # QEMU boot test (ESP32, Xtensa LX6)
+  # ──────────────────────────────────────────────
+  # Boots the image through QEMU's copy of the ESP32 boot ROM, the same way a
+  # board loads it from flash. Neither Ubuntu nor upstream QEMU ships an esp32
+  # machine or an Xtensa ESP32 compiler, so both come from Espressif's
+  # releases, pinned to the versions and SHA-256 sums ESP-IDF v5.4.2 records in
+  # tools/tools.json. A checksum mismatch fails the job.
+  test-qemu-esp32:
+    name: QEMU ESP32 Boot Test
+    runs-on: ubuntu-22.04
+    env:
+      XTENSA_URL: https://github.com/espressif/crosstool-NG/releases/download/esp-14.2.0_20241119/xtensa-esp-elf-14.2.0_20241119-x86_64-linux-gnu.tar.xz
+      XTENSA_SHA256: e3e6dcf3d275c3c9ab0e4c8a9d93fd10e7efc035d435460576c9d95b4140c676
+      QEMU_URL: https://github.com/espressif/qemu/releases/download/esp-develop-9.0.0-20240606/qemu-xtensa-softmmu-esp_develop_9.0.0_20240606-x86_64-linux-gnu.tar.xz
+      QEMU_SHA256: 071d117c44a6e9a1bc8664ab63b592d3e17ceb779119dcb46c59571a4a7a88c9
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      # Ubuntu 22.04's own pip mis-builds esptool 5.6.0's metadata ("project
+      # name unknown") and then refuses it; a current Python and pip do not.
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: "3.12"
+
+      - name: Install tools
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libsdl2-2.0-0 libslirp0 libpixman-1-0 libgcrypt20 libglib2.0-0
+          python3 -m pip install --quiet pyyaml esptool==5.6.0
+          mkdir -p "$RUNNER_TEMP/esp"
+          cd "$RUNNER_TEMP/esp"
+          curl -fsSL -o xtensa.tar.xz "$XTENSA_URL"
+          curl -fsSL -o qemu.tar.xz "$QEMU_URL"
+          echo "$XTENSA_SHA256  xtensa.tar.xz" | sha256sum -c -
+          echo "$QEMU_SHA256  qemu.tar.xz" | sha256sum -c -
+          tar xf xtensa.tar.xz
+          tar xf qemu.tar.xz
+          echo "$RUNNER_TEMP/esp/xtensa-esp-elf/bin" >> "$GITHUB_PATH"
+          echo "$RUNNER_TEMP/esp/qemu/bin" >> "$GITHUB_PATH"
+
+      # The kernel starts and two workers make progress only through the
+      # CCOMPARE0 tick and the software-interrupt context switch. QEMU does
+      # not feed GPIO outputs back into GPIO_IN, so the LED pad readback that a
+      # board enforces is reported here but not required.
+      - name: Scheduler on QEMU (sim/qemu_esp32)
+        run: |
+          mkdir -p _build_esp32
+          EOS_EXTRA_CFLAGS=-DEOS_TEST_PAD_READBACK=0 \
+            sim/qemu_esp32/build.sh _build_esp32/scheduler.elf sim/qemu_esp32/scheduler_test.c
+          xtensa-esp32-elf-size _build_esp32/scheduler.elf
+          sim/qemu_esp32/run.sh _build_esp32/scheduler.flash.bin 60
+
+      # Secure Boot V2 and flash encryption, with keys made on this runner
+      # for this run only: secure_burn.sh (the script a board is burned with)
+      # burns QEMU's emulated eFuses, then the ROM must boot the signed,
+      # encrypted scheduler image and refuse an unsigned one, a tampered one
+      # and an unencrypted one.
+      - name: Secure boot and flash encryption on QEMU (sim/qemu_esp32)
+        run: |
+          keys=$(mktemp -d)
+          espsecure generate_signing_key --version 2 --scheme rsa3072 "$keys/signing.pem"
+          espsecure generate_flash_encryption_key "$keys/flash.bin"
+          sim/qemu_esp32/secure_rehearse.sh _build_esp32/scheduler.bin \
+            "$keys/signing.pem" "$keys/flash.bin"
+          rm -rf "$keys"
+
+      # The scheduler test's tasks block almost at once, so the tick seldom
+      # interrupts a task with live registers. Here three tasks never block
+      # and check a0..a15, SAR and a zero-overhead loop while the tick
+      # preempts them; a frame that loses any of them fails.
+      - name: Context integrity on QEMU (sim/qemu_esp32)
+        run: |
+          sim/qemu_esp32/build.sh _build_esp32/context.elf \
+            sim/qemu_esp32/context_test.c sim/qemu_esp32/context_regcheck.S
+          sim/qemu_esp32/run.sh _build_esp32/context.flash.bin 60 "CONTEXT TEST PASSED"
+
+      # The kernel on both CPUs (EOS_SMP_CORES=2): Espressif's QEMU models
+      # the APP CPU and the cross-CPU interrupts. Lost unlocked updates prove
+      # both CPUs ran at once; a mutex count, migrating tasks' register and
+      # window checks, cross-CPU semaphores and pinning must all hold.
+      - name: SMP on QEMU (sim/qemu_esp32)
+        run: |
+          EOS_EXTRA_CFLAGS="-DEOS_SMP_CORES=2 -DEOS_TASK_STACK_POOL_SIZE=32768 -DEOS_MAX_TASKS=32" \
+            sim/qemu_esp32/build.sh _build_esp32/smp.elf \
+            sim/qemu_esp32/smp_test.c sim/qemu_esp32/context_regcheck.S
+          sim/qemu_esp32/run.sh _build_esp32/smp.flash.bin 90 "SMP TEST PASSED"
+
+      # periph_test.c, bus_test.c and rtc_test.c check drivers through
+      # loopbacks QEMU does not model, so they run on a board (results in
+      # sim/qemu_esp32/README.md). CI builds them, so they cannot rot.
+      - name: Build the on-board peripheral tests (sim/qemu_esp32)
+        run: |
+          for t in periph bus rtc; do
+            sim/qemu_esp32/build.sh _build_esp32/$t.elf sim/qemu_esp32/${t}_test.c
+            xtensa-esp32-elf-size _build_esp32/$t.elf
+          done
+
+      # A fault must stop the system, not be returned from: a task that
+      # returns has to produce its own fatal report (code 7), and nothing may
+      # run after it.
+      - name: Fault stops the system on QEMU (sim/qemu_esp32)
+        run: |
+          sim/qemu_esp32/build.sh _build_esp32/fault.elf sim/qemu_esp32/fault_test.c
+          sim/qemu_esp32/run.sh _build_esp32/fault.flash.bin 60 "EOS FATAL code=7"
+
   # ── Required check ────────────────────────────────────────────────────────
   # See https://github.com/embeddedos-org/.github/blob/master/STANDARDS.md --
   # the org-wide file, not a local one; there is no .github/STANDARDS.md in
@@ -202,7 +308,7 @@ jobs:
   build-gate:
     name: Build Gate
     runs-on: ubuntu-22.04
-    needs: [test-host, build-arm, test-qemu]
+    needs: [test-host, build-arm, test-qemu, test-qemu-esp32]
     if: always()
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1

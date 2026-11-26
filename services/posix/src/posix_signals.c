@@ -8,16 +8,11 @@
  */
 
 #include <eos/posix_signals.h>
+#include <eos/posix_errno.h>
 #include <eos/kernel.h>
 #include <eos/hal.h>
 #include <string.h>
 
-#ifndef EINVAL
-#define EINVAL 22
-#endif
-#ifndef ESRCH
-#define ESRCH   3
-#endif
 
 /* ============================================================
  * Per-task signal state
