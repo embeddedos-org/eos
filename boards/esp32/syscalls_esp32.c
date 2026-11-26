@@ -65,12 +65,25 @@ void *_sbrk(ptrdiff_t incr)
     uint32_t crit = eos_port_enter_critical();
     if (s_brk == NULL) s_brk = _eos_heap_start;
     char *prev = s_brk;
-    if (incr > _eos_heap_end - s_brk || incr < _eos_heap_start - s_brk) {
+    /* Integer arithmetic: _eos_heap_start/_end are separate linker symbols,
+     * so subtracting them as pointers is undefined in C. */
+    uintptr_t brk = (uintptr_t)s_brk;
+    uintptr_t room_up = (uintptr_t)_eos_heap_end - brk;
+    uintptr_t room_down = brk - (uintptr_t)_eos_heap_start;
+    // cppcheck-suppress knownConditionTrueFalse ; s_brk is static: it moves on every call
+    if (incr >= 0 ? (uintptr_t)incr > room_up : (uintptr_t)0 - (uintptr_t)incr > room_down) {
         eos_port_exit_critical(crit);
         errno = ENOMEM;
         return (void *)-1;
     }
-    s_brk += incr;
+    /* Through uintptr_t for the same reason as the bounds check above:
+     * s_brk points into a region delimited by linker symbols, not into a C
+     * array object, so `s_brk += incr` is pointer arithmetic the standard
+     * does not define. Unsigned addition wraps on purpose -- a negative
+     * incr converts to a large uintptr_t whose modular sum is the intended
+     * lower address, and the check above has already proved it is in
+     * range. */
+    s_brk = (char *)(brk + (uintptr_t)incr);
     eos_port_exit_critical(crit);
     return prev;
 }

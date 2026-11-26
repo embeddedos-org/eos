@@ -55,6 +55,19 @@ cmake -B build/arm -G Ninja \
 cmake --build build/arm --parallel
 ```
 
+ESP32 (Xtensa LX6, windowed ABI; `-mabi=call0` is refused by `port.c`) image
+through CMake, same flags and bytes as `sim/qemu_esp32/build.sh`:
+
+```bash
+cmake -S sim/qemu_esp32 -B build/esp32 -G Ninja \
+  -DCMAKE_TOOLCHAIN_FILE=$PWD/toolchains/xtensa-esp32.cmake \
+  -DEOS_ESP32_APP_SOURCES=sim/qemu_esp32/scheduler_test.c
+cmake --build build/esp32
+```
+
+Root `CMakeLists.txt` is not an ESP32 build: the image comes from
+`sim/qemu_esp32/CMakeLists.txt`, which reads `sim/qemu_esp32/sim.yaml`.
+
 ## Test (from `README.md` "Test" and `CONTRIBUTING.md` "Development Setup")
 
 `EOS_PRODUCT=vbox_test` is required alongside `EOS_BUILD_TESTS=ON`: the OTA,

@@ -191,7 +191,7 @@ static int find_next_task(void)
 
     for (int i = 0; i < EOS_MAX_TASKS; i++) {
         int idx = (start + i) % EOS_MAX_TASKS;
-        eos_task_t *t = &g_tasks[idx];
+        const eos_task_t *t = &g_tasks[idx];
         if (t->entry == NULL || t->state != EOS_TASK_READY) continue;
 #if EOS_SMP_CORES > 1
         /* Not one another CPU still executes (its context is not saved),

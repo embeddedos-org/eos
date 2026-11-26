@@ -150,6 +150,7 @@ extern void eos_xtensa_task_returned(void);
  * window increment (1, for CALL4); RETW keeps the PC's own top bits, which
  * are the same 0b01 for every IRAM address.
  */
+// cppcheck-suppress constParameterPointer ; signature fixed by kernel/include/eos/arch.h
 uint32_t *eos_port_init_stack(uint32_t *stack_top, void (*entry)(void *), void *arg)
 {
     uintptr_t top = (uintptr_t)stack_top & ~(uintptr_t)15U;

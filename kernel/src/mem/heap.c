@@ -158,6 +158,7 @@ static void coalesce(block_header_t *block)
     }
 }
 
+// cppcheck-suppress constParameterPointer ; public signature, mirrors free()
 void eos_free(void *ptr)
 {
     if (!ptr) return;
@@ -193,7 +194,7 @@ void *eos_realloc(void *ptr, size_t new_size)
     if (!ptr) return eos_malloc(new_size);
     if (new_size == 0) { eos_free(ptr); return NULL; }
 
-    block_header_t *block = block_from_ptr(ptr);
+    const block_header_t *block = block_from_ptr(ptr);
     if (!block) return NULL;  /* Not ours, or the header is not believable */
 
     size_t current_usable = block->size - HEADER_SIZE;
@@ -224,7 +225,7 @@ void eos_heap_stats(eos_heap_stats_t *out)
 
     /* Recalculate largest free block */
     size_t largest = 0;
-    block_header_t *current = free_list;
+    const block_header_t *current = free_list;
     while (current) {
         if (current->free && current->size > largest) {
             largest = current->size;

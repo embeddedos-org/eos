@@ -209,7 +209,7 @@ Legacy/Niche:
 | ARM Cortex-A / ARM64 | `aarch64-linux-gnu.yaml` | `aarch64-linux-gnu-gcc` | ✅ Ready |
 | RISC-V 64 | `riscv64-linux-gnu.yaml` | `riscv64-linux-gnu-gcc` | ✅ Ready |
 | x86_64 | `x86_64-linux-gnu.yaml` | `x86_64-linux-gnu-gcc` | ✅ Ready |
-| Xtensa (ESP32) | — | `xtensa-esp32-elf-gcc` | ⚠️ Needs vendor SDK |
+| Xtensa (ESP32) | [`toolchains/xtensa-esp32.cmake`](../toolchains/xtensa-esp32.cmake) | `xtensa-esp32-elf-gcc` | ✅ Ready |
 | MIPS | — | `mips-linux-gnu-gcc` | ⚠️ Needs toolchain file |
 | PowerPC | — | `powerpc-linux-gnu-gcc` | ⚠️ Needs toolchain file |
 | SPARC | — | `sparc-elf-gcc` | ⚠️ Needs toolchain file |
@@ -217,7 +217,7 @@ Legacy/Niche:
 | SuperH | — | `sh4-linux-gnu-gcc` | ⚠️ Needs toolchain file |
 | Other legacy | — | vendor-specific | ⚠️ Needs toolchain file |
 
-**4 of 16 architectures have eos toolchain files.** The remaining 12 architectures have board definitions in both repos but require users to provide their own cross-compiler toolchain file or vendor SDK.
+**5 of 16 architectures have eos toolchain files.** The remaining 11 architectures have board definitions in both repos but require users to provide their own cross-compiler toolchain file or vendor SDK.
 
 ---
 
