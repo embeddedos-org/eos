@@ -41,7 +41,9 @@ int eos_driver_unregister(const char *name)
                     driver_table[i]->ops->close(driver_table[i]);
                 }
             }
-            if (driver_table[i]->ops->deinit) {
+            /* UNINIT: never initialised, or deinit_all() already ran deinit. */
+            if (driver_table[i]->state != EOS_DRV_STATE_UNINIT &&
+                driver_table[i]->ops->deinit) {
                 driver_table[i]->ops->deinit(driver_table[i]);
             }
 
@@ -110,7 +112,11 @@ void eos_driver_deinit_all(void)
             if (driver_table[i]->state == EOS_DRV_STATE_ACTIVE && driver_table[i]->ops->close) {
                 driver_table[i]->ops->close(driver_table[i]);
             }
-            if (driver_table[i]->ops->deinit) {
+            /* deinit releases what init acquired: once per init, never for a
+             * driver still UNINIT -- not initialised, or already deinitialised
+             * by an earlier call, which is the state this loop leaves. */
+            if (driver_table[i]->state != EOS_DRV_STATE_UNINIT &&
+                driver_table[i]->ops->deinit) {
                 driver_table[i]->ops->deinit(driver_table[i]);
             }
             driver_table[i]->state = EOS_DRV_STATE_UNINIT;

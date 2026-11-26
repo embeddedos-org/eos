@@ -246,6 +246,20 @@ jobs:
           xtensa-esp32-elf-size _build_esp32/scheduler.elf
           sim/qemu_esp32/run.sh _build_esp32/scheduler.flash.bin 60
 
+      # Secure Boot V2 and flash encryption, with keys made on this runner
+      # for this run only: secure_burn.sh (the script a board is burned with)
+      # burns QEMU's emulated eFuses, then the ROM must boot the signed,
+      # encrypted scheduler image and refuse an unsigned one, a tampered one
+      # and an unencrypted one.
+      - name: Secure boot and flash encryption on QEMU (sim/qemu_esp32)
+        run: |
+          keys=$(mktemp -d)
+          espsecure generate_signing_key --version 2 --scheme rsa3072 "$keys/signing.pem"
+          espsecure generate_flash_encryption_key "$keys/flash.bin"
+          sim/qemu_esp32/secure_rehearse.sh _build_esp32/scheduler.bin \
+            "$keys/signing.pem" "$keys/flash.bin"
+          rm -rf "$keys"
+
       # The scheduler test's tasks block almost at once, so the tick seldom
       # interrupts a task with live registers. Here three tasks never block
       # and check a0..a15, SAR and a zero-overhead loop while the tick
@@ -255,6 +269,27 @@ jobs:
           sim/qemu_esp32/build.sh _build_esp32/context.elf \
             sim/qemu_esp32/context_test.c sim/qemu_esp32/context_regcheck.S
           sim/qemu_esp32/run.sh _build_esp32/context.flash.bin 60 "CONTEXT TEST PASSED"
+
+      # The kernel on both CPUs (EOS_SMP_CORES=2): Espressif's QEMU models
+      # the APP CPU and the cross-CPU interrupts. Lost unlocked updates prove
+      # both CPUs ran at once; a mutex count, migrating tasks' register and
+      # window checks, cross-CPU semaphores and pinning must all hold.
+      - name: SMP on QEMU (sim/qemu_esp32)
+        run: |
+          EOS_EXTRA_CFLAGS="-DEOS_SMP_CORES=2 -DEOS_TASK_STACK_POOL_SIZE=32768 -DEOS_MAX_TASKS=32" \
+            sim/qemu_esp32/build.sh _build_esp32/smp.elf \
+            sim/qemu_esp32/smp_test.c sim/qemu_esp32/context_regcheck.S
+          sim/qemu_esp32/run.sh _build_esp32/smp.flash.bin 90 "SMP TEST PASSED"
+
+      # periph_test.c, bus_test.c and rtc_test.c check drivers through
+      # loopbacks QEMU does not model, so they run on a board (results in
+      # sim/qemu_esp32/README.md). CI builds them, so they cannot rot.
+      - name: Build the on-board peripheral tests (sim/qemu_esp32)
+        run: |
+          for t in periph bus rtc; do
+            sim/qemu_esp32/build.sh _build_esp32/$t.elf sim/qemu_esp32/${t}_test.c
+            xtensa-esp32-elf-size _build_esp32/$t.elf
+          done
 
       # A fault must stop the system, not be returned from: a task that
       # returns has to produce its own fatal report (code 7), and nothing may

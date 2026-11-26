@@ -28,12 +28,12 @@ On a board (the default build enforces the LED readback):
 
 ```sh
 sim/qemu_esp32/build.sh /tmp/sched.elf sim/qemu_esp32/scheduler_test.c
-esptool --chip esp32 --port /dev/ttyUSB0 write-flash 0x1000 /tmp/sched.bin
+esptool --chip esp32 --port /dev/ttyUSB0 write_flash 0x1000 /tmp/sched.bin
 sim/qemu_esp32/capture_serial.py /dev/ttyUSB0 12
 ```
 
 Writing at 0x1000 replaces the board's second-stage bootloader. Read the whole
-flash first (`esptool read-flash 0 0x400000 backup.bin`) and write it back at 0
+flash first (`esptool read_flash 0 0x400000 backup.bin`) and write it back at 0
 to restore the board.
 
 | File | Purpose |
@@ -43,13 +43,22 @@ to restore the board.
 | `run.sh` | Boots a flash image in QEMU and checks for the expected output |
 | `capture_serial.py` | Resets a board, records its UART0 output with host timestamps, checks the verdict and heartbeat spacing |
 | `scheduler_test.c` | Starts the kernel; workers progress only through the tick and the context switch; blinks the LED through the HAL and reads the pad back. Its tasks block almost at once, so it does not show that a preempted task keeps its registers |
-| `context_test.c`, `context_regcheck.S` | Three tasks that never block check a0..a15, SAR and a zero-overhead loop while the tick preempts them; any register the frame loses, or one restored from another task, fails |
+| `context_test.c`, `context_regcheck.S` | Three tasks that never block check a0..a15, SAR and a zero-overhead loop, and run 24-deep recursions through CALL4, CALL8 and CALL12 (longer than the 16-window register file), while the tick preempts them; any register the frame or a window spill loses, one restored from another task, or a task starved of its share of the CPU fails |
+| `periph_test.c` | ADC (with its eFuse calibration), DAC, PWM and UART1/2 through loopbacks inside the chip (board only; see below) |
+| `bus_test.c` | GPIO pulls on RTC and digital pads, SPI2/SPI3 in a MOSI-to-MISO loopback, I2S0 in a DOUT-to-DIN loopback with WS/BCK measured on the pads, and I2C0 against I2C1 as a slave (board only; see below) |
+| `smp_test.c` | The kernel on both CPUs (`-DEOS_SMP_CORES=2`): parallelism, mutex, migration with full context checks, cross-CPU wake-ups, pinning (QEMU and board) |
+| `rtc_test.c` | Touch pads, light sleep and deep sleep (board only; see below) |
+| `board_suite.sh` | Runs the QEMU tests and every test image on a board, one PASS/FAIL line each |
 | `fault_test.c` | A task returns; the port must report `EOS FATAL code=7` (`task_returned`, not any other fault) and run nothing after it |
 
-Mutation check: with the SAR restore in `vectors.S` replaced by `nop`, or
-LCOUNT restored as 0, `context_test` fails (error 2, error 1) where
-`scheduler_test` still passed; with a task's return address set to 0,
-`fault_test` fails (the fault is `code=2 exccause=20`, not `code=7`).
+Mutation checks (each run in QEMU): with no window spill in the interrupt
+handler, or the 16-byte base save area gap removed, `context_test` fails
+(a fatal exception; tasks starved to 8-12 rounds against about 7000); a
+wrong register in the CALL4, CALL8 or CALL12 overflow or underflow handler
+fails it with error 5, a fatal exception, or error 6. Under the earlier CALL0
+port, a missing SAR or LCOUNT restore failed it where `scheduler_test`
+still passed; with a task's return address set to 0, `fault_test` fails
+(the fault is `code=2 exccause=20`, not `code=7`).
 
 ## The port
 
@@ -62,18 +71,22 @@ LCOUNT restored as 0, `context_test` fails (error 2, error 1) where
 
 Design choices, and why:
 
-- **CALL0 ABI (`-mabi=call0`).** With no register windows, a context is
-  a0..a15 plus SAR and the loop registers, so the handler saves one 96-byte
-  frame and never spills windows. The cost: windowed code cannot be linked
-  in. That rules out the toolchain's newlib and libgcc (hence `-nostdlib` and
-  `boards/esp32/freestanding.c`; the kernel needs only `memset` and `memcpy`)
-  and Espressif's prebuilt Wi-Fi/BLE libraries.
+- **Windowed ABI**, as the boot ROM, the toolchain's newlib and libgcc and
+  Espressif's binary libraries use (the port was first built with CALL0,
+  which ruled all of those out). The level-1 handler saves the interrupted
+  function's window (a0..a15) in a 96-byte frame and spills every older
+  window to the save areas the ABI reserves on the task's own stack; the
+  task's callers come back through underflow exceptions as it returns into
+  them. The frame sits 16 bytes below the task's stack pointer, leaving the
+  caller's base save area free. The six window overflow/underflow handlers
+  are the ISA's standard sequences; an alloca exception (MOVSP) is handled by
+  the same spill.
 - **Tick = CCOMPARE0 (CPU line 6), yield = software interrupt (line 7).** Both
   are level 1; they play SysTick's and PendSV's parts, and `eos_schedule()`
   is shared with the Cortex-M port unchanged.
 - **Separate interrupt stack.** The frame goes on the task's stack; the C
-  dispatcher runs on its own 2 KB stack, so a task only needs 96 bytes of
-  headroom (the idle task has 256).
+  dispatcher runs on its own 2 KB stack, so a task only needs 112 bytes of
+  headroom beyond its own frames (the idle task has 256).
 - **The dispatcher runs with `PS.EXCM` clear** (INTLEVEL 3 keeps level-1
   interrupts masked). With EXCM set the core does not loop back at `LEND`,
   so every zero-overhead `loop` GCC emits would run once. That was the first
@@ -84,6 +97,171 @@ Design choices, and why:
   `EOS FATAL code=… exccause=… epc1=…` on UART0 and halts with interrupts
   masked.
 
+## Both CPUs (SMP)
+
+Built with `-DEOS_SMP_CORES=2` the kernel schedules tasks on the PRO and
+APP CPUs (`kernel/src/task.c`, `kernel/src/arch/xtensa_lx6/`,
+`boards/esp32/`):
+
+- One scheduler, run by each CPU for itself: each picks the best READY task
+  it may run (`eos_task_set_core_mask()`) that no other CPU is still
+  executing. Each CPU has its own idle task (handles 0 and 1), current-task
+  slot, saved-SP slot and interrupt stack.
+- The kernel's critical section is also a lock shared by both CPUs: an
+  S32C1I spinlock, recursive on the CPU that holds it, taken only with that
+  CPU's interrupts masked.
+- Each CPU has its own CCOMPARE0 tick for time slicing; kernel time,
+  delays and software timers advance on CPU 0. A yield, an unblock or a
+  delay expiring raises the other CPU's cross-CPU interrupt (interrupt
+  matrix sources 24/25 on CPU line 2), so it reschedules at once: a
+  semaphore round trip between the CPUs takes about 60 us on the board.
+- The APP CPU is released from reset as ESP-IDF's `start_other_core()` does
+  and enters at `_start_app` (`startup_esp32.S`).
+- The single-CPU build is unchanged: no SMP code is compiled, and the
+  structures keep their layout. With SMP, `eos_task_t` gains `core_mask`,
+  and the idle tasks take handles 0 and 1.
+
+`smp_test.c` on the board:
+
+```
+CHECK racers pinned to CPU0/CPU1 ran on CPU0/CPU1, unlocked count 343498 of 400000 (56502 lost), each saw the other mid-run: yes  PASS
+CHECK mutex across CPUs: 40000 of 40000, lockers ran on both  PASS
+CHECK spinners (registers, loop, CALL4/8/12 windows) migrating: t0 rounds=1299 err=0 on both t1 rounds=1301 err=0 on both t2 rounds=1305 err=0 on both  PASS
+CHECK semaphore ping-pong CPU0<->CPU1: 1000 of 1000 round trips in 70 ms, ping on CPU0, pong on CPU1  PASS
+CHECK unpinned block/unblock storm: 20000+20000 of 40000 in 860 ms, ran on both, a task on two CPUs at once: 0  PASS
+CHECK READY-but-still-running window, widened to 20 us: 2000 of 2000 rounds, a task on two CPUs at once: 0  PASS
+CHECK create / self-delete churn on both CPUs: 600 of 600 children ran  PASS
+CHECK API: idle tasks protected, bad masks refused  PASS
+SMP TEST PASSED
+```
+
+Mutation checks on the board: with the kernel lock disabled the test stops
+with a fatal exception. Two rules are not reached by any test here, and
+were kept on review rather than on evidence: the scheduler's "still
+executing on another CPU" check (the unblock's cross-CPU interrupt makes the
+first CPU save the task before the second can pick it up), and not reusing
+a task slot a CPU is still executing (a self-deleting task's window is a
+few instructions). With either removed the test still passes.
+
+The SMP build is built with `-DEOS_MAX_TASKS=32`: the test runs more than
+the default 16 tasks.
+
+Limits of the SMP build: the HAL drivers take no locks of their own, so a
+peripheral must be used from one task at a time; DPORT register reads are
+not protected against the ESP32's dual-CPU DPORT read erratum (ESP-IDF
+stalls the other CPU around them); `kernel/src/multicore.c`'s generic API
+(`eos_task_set_affinity()`, `eos_spin_lock()`) is still its host stub and
+not connected to this scheduler.
+
+## Wi-Fi and Bluetooth: not implemented
+
+The port now uses the windowed ABI, which removes the first obstacle:
+Espressif's Wi-Fi libraries (`libnet80211`, `libpp`, `libphy`, `librtc`,
+`libcoexist`, ESP-IDF v5.4.2) link against EoS objects and the toolchain's
+newlib. What a link of only `esp_wifi_init_internal()` into the scheduler
+test showed (2026-11-23):
+
+- the code does not fit: the libraries are about 440 KB, and that one
+  entry point already overflows IRAM by 218,829 bytes. ESP-IDF runs them
+  from flash through the cache MMU, which this port does not set up (the
+  boot ROM loads EoS into RAM only);
+- 19 symbols are still unresolved at that depth (`esp_dport_access_reg_read`,
+  `phy_enter_critical`, `WIFI_EVENT`, newlib's system calls, ...), and the
+  libraries' full list is 241, besides the ~80 functions of the OS adapter
+  table (`wifi_os_adapter.h`) that ESP-IDF implements on FreeRTOS.
+
+What Wi-Fi needs, in order: (1) execute-in-place from flash: map an image
+partition through the cache MMU as ESP-IDF's second-stage bootloader does;
+(2) the OS adapter on EoS tasks, semaphores, queues and timers, plus the
+ESP-IDF services the libraries call (`esp_timer`, the event loop, NVS,
+interrupt allocation, newlib system calls); (3) PHY initialisation and RF
+calibration. Bluetooth adds the controller library and its own adapter.
+
+## Secure Boot V2 and flash encryption
+
+The boot ROM of an ESP32 rev3 can check an RSA-3072 signature on the image
+at 0x1000 (Secure Boot V2) and decrypt flash on the fly (flash encryption).
+EoS is that image, so nothing in EoS changes: the image is signed and
+encrypted on the host, and eFuses turn the checks on. Three scripts do it:
+
+- `secure_image.sh IN.bin OUT.bin SIGNING_KEY.pem [FLASH_KEY.bin]` signs
+  the image `build.sh` wrote, verifies the signature, and with a flash key
+  encrypts it for 0x1000 and checks it decrypts back. OUT.bin is written
+  only if every step succeeded.
+- `secure_burn.sh PORT SIGNING_KEY.pem FLASH_KEY.bin` burns, in order, the
+  flash key into BLOCK1 (read- and write-protected), the signing key's
+  public digest into BLOCK2 (write-protected), `FLASH_CRYPT_CONFIG=0xF`,
+  `FLASH_CRYPT_CNT=1`, `ABS_DONE_1`, and the write protection of `RD_DIS`
+  (as ESP-IDF does even in development mode: otherwise someone could later
+  read-protect BLOCK2 and the ROM would refuse every image). It refuses a
+  chip that is not rev3, is not on the 256-bit coding scheme, or already has
+  either feature on, and fails unless the chip reads back as expected,
+  including the read and write protections. It needs
+  `EOS_BURN_CONFIRM=burn-permanently` for any port.
+- `secure_rehearse.sh IMAGE.bin SIGNING_KEY.pem FLASH_KEY.bin` runs
+  `secure_burn.sh` against QEMU's emulated eFuses, then requires the ROM to
+  boot the signed, encrypted image and to refuse an unsigned image, a
+  tampered one and an unencrypted one. CI runs it with keys made for the
+  run. QEMU runs the real ESP32 ROM: with `ABS_DONE_1` set it printed
+  `secure boot verification failed` for an unsigned image that booted
+  before.
+
+This is **development mode**, and it does not protect against someone with
+the board's USB port: UART download mode stays on, and it can run code in
+RAM that reads flash through the decrypting cache. Release mode would also
+burn `DISABLE_DL_ENCRYPT`, `DISABLE_DL_DECRYPT`, `DISABLE_DL_CACHE`,
+`JTAG_DISABLE`, `CONSOLE_DEBUG_DISABLE`, the rest of `FLASH_CRYPT_CNT` (and
+write-protect it), and optionally `UART_DOWNLOAD_DIS`; after
+`UART_DOWNLOAD_DIS` the board can never be reflashed over USB. None of these
+are burned. A flash key generated on the host, as here, exists outside the
+chip; ESP-IDF's production flow generates it on the chip instead.
+
+What is permanent once burned: the chip boots only images signed by that
+signing key, for its whole life. If the key is lost, the board can never run
+new firmware from 0x1000. Development mode lets flash encryption be turned
+off up to three times by burning more `FLASH_CRYPT_CNT` bits; secure boot
+cannot be turned off.
+
+Procedure for a board (run the key commands yourself; keep the keys
+somewhere backed up and offline):
+
+```bash
+mkdir -p ~/esp/keys && chmod 700 ~/esp/keys
+espsecure generate_signing_key --version 2 --scheme rsa3072 ~/esp/keys/sbv2_signing.pem
+espsecure generate_flash_encryption_key ~/esp/keys/flash_encryption.bin
+chmod 600 ~/esp/keys/*
+sb=$(mktemp -d)
+
+# 1. Rehearse on QEMU with the same keys; stop if any case fails.
+EOS_EXTRA_CFLAGS=-DEOS_TEST_PAD_READBACK=0 \
+  sim/qemu_esp32/build.sh "$sb"/q_sched.elf sim/qemu_esp32/scheduler_test.c
+sim/qemu_esp32/secure_rehearse.sh "$sb"/q_sched.bin \
+  ~/esp/keys/sbv2_signing.pem ~/esp/keys/flash_encryption.bin
+
+# 2. Build, sign and encrypt the board image.
+sim/qemu_esp32/build.sh "$sb"/b_sched.elf sim/qemu_esp32/scheduler_test.c
+sim/qemu_esp32/secure_image.sh "$sb"/b_sched.bin "$sb"/b_sched.secure.bin \
+  ~/esp/keys/sbv2_signing.pem ~/esp/keys/flash_encryption.bin
+
+# 3. Write it while the chip still accepts any image ("keep" leaves the
+#    signed header untouched), then burn. Burning is PERMANENT.
+esptool --chip esp32 --port /dev/ttyUSB0 write_flash --flash_mode keep \
+  --flash_freq keep --flash_size keep 0x1000 "$sb"/b_sched.secure.bin
+EOS_BURN_CONFIRM=burn-permanently sim/qemu_esp32/secure_burn.sh /dev/ttyUSB0 \
+  ~/esp/keys/sbv2_signing.pem ~/esp/keys/flash_encryption.bin
+```
+
+If `secure_burn.sh` stops part-way (a dropped cable), the chip is left
+half-configured and a rerun refuses it. Read `espefuse --chip esp32 --port
+/dev/ttyUSB0 summary`, compare it with the list above, and burn only the
+missing eFuses by hand with the same `espefuse` commands the script runs.
+The rehearsal keeps its emulated eFuses, which then hold the flash key, in
+`/dev/shm` where available, and deletes them on exit.
+
+Press EN: the console should show `secure boot v2 enabled` and then the
+scheduler test. Later images go through `secure_image.sh` as well, and
+esptool needs `--force` to write below 0x8000 once secure boot is on.
+
 ## Verified on hardware
 
 HiLetGo ESP-WROOM-32 (ESP32-D0WD-V3 rev 3.1, 4 MB flash), 2026-11-23:
@@ -92,47 +270,211 @@ HiLetGo ESP-WROOM-32 (ESP32-D0WD-V3 rev 3.1, 4 MB flash), 2026-11-23:
 `capture_serial.py`:
 
 ```
-[  0.024s] rst:0x1 (POWERON_RESET),boot:0x13 (SPI_FAST_FLASH_BOOT)
-[  0.024s] load:0x3fff0000,len:588
-[  0.074s] load:0x40080400,len:5072
-[  0.074s] entry 0x40080970
-[  0.074s] EoS on ESP32 (Xtensa LX6): booting
-[  0.074s] scheduler: starting kernel
-[  0.475s] scheduler: worker_a=40 worker_b=20 led_toggles=8 led_readback_errors=0 ticks=400 cycles_per_400ms=16000876
-[  0.476s] SCHEDULER TEST PASSED
-[ 11.468s] heartbeat tick=11400 led_toggles=228 led_readback_errors=0
+[  0.071s] EoS on ESP32 (Xtensa LX6): booting
+[  0.071s] scheduler: starting kernel
+[  0.472s] scheduler: worker_a=40 worker_b=20 led_toggles=8 led_readback_errors=0 ticks=400 cycles_per_400ms=96000928
+[  0.473s] SCHEDULER TEST PASSED
+[ 11.467s] heartbeat tick=11400 led_toggles=228 led_readback_errors=0
 verdict: PASS; heartbeats: 11
-heartbeat spacing: mean 1.0039s min 1.0037s max 1.0044s over 10 gaps
+heartbeat spacing: mean 1.0000s min 0.9983s max 1.0017s over 10 gaps
 ```
 
-`context_test.c` on the same board:
+`context_test.c` on the same board (windowed port at 240 MHz; 240 rounds per task at 40 MHz):
 
 ```
-context: task0 rounds=252 error=0
-context: task1 rounds=252 error=0
-context: task2 rounds=251 error=0
+context: task0 rounds=1474 error=0
+context: task1 rounds=1474 error=0
+context: task2 rounds=1472 error=0
 CONTEXT TEST PASSED
 ```
 
+## Peripheral drivers
+
+`hal/src/hal_esp32/` implements the extended HAL's ADC, DAC and PWM
+(`-DEOS_ENABLE_ADC/DAC/PWM=1`) and UART1/2 in the backend. The portable API
+has no pin or unit arguments, so the ESP32 numbering is:
+
+| API | ESP32 |
+|---|---|
+| ADC channel 0-7 | ADC1 channel 0-7: GPIO36, 37, 38, 39, 32, 33, 34, 35 |
+| ADC channel 10-19 | ADC2 channel 0-9: GPIO4, 0, 2, 15, 13, 12, 14, 27, 25, 26 |
+| DAC channel 0, 1 | GPIO25, GPIO26, 8-bit |
+| PWM channel 0-3 | LEDC high-speed channel n on its own timer n, on `EOS_BOARD_PWM_GPIOS[n]` (default GPIO2, 4, 5, 13) |
+| UART 1 / 2 | GPIO19 TX, 18 RX / GPIO17 TX, 16 RX (`EOS_BOARD_UART*_GPIO`) |
+
+- ADC: 9-12 bits, 12 dB attenuation, one software-started conversion per
+  read. `eos_adc_read_mv()` uses the chip's eFuse calibration
+  (`hal_esp32_adc_cal.c`, ported from ESP-IDF's line fitting, Apache-2.0):
+  two-point values if burned, else the measured Vref, else 1100 mV;
+  `eos_esp32_adc_cal_source()` says which. `tests/test_esp32_adc_cal.c`
+  checks it against ESP-IDF's own output. One deliberate difference: ESP-IDF
+  v5.4 uses Vref 0 in its 12 dB table on two-point chips (readings above
+  2880 then fall as the input rises); the port uses the chip's Vref. A
+  conversion that does not finish in 1 ms returns `0xFFFFFFFF`.
+- PWM: 1 Hz to 8.388 MHz (2^23 Hz: at least 1 bit of duty resolution, with
+  the divider computed in 32 bits); the finest resolution up to 20 bits that fits.
+  Channels 4-7 are refused: they would have to share a timer, and changing
+  one channel's frequency would change another's.
+- UART1/2: 300 baud to 5 Mbaud, 5-8 data bits, none/even/odd parity, 1 or 2
+  stop bits; RX has a pull-up.
+- Using a pin for ADC or DAC moves it to the RTC mux; GPIO and the
+  peripheral routes take it back.
+
+`periph_test.c` on the board (QEMU does not model these peripherals; CI only
+builds the test):
+
+```
+CHECK adc calibration source efuse-vref vref 1107mV  PASS
+CHECK dac0->adc18 raw 0/912/1882/2847/4095 1650mV->1658mV  PASS
+CHECK dac1->adc19 raw 0/910/1891/2837/4095 1650mV->1666mV  PASS
+CHECK adc1 ch4 (GPIO32) pull-up/pull-down up 4095 down 0  PASS
+CHECK pwm ch0 init 1 kHz 25% -> 200 edges/200ms duty x10 248  PASS
+CHECK pwm set_duty 75% -> duty x10 750  PASS
+CHECK pwm set_freq 5 kHz -> 1001 edges/200ms duty x10 750  PASS
+CHECK pwm stop -> 0 edges  PASS
+CHECK pwm rejects channel 4, 0 Hz and duty > 100%  PASS
+CHECK pwm frequency range: 1 Hz and 8388608 Hz accepted, 8388609 Hz refused  PASS
+CHECK uart1+2 loopback, 5-8 data bits x none/even/odd x 1/2 stop at 115200 -> 48/48  PASS
+CHECK uart1+2 loopback, 5-8 data bits x none/even/odd x 1/2 stop at 921600 -> 48/48  PASS
+CHECK uart rejects port 3, 4 data bits and 10 Mbaud  PASS
+CHECK GPIO25 digital again after the DAC -> 0 wrong of 20  PASS
+PERIPH TEST PASSED
+```
+
+### SPI, I2C and I2S
+
+| API | ESP32 |
+|---|---|
+| SPI port 2 / 3 | SPI2 (HSPI) / SPI3 (VSPI): SCLK, MOSI, MISO on GPIO14, 13, 12 / 18, 23, 19 (`EOS_BOARD_SPIn_*_GPIO`); CS is any GPIO, held low for the whole transfer, or `EOS_ESP32_SPI_NO_CS` |
+| I2C port 0 / 1 | I2C0 / I2C1: SDA, SCL on GPIO21, 22 / 33, 32 (`EOS_BOARD_I2Cn_*_GPIO`), open drain with the internal pull-ups |
+| Audio id 0 (`-DEOS_ENABLE_AUDIO=1`) | I2S0 master: BCK, WS, DOUT, DIN on GPIO27, 26, 25, 35 (`EOS_BOARD_I2S_*_GPIO`) |
+
+- SPI: full duplex, modes 0-3, 8-bit words, MSB first, polled, any length
+  (through the 64-byte buffer). The clock is the fastest divider not above
+  the request (`eos_esp32_spi_get_hz()` reports it), from 152 Hz to APB/3
+  (26.67 MHz), ESP-IDF's limit through the GPIO matrix.
+- I2C: master, 7-bit addresses, 2.5 kHz to 1 MHz, any length (the 32-byte
+  FIFO is refilled between END commands). A NACK, lost arbitration or
+  timeout returns -1 and resets the controller. A polled slave is available
+  as a board API (`eos_esp32_i2c_slave_*`). The portable
+  `eos_i2c_write_reg()`/`eos_i2c_read_reg()` are stubs on every platform in
+  `hal_common.c` and still return -1.
+
+- Audio (I2S0): Philips I2S, 16-bit, 1 or 2 channels, 8-48 kHz (MCLK
+  256 x fs from the 160 MHz PLL through the fractional divider; BCK 32 x fs),
+  transmit and receive full duplex on shared BCK/WS. The CPU feeds the
+  64-word FIFOs (no DMA), so: capture is continuous only while
+  `eos_audio_record()` runs and may start with up to 64 older words; a
+  `eos_audio_play()` of more than 64 words waits for the FIFO, and the
+  receiver drops what arrives meanwhile. Every buffer ends with a zero
+  frame, because the transmitter repeats its last word when the FIFO runs
+  dry (it held the last sample, a DC offset, until this was added). Volume
+  and mute scale samples in software.
+
+`bus_test.c` on the board:
+
+```
+CHECK gpio pull-up/pull-down read back on GPIO4, 33 (RTC pads) and 23: 4=ok 33=ok 23=ok  PASS
+CHECK spi2 loopback, modes 0-3 x 100 kHz/1/10/20/26.67 MHz, 200-byte transfers -> 20/20, CS idle high after each: yes, SCLK idles at CPOL: yes  PASS
+CHECK spi3 loopback, modes 0-3 x 100 kHz/1/10/20/26.67 MHz, 200-byte transfers -> 20/20, CS idle high after each: yes, SCLK idles at CPOL: yes  PASS
+CHECK spi2 write-only then read-only (read returns the 0xFF it clocks out)  PASS
+CHECK spi clock never above the request: 1000000->1000000 26000000->20000000 26666667->26666666 3000000->2962962 200->200 100->0  PASS
+CHECK spi rejects port 1, 16-bit words, 0 Hz, 27 MHz and a flash pin as CS  PASS
+CHECK i2s0 8000 Hz stereo 16-bit: divider 8000 Hz, WS 7950 Hz, BCK 256000 Hz; 48 samples looped back in order  PASS
+CHECK i2s0 44100 Hz stereo 16-bit: divider 44099 Hz, WS 44050 Hz, BCK 1411500 Hz; 48 samples looped back in order  PASS
+CHECK i2s0 mono 16 kHz: 24 samples looped back in order  PASS
+CHECK i2s0 volume 50% halves, mute zeroes, and the line idles at 0 after play: halved, idles at 0, muted silent  PASS
+CHECK i2c0 address reaches listening i2c1 slave 0x28 (no wire), master reports NACK, slave matched, other address ignored  PASS
+CHECK i2c rejects port 2, 1 kHz, 2 MHz, 10-bit address, empty read  PASS
+CHECK i2c data transfers: NOT RUN (join GPIO21-GPIO33 and GPIO22-GPIO32 to run them)
+BUS TEST PASSED
+```
+
+What these do not show: an SPI loopback samples the master's own output on
+its own edge, so a wrong clock phase (CPHA) would still pass; only CPOL is
+checked, as the SCLK idle level. An I2C bus is a wired AND that two pads
+cannot form inside the chip, and the ESP32 master stalls when its SDA input
+does not follow what it drives, so without wires the slave can only listen:
+I2C data transfers in either direction need the two jumpers.
+
+### Touch pads and sleep (board API)
+
+The extended HAL's touch API describes touch panels, and the portable power
+API (`power/`) has no platform backend, so these are board APIs in
+`board_esp32.h`:
+
+- `eos_esp32_touch_init()` / `eos_esp32_touch_read(pad)`: T0-T9 on GPIO4, 0,
+  2, 15, 13, 12, 14, 27, 33, 32; a count that drops under a finger. On a
+  DevKit T1 (BOOT button) and T2 (LED) read 0.
+- `eos_esp32_light_sleep_us()`: returns after the RTC timer wakes the chip;
+  CCOUNT and the kernel tick stand still meanwhile, so kernel time does not
+  include the sleep. `eos_esp32_deep_sleep_us()`: the wake-up is a reset
+  (reason 5); `EOS_ESP32_RTC_NOINIT` variables (RTC slow memory) and the RTC
+  timer carry over.
+- Boot now runs the power-control part of ESP-IDF's `rtc_init()` and tunes
+  the RC clocks (`board_esp32.c`). Without it deep sleep reset the RTC
+  controller and woke at once, then (with the crystal allowed to power
+  down but the RTC fast clock still on XTAL/4) never woke; found by
+  comparing every RTC_CNTL register with an ESP-IDF build's on the same
+  board. The 150 kHz slow clock had been running untuned at about 357 kHz.
+
+`rtc_test.c` on the board (it deep-sleeps and reports from the next boot):
+
+```
+CHECK touch pads read and stable (5 reads): T0=849 T1=0(info) T2=0(info) T3=808 T4=837 T5=908 T6=968 T7=978 T8=1098 T9=1111  PASS
+CHECK touch T0 count moves with the pad's pull-down on: idle 849, pulled down 0, released 849  PASS
+CHECK touch T0 finger: idle 849, lowest 848  NOT RUN (no touch seen)
+CHECK light sleep 200 ms: rc 0, RTC timer 200 ms (slow clock 162400 Hz), CPU ran 0 ms of it  PASS
+rtc_test: deep sleep 1 s
+rst:0x5 (DEEPSLEEP_RESET),boot:0x13 (SPI_FAST_FLASH_BOOT)
+rtc_test: woke from deep sleep
+CHECK deep sleep 1 s: reset reason 5, wake cause 8, RTC memory kept, 1034 ms from sleep to this boot  PASS
+RTC TEST PASSED
+```
+
+By host time the deep sleep lasted 1.001 s (the 1034 ms includes the boot).
+Finger detection needs a person: touch GPIO4 during the 5 s window.
+
+ESP32 UART behaviours the driver works around, each found on the board and
+matched against ESP-IDF's `uart_ll.h`:
+
+- RX FIFO is read through the peripheral-bus address, never the AHB alias
+  (ESP-IDF: "Read fifo, we use APB address"); through the alias, received
+  bytes came back wrong.
+- Neither FIFO reset bit is used: `RXFIFO_RST` does not empty the RX FIFO,
+  and ESP-IDF toggles `TXFIFO_RST` only on UART0. With both toggled, every
+  second reconfiguration of UART2 received garbage. The RX FIFO is drained
+  by reading until its count and pointers agree.
+- After a reconfiguration or a loopback switch the driver waits two frame
+  times for the receiver to go idle before draining it.
+
 ## Limits
 
-- One core. The APP CPU stays in reset.
-- A preempted task carries a 96-byte frame on its stack, against 68 bytes on
-  Cortex-M. `EOS_MIN_STACK_SIZE` (128) still admits a task, but leaves it only
-  32 bytes of its own; the tests use 512.
-- No Wi-Fi or Bluetooth (they need ESP-IDF's windowed binary libraries).
+- One CPU unless built with `-DEOS_SMP_CORES=2` (see "Both CPUs" above);
+  the default image leaves the APP CPU in reset.
+- A preempted task carries a 112-byte frame (96 plus the caller's 16-byte
+  save area) on its stack, against 68 bytes on Cortex-M, and windowed frames
+  are larger than CALL0 ones. `EOS_MIN_STACK_SIZE` (128) still admits a task,
+  but leaves it 16 bytes of its own; the tests use 512 to 3072.
 - No watchdog: the two the ROM arms are switched off at boot, and nothing
   re-arms one. A hung task stays hung.
-- The CPU stays on the 40 MHz crystal the ROM leaves it on. On the board above
-  1000 ticks took about 1.004 s of host time (0.4% slow) in every run; the
-  cause (crystal tolerance or otherwise) was not investigated.
+- The CPU runs at 240 MHz from the PLL (`-DEOS_ESP32_CPU_MHZ=240` in
+  `sim.yaml`; 160, 80, or 40 to stay on the crystal), switched by
+  `boards/esp32/board_esp32.c` with ESP-IDF's BBPLL sequence through the
+  ROM's `rom_i2c_writeReg`. APB is then 80 MHz. Only a 40 MHz crystal is
+  supported; any other stops the boot with a message rather than running
+  with every timing wrong. On the board, 400 ms of ticks counted 96,000,928
+  CPU cycles, and host-timed heartbeats were 1.0000 s apart (0.9983-1.0017).
+  The 1.004 s recorded at 40 MHz came from `capture_serial.py`'s 50 ms read
+  timeout, now 2 ms, not from the crystal.
 - Only level-1 CPU interrupt lines can carry handlers
   (`eos_arch_irq_register()`); routing a peripheral to one through the
   interrupt matrix is not implemented. `eos_arch_irq_set_priority()` does
   nothing, because Xtensa fixes each line's level in hardware.
-- The HAL backend implements GPIO and UART0 only; UART0 stays at the 115200
-  8N1 the ROM set. Other HAL calls return -1. It refuses GPIO1/3 (the
-  console), GPIO6-11 (the module's flash), outputs on the input-only GPIO34-39,
-  and pulls on GPIO34-39, which have none.
+- The HAL implements GPIO, UART0-2, ADC, DAC, PWM, SPI, I2C and I2S
+  audio, plus board APIs for touch pads and sleep (above).
+  UART0 stays at 115200 8N1. Timers, Wi-Fi and Bluetooth calls return -1. GPIO refuses GPIO1/3 (the console), GPIO6-11 (the module's
+  flash), outputs on the input-only GPIO34-39, and pulls on GPIO34-39, which
+  have none.
 - QEMU's GPIO model does not reflect outputs in `GPIO_IN`, hence
   `-DEOS_TEST_PAD_READBACK=0` there.

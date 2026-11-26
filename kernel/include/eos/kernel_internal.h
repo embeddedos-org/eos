@@ -23,9 +23,17 @@ extern volatile uint32_t g_tick;
 /* Task array — accessible to sync.c and ipc.c for priority inheritance */
 extern eos_task_t g_tasks[EOS_MAX_TASKS];
 
-/* Stack-pointer slots shared with the architecture context-switch handler. */
+/* Stack-pointer slots shared with the architecture context-switch handler.
+ * With EOS_SMP_CORES > 1 each CPU has its own (g_cpu_sp[cpu]), and
+ * g_current_sp names the calling CPU's. */
+#if EOS_SMP_CORES > 1
+extern uint32_t **g_cpu_sp[EOS_SMP_CORES];
+#define g_current_sp (g_cpu_sp[eos_port_cpu_id()])
+uint32_t eos_port_cpu_id(void);
+#else
 extern uint32_t **g_current_sp;
 extern uint32_t **g_next_sp;
+#endif
 
 /**
  * @brief Select the next runnable task during a context switch.
