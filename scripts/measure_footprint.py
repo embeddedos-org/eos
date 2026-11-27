@@ -171,7 +171,7 @@ def compare(report: dict, baseline_path: Path) -> int:
               "recorded against the Nano budget, not discovered later.")
     else:
         print("No growth.")
-    return 0
+    return 1 if regressed else 0
 
 
 def main() -> int:
@@ -204,7 +204,7 @@ def main() -> int:
     status = 0
     if args.compare:
         print()
-        compare(report, args.compare)
+        status = compare(report, args.compare)
 
     for key, ceiling in (("flash", args.budget_flash), ("ram", args.budget_ram)):
         if ceiling is not None and report["total"][key] > ceiling:
