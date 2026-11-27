@@ -132,6 +132,9 @@ int  eos_mqtt_disconnect(eos_mqtt_handle_t handle);
  * For QoS 1, blocks waiting for PUBACK against an absolute monotonic ACK timeout
  * (EOS_MQTT_CONNACK_TIMEOUT_MS = 5000 ms). Packet framing on this synchronous path
  * uses the full remaining ACK window to accommodate TCP fragmentation across high-latency links.
+ * If a keep-alive response deadline expires while waiting for the ACK, a second bounded
+ * drain phase (EOS_MQTT_DRAIN_BUDGET_MS = 100 ms) may execute, giving an accurate worst-case
+ * bound of EOS_MQTT_CONNACK_TIMEOUT_MS + EOS_MQTT_DRAIN_BUDGET_MS.
  */
 int  eos_mqtt_publish(eos_mqtt_handle_t handle, const char *topic,
                        const void *payload, size_t len, uint8_t qos);
@@ -142,6 +145,9 @@ int  eos_mqtt_publish(eos_mqtt_handle_t handle, const char *topic,
  * Blocks waiting for SUBACK against an absolute monotonic ACK timeout
  * (EOS_MQTT_CONNACK_TIMEOUT_MS = 5000 ms). Packet framing uses the full remaining
  * ACK window to preserve TCP fragmentation across multi-segment network arrivals.
+ * If a keep-alive response deadline expires while waiting for the ACK, a second bounded
+ * drain phase (EOS_MQTT_DRAIN_BUDGET_MS = 100 ms) may execute, giving an accurate worst-case
+ * bound of EOS_MQTT_CONNACK_TIMEOUT_MS + EOS_MQTT_DRAIN_BUDGET_MS.
  */
 int  eos_mqtt_subscribe(eos_mqtt_handle_t handle, const char *topic,
                           uint8_t qos, eos_mqtt_msg_callback_t cb, void *ctx);
@@ -150,7 +156,9 @@ int  eos_mqtt_subscribe(eos_mqtt_handle_t handle, const char *topic,
  * Unsubscribes from an MQTT topic filter.
  *
  * Blocks waiting for UNSUBACK against an absolute monotonic ACK timeout
- * (EOS_MQTT_CONNACK_TIMEOUT_MS = 5000 ms).
+ * (EOS_MQTT_CONNACK_TIMEOUT_MS = 5000 ms). If a keep-alive response deadline expires
+ * while waiting for the ACK, a second bounded drain phase (EOS_MQTT_DRAIN_BUDGET_MS = 100 ms)
+ * may execute, giving an accurate worst-case bound of EOS_MQTT_CONNACK_TIMEOUT_MS + EOS_MQTT_DRAIN_BUDGET_MS.
  */
 int  eos_mqtt_unsubscribe(eos_mqtt_handle_t handle, const char *topic);
 
@@ -167,9 +175,11 @@ int  eos_mqtt_unsubscribe(eos_mqtt_handle_t handle, const char *topic);
  *    runs against an absolute monotonic deadline bounded by EOS_MQTT_DRAIN_BUDGET_MS (100 ms).
  *    Total worst-case socket execution time during keep-alive expiry is bounded by
  *    timeout_ms + EOS_MQTT_FRAME_BUDGET_MS + EOS_MQTT_DRAIN_BUDGET_MS.
- * 3. Synchronous ACK timeout: Synchronous publish/subscribe/unsubscribe operations use an
- *    independent absolute ACK deadline (EOS_MQTT_CONNACK_TIMEOUT_MS) rather than the
- *    event-loop frame budget.
+ * 3. Synchronous ACK timeout: Synchronous publish/subscribe/unsubscribe operations normally
+ *    use an independent absolute ACK deadline (EOS_MQTT_CONNACK_TIMEOUT_MS = 5000 ms) rather
+ *    than the event-loop frame budget. If a keep-alive response deadline expires during the wait,
+ *    a second bounded drain phase (EOS_MQTT_DRAIN_BUDGET_MS = 100 ms) may execute, giving an
+ *    accurate worst-case bound of EOS_MQTT_CONNACK_TIMEOUT_MS + EOS_MQTT_DRAIN_BUDGET_MS.
  *
  * Application callback execution is synchronous and excluded from socket timeouts.
  *
