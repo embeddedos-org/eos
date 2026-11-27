@@ -151,13 +151,18 @@ jobs:
 
   # ── Job 2: Run QEMU simulation and validate all 13 test cases ─────────────
   simulate-qemu:
+    # Normal runtime ~1 min; 30 min is generous. A hung step must fail fast
+    # instead of burning the 6h GitHub job maximum (run 45768522149 stalled
+    # in "Install QEMU" for the full 6h on a hung apt-get update).
+    timeout-minutes: 30
     name: "QEMU ARM64 simulation (13 TCs)"
     runs-on: ubuntu-22.04
     needs: build-kernel
     steps:
       - name: Install QEMU
+        timeout-minutes: 10
         run: |
-          sudo apt-get update -qq
+          for i in 1 2 3; do sudo apt-get update -qq && break || sleep 15; done
           sudo apt-get install -y --no-install-recommends qemu-system-arm
 
       - name: Download kernel image
