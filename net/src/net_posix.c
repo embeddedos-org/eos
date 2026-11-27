@@ -144,6 +144,7 @@ int eos_net_send(eos_socket_t sock, const void *data, size_t len)
 int eos_net_recv(eos_socket_t sock, void *buf, size_t len, uint32_t timeout_ms)
 {
     if (sock < 0 || (!buf && len > 0)) return -1;
+    if (len == 0) return 0;
 
     struct timeval tv;
     tv.tv_sec = (time_t)(timeout_ms / 1000u);
@@ -161,7 +162,17 @@ int eos_net_recv(eos_socket_t sock, void *buf, size_t len, uint32_t timeout_ms)
 
     ssize_t n = recv(sock, buf, len, flags);
     if (n < 0 && (errno == EAGAIN || errno == EWOULDBLOCK)) return 0;  /* timed out */
-    return n < 0 ? -1 : (int)n;
+    if (n < 0) return -1;
+    if (n == 0) {
+        int sock_type = 0;
+        socklen_t optlen = sizeof(sock_type);
+        if (getsockopt(sock, SOL_SOCKET, SO_TYPE, &sock_type, &optlen) == 0 &&
+            sock_type == SOCK_DGRAM) {
+            return 0;  /* Valid 0-byte datagram */
+        }
+        return EOS_NET_EOF;  /* orderly close by peer on stream socket */
+    }
+    return (int)n;
 }
 
 int eos_net_sendto(eos_socket_t sock, const void *data, size_t len,
@@ -178,6 +189,7 @@ int eos_net_recvfrom(eos_socket_t sock, void *buf, size_t len,
                      eos_net_addr_t *addr, uint32_t timeout_ms)
 {
     if (sock < 0 || (!buf && len > 0)) return -1;
+    if (len == 0) return 0;
 
     /* 0 is a poll; see eos_net_recv(). */
     int flags = 0;
@@ -192,10 +204,20 @@ int eos_net_recvfrom(eos_socket_t sock, void *buf, size_t len,
 
     struct sockaddr_in sa;
     socklen_t sl = sizeof(sa);
+    memset(&sa, 0, sizeof(sa));
     ssize_t n = recvfrom(sock, buf, len, flags, (struct sockaddr *)&sa, &sl);
     if (n < 0 && (errno == EAGAIN || errno == EWOULDBLOCK)) return 0;
     if (n < 0) return -1;
-    if (addr) from_sockaddr(&sa, addr);
+    if (addr && sl > 0) from_sockaddr(&sa, addr);
+    if (n == 0) {
+        int sock_type = 0;
+        socklen_t optlen = sizeof(sock_type);
+        if (getsockopt(sock, SOL_SOCKET, SO_TYPE, &sock_type, &optlen) == 0 &&
+            sock_type == SOCK_DGRAM) {
+            return 0;  /* Valid 0-byte datagram */
+        }
+        return EOS_NET_EOF;  /* orderly close by peer on stream socket */
+    }
     return (int)n;
 }
 

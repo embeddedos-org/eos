@@ -160,6 +160,10 @@ the packet-type nibble):
 | DISCONNECT | 14 | C → S | encode |
 | PUBREC / PUBREL / PUBCOMP | 5 / 6 / 7 | QoS 2 only | **out of scope** |
 
+TLS / MQTTS transport security is explicitly deferred to secure-socket
+adoption (ADR-014 / crypto and security services), and is out of scope for
+Issue #259 and Slice 3.
+
 QoS semantics: QoS 0 is fire-and-forget (no packet identifier,
 no retry). QoS 1 adds a packet identifier, a PUBACK, storage
 until acknowledged, and retransmission with DUP=1 — duplicates
@@ -220,6 +224,11 @@ absence; this track is designed around it):
    `eos_mqtt_subscribe` / `eos_mqtt_unsubscribe` /
    `eos_mqtt_loop`, keep-alive. The remaining stub assertions
    turn over.
+   *As landed (Issue #259):* slice 3 implements `eos_mqtt_publish`,
+   `eos_mqtt_subscribe`, `eos_mqtt_unsubscribe`, and
+   `eos_mqtt_loop`, along with keep-alive, callback dispatch,
+   QoS 0 and QoS 1 with DUP=1 retry, and fake-broker verification
+   in `tests/test_net.c`.
 4. **Freestanding-profile verification:** the same codec built
    and fixture-tested in a no-POSIX configuration (lwIP profile
    when it exists; until then, a build-level verification that
@@ -254,3 +263,78 @@ honest coupling to name: it inherits the socket API's own
 profile split (POSIX today, lwIP pending), so a lifter takes
 `net.h`'s socket contract with it. That contract is the API
 layer working as intended, not hidden coupling.
+
+## 10. Slice 3 Protocol Specification & Implementation Decisions
+
+With the completion of Slice 3 (Issue #259), the following protocol behaviors and implementation decisions are codified:
+
+1. **Packet Identifier (PID) Lifecycle and Wraparound:**
+   - Packet identifiers for QoS 1 PUBLISH, SUBSCRIBE, and UNSUBSCRIBE are allocated monotonically starting at 1.
+   - PIDs wrap from `0xFFFF` back to 1 (PID 0 is reserved and invalid per MQTT 3.1.1 §2.3.1).
+   - Only one QoS 1 publication or acknowledgement wait is in flight per client instance at any given time, avoiding PID collisions.
+
+2. **Keep-Alive Configuration and Disabled State (`keepalive_sec == 0`):**
+   - When `keepalive_sec == 0`, keep-alive monitoring is disabled completely; no PINGREQ packets are transmitted, and no PINGRESP deadlines are enforced.
+
+3. **Idle Definition and PINGREQ Generation:**
+   - Outbound traffic activity (`last_send_sec`) is refreshed on every transmitted control packet (PUBLISH, SUBSCRIBE, UNSUBSCRIBE, and PINGREQ).
+   - If no control packet has been sent for `keepalive_sec` seconds, `eos_mqtt_loop()` or synchronous wait loops emit a PINGREQ.
+
+4. **PINGRESP Deadline Policy, Drain Window, and Absolute Ceiling:**
+   - Upon sending PINGREQ, the client sets `ping_pending = true` and records `ping_sent_ms`.
+   - The broker must respond with PINGRESP within `keepalive_sec * 1000` milliseconds.
+   - To prevent false disconnects from network jitter or packet buffering, input is drained and processed when `keepalive_sec * 1000` ms elapses.
+   - **Keep-Alive Drain Policy:** The keep-alive drain executes against a single absolute monotonic deadline: `drain_start_ms` is captured once upon entering `mqtt_keepalive_check_deadline()`, and all subsequent reads—including Remaining Length and payload framing inside `mqtt_process_one_packet()`—calculate remaining time from `drain_start_ms` against `EOS_MQTT_DRAIN_BUDGET_MS` (100 ms). Mid-packet framing does not restart a fresh frame budget. The complete drain is also bounded by a safety packet limit (`EOS_MQTT_DRAIN_MAX_PACKETS` = 64 packets).
+   - **Socket Work vs Callback Time:** The 100 ms drain budget bounds the client's own socket-processing work and excludes application callback execution. Slow application callbacks consume wall-clock time and shorten the remaining drain socket work window rather than extending it.
+   - **Liveness Proof vs Quiet Disconnect:** If packets are observed during the event loop or drain (`packet_received || packets_drained > 0`), the broker is confirmed active. Even if the residual drain window times out without receiving PINGRESP, the session is **not** released; PINGRESP evaluation is deferred to subsequent loop iterations.
+   - If the socket is quiet (no pending data) and no packets arrived during the poll or drain (`!packet_received && packets_drained == 0`) while `ping_pending` remains true after deadline expiration, the broker is confirmed silent and the session is invalidated fail-closed and released.
+   - **Absolute PINGRESP Ceiling:** To prevent infinite deferral if a peer streams PUBLISH packets indefinitely while ignoring PINGREQ, an absolute ceiling of `keepalive_sec * 1000 * EOS_MQTT_KEEPALIVE_CEILING_FACTOR` (2× keepalive duration, default `EOS_MQTT_KEEPALIVE_CEILING_FACTOR` = 2u) is enforced. If `ping_pending` remains true past this ceiling, the session is released fail-closed.
+   - If an orderly TCP EOF or socket error occurs during the drain, the session is released immediately and an error (-1) is returned.
+
+5. **TCP Framing, Fragmentation, and RX Buffer Sizing:**
+   - Inbound stream data is framed incrementally using MQTT 3.1.1 fixed-header parsing: the packet type byte is read first, followed by the variable-length Remaining Length multiplier (up to 4 bytes).
+   - Bounded static buffers (1024 bytes per client) hold inbound packets without heap allocation.
+   - Chunked / fragmented TCP data is accumulated using deadline-bounded reads (`mqtt_recv_exact_deadline`), where the caller's timeout budget is tracked monotonically so partial packets cannot stall indefinitely.
+   - **Timeout Domains and Worst-Case Timing Models:**
+     - *Event Loop (`eos_mqtt_loop`):* The initial poll for a fixed-header type byte is bounded by `wait_ms` (clamped to keep-alive deadline). Once the initial type byte arrives, framing of the packet's remaining bytes (Remaining Length, Variable Header, and Payload) is allocated a dedicated bounding budget of `EOS_MQTT_FRAME_BUDGET_MS` (100 ms by default). Under normal conditions without keep-alive deadline expiry, execution time is strictly bounded by `timeout_ms + EOS_MQTT_FRAME_BUDGET_MS`.
+     - *Keep-Alive Drain (`mqtt_keepalive_check_deadline`):* When a keep-alive response deadline expires during `eos_mqtt_loop()`, the subsequent drain runs against a single absolute monotonic deadline bounded by `EOS_MQTT_DRAIN_BUDGET_MS` (100 ms). Total worst-case execution time during keep-alive expiry is `timeout_ms + EOS_MQTT_FRAME_BUDGET_MS + EOS_MQTT_DRAIN_BUDGET_MS`.
+     - *Synchronous Control Acknowledgements (`mqtt_wait_for_ack`):* Synchronous operations (`eos_mqtt_publish` QoS 1, `eos_mqtt_subscribe`, `eos_mqtt_unsubscribe`) normally wait for broker acknowledgment (PUBACK, SUBACK, UNSUBACK) against an independent absolute ACK deadline (`EOS_MQTT_CONNACK_TIMEOUT_MS` = 5000 ms). In contrast to the event loop's 100 ms per-packet framing budget, synchronous ACK waits allocate the full remaining ACK window for packet framing, ensuring that multi-segment TCP fragmentation arriving across high-latency or cellular links is preserved. If a keep-alive response deadline expires while waiting for the ACK, a second bounded drain phase (`EOS_MQTT_DRAIN_BUDGET_MS` = 100 ms) may execute, resulting in an accurate worst-case execution bound of `EOS_MQTT_CONNACK_TIMEOUT_MS + EOS_MQTT_DRAIN_BUDGET_MS`.
+     - Synchronous application callback execution is excluded from all socket timeout budgets.
+
+6. **Maximum Inbound Limits:**
+   - Inbound control packets larger than the 1024-byte static buffer are rejected and trigger connection teardown.
+   - Inbound PUBLISH topics must not exceed 127 bytes (`EOS_MQTT_MAX_TOPIC_LEN - 1` with null terminator; buffer size is 128 bytes). If an inbound topic exceeds 127 bytes, the packet is rejected and no PUBACK is returned.
+
+7. **Callback Lifetime, Immutability, and Reentrancy Contract:**
+   - `eos_mqtt_msg_callback_t` receives pointers to `topic` (null-terminated string) and `payload` (byte buffer of length `payload_len`).
+   - The memory backed by these pointers is valid **only** during the synchronous execution of the callback. Callbacks needing data asynchronously must copy topic and payload.
+   - **Reentrancy and Call Restrictions:**
+     - *Same-Client Reentrancy:* While an application callback is executing (`c->in_callback == true`), all synchronous operations on that *same* client instance (`eos_mqtt_publish`, `eos_mqtt_subscribe`, `eos_mqtt_unsubscribe`, `eos_mqtt_disconnect`, `eos_mqtt_loop`) are strictly prohibited and return -1 immediately.
+     - *Cross-Client Invocations:* Operations on an independent client handle (e.g. bridging/gatewaying between client A and client B) while client A is executing a callback are permitted.
+     - *Connect Restrictions:* `eos_mqtt_connect()` mutates the global client handle pool and is rejected with `EOS_MQTT_INVALID` if any client is currently dispatching a callback.
+
+8. **QoS 1 Retransmission and Acknowledgement Policy:**
+   - Outgoing QoS 1 PUBLISH, SUBSCRIBE, and UNSUBSCRIBE operations normally wait for their respective acknowledgments (PUBACK, SUBACK, UNSUBACK) against an absolute monotonic timeout window (`EOS_MQTT_CONNACK_TIMEOUT_MS` = 5000 ms, with an accurate worst-case bound of `EOS_MQTT_CONNACK_TIMEOUT_MS + EOS_MQTT_DRAIN_BUDGET_MS` if a keep-alive deadline expires during the wait and executes the second bounded drain phase).
+   - For QoS 1 PUBLISH, if PUBACK is delayed beyond `timeout_ms / 2`, a single retry is attempted with `DUP = 1` using the identical packet identifier.
+   - Packet framing for incoming acknowledgments uses the entire remaining ACK window (`has_deadline = true`), avoiding false disconnects when fragments span >100 ms gaps.
+   - If the acknowledgment does not arrive before the total timeout expires, or if an acknowledgment framing error or malformed payload occurs, the session is invalidated fail-closed and released immediately, preventing uncertain or stale local subscription/publish state.
+   - If a queued PUBACK, SUBACK, or UNSUBACK arrives while keep-alive input is draining before a PINGRESP, it is matched and routed directly to the active waiter rather than being lost.
+
+9. **Inbound Retained Messages Arriving Before SUBACK:**
+   - When `eos_mqtt_subscribe()` is called, the subscription entry and its callback are staged in the client subscription table *before* transmitting SUBSCRIBE.
+   - Inbound PUBLISH packets (e.g. broker-retained messages) received while awaiting SUBACK are dispatched immediately to matching callbacks.
+   - If the SUBACK returns an error code (0x80) or an invalid granted QoS, or if the wait times out, the staged subscription is rolled back and the session is invalidated.
+
+10. **Session State Transitions, Reconnect, and Last Will Contract:**
+    - Any unrecoverable network error, peer disconnect (`EOS_NET_EOF`), acknowledgement timeout, or malformed packet causes an immediate transition to `MQTT_DISCONNECTED`.
+    - Sockets are closed via `eos_net_close()`, in-flight state and subscriptions are cleared, and the client handle slot is released back to the pool.
+    - **Reconnect Policy:** Automatic reconnect is not provided. When an error or disconnect occurs, the application must explicitly call `eos_mqtt_connect()` to establish a fresh session.
+    - **Clean Session:** `CleanSession = 1` is enforced on all connections; persistent sessions across disconnects are out of scope.
+    - **Last Will and Testament (LWT):** LWT is unsupported in Slice 3; Will flags in CONNECT fixed/variable headers are set to 0.
+
+11. **Static Resource Constraints:**
+    - Concurrency and resource allocations are strictly bounded at compile-time:
+      - `EOS_MQTT_MAX_CLIENTS`: 2 simultaneous client handles.
+      - `EOS_MQTT_MAX_SUBSCRIPTIONS`: 8 active subscriptions per client.
+      - Static buffers for RX (1024 B), TX (1024 B), and topic matching.
+      - Zero dynamic memory allocation (`malloc`/`free`) throughout the entire MQTT implementation.
